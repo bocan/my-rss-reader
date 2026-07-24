@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---- Base: Node + pnpm via Corepack ----
-FROM node:22-slim AS base
+FROM node:26-slim AS base
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 RUN corepack enable
@@ -22,7 +22,7 @@ RUN pnpm --filter @rss/api deploy --legacy --prod /app/api
 RUN cp -r apps/web/dist /app/web
 
 # ---- Runtime: minimal image with only what the API needs ----
-FROM node:22-slim AS runtime
+FROM node:26-slim AS runtime
 ENV NODE_ENV=production
 ENV WEB_DIST=/app/web
 WORKDIR /app
