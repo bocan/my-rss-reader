@@ -1,3 +1,4 @@
+import type { ViewMode } from '@rss/shared';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { api } from './api';
 
@@ -20,6 +21,7 @@ export interface SubscriptionRow {
   faviconUrl: string | null;
   folderId: string | null;
   position: number;
+  viewMode: ViewMode | null;
   unreadCount: number;
 }
 
@@ -131,6 +133,7 @@ export function useUpdateSubscription() {
       folderId?: string | null;
       title?: string | null;
       position?: number;
+      viewMode?: ViewMode | null;
     }) => api<SubscriptionRow>(`/feeds/${id}`, { method: 'PATCH', body }),
     onMutate: async ({ id, ...patch }): Promise<TreeCtx> => {
       const ctx = await snapshotTree(qc);
@@ -144,6 +147,7 @@ export function useUpdateSubscription() {
                       ...(patch.folderId !== undefined ? { folderId: patch.folderId } : {}),
                       ...(patch.title !== undefined ? { customTitle: patch.title } : {}),
                       ...(patch.position !== undefined ? { position: patch.position } : {}),
+                      ...(patch.viewMode !== undefined ? { viewMode: patch.viewMode } : {}),
                     }
                   : s,
               ),

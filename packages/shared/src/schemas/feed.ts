@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { VIEW_MODES } from '../types.js';
 
 export const subscribeSchema = z.object({
   url: z.url(),
@@ -12,6 +13,8 @@ export const updateSubscriptionSchema = z.object({
   folderId: z.uuid().nullable().optional(),
   title: z.string().min(1).max(200).nullable().optional(),
   position: z.number().int().nonnegative().optional(),
+  /** Per-feed list-view override (SPEC-011). null clears it (inherit default). */
+  viewMode: z.enum(VIEW_MODES).nullable().optional(),
 });
 export type UpdateSubscriptionInput = z.infer<typeof updateSubscriptionSchema>;
 

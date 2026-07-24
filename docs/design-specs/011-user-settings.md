@@ -1,6 +1,6 @@
 # SPEC-011: User settings and preferences (server-persisted)
 
-- **Status:** Todo
+- **Status:** Done
 - **Phase:** 3
 - **Depends on:** SPEC-010 (reading list views)
 - **Estimated size:** M

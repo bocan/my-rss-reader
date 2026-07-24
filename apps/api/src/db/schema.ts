@@ -30,6 +30,12 @@ const tsvector = customType<{ data: string }>({
 
 export const userRole = pgEnum('user_role', ['admin', 'user']);
 
+// Preference enums (SPEC-011). Members must stay in lockstep with @rss/shared's
+// VIEW_MODES / ARTICLE_VIEWS; a unit test asserts the equality.
+export const themePref = pgEnum('theme_pref', ['light', 'dark', 'system']);
+export const viewModeEnum = pgEnum('view_mode', ['cards', 'list', 'magazine', 'compact']);
+export const articleViewEnum = pgEnum('article_view', ['simplified', 'readable', 'web']);
+
 // --- Identity ------------------------------------------------------------
 
 export const users = pgTable('users', {
@@ -55,6 +61,21 @@ export const sessions = pgTable('sessions', {
   expiresAt: timestamp({ withTimezone: true }).notNull(),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index('sessions_user_id_idx').on(t.userId)]);
+
+// Server-persisted preferences (SPEC-011). One row per user, created lazily on
+// first PUT; a missing row reads back as DEFAULT_SETTINGS. Column defaults must
+// equal @rss/shared's DEFAULT_SETTINGS.
+export const userSettings = pgTable('user_settings', {
+  userId: uuid()
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  theme: themePref().notNull().default('system'),
+  defaultViewMode: viewModeEnum().notNull().default('cards'),
+  defaultArticleView: articleViewEnum().notNull().default('simplified'),
+  markReadOnScroll: boolean().notNull().default(false),
+  showUnreadOnly: boolean().notNull().default(false),
+  updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
 
 // --- Organization --------------------------------------------------------
 
@@ -100,6 +121,8 @@ export const subscriptions = pgTable('subscriptions', {
   folderId: uuid().references(() => folders.id, { onDelete: 'set null' }),
   customTitle: text(),
   position: integer().notNull().default(0),
+  // Per-feed list-view override (SPEC-011). null = inherit the user default.
+  viewMode: viewModeEnum(),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   uniqueIndex('subscriptions_user_feed_key').on(t.userId, t.feedId),

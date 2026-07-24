@@ -104,5 +104,5 @@ Features to pluck from readers like Fluent, roughly in order:
 - [ ] Keyset pagination + infinite scroll
 - [ ] HTML sanitization of article content
 - [ ] PWA / offline support
-- [ ] Per-user settings + themes
+- [x] Per-user settings + themes
 ```

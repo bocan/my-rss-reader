@@ -38,6 +38,7 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
         faviconUrl: feeds.faviconUrl,
         folderId: subscriptions.folderId,
         position: subscriptions.position,
+        viewMode: subscriptions.viewMode,
         lastFetchedAt: feeds.lastFetchedAt,
       })
       .from(subscriptions)
@@ -160,6 +161,7 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
       const changes: Partial<typeof subscriptions.$inferInsert> = {};
       if (input.title !== undefined) changes.customTitle = input.title;
       if (input.folderId !== undefined) changes.folderId = input.folderId;
+      if (input.viewMode !== undefined) changes.viewMode = input.viewMode;
       if (Object.keys(changes).length > 0) {
         await tx.update(subscriptions).set(changes).where(eq(subscriptions.id, id));
       }
@@ -181,6 +183,7 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
         faviconUrl: feeds.faviconUrl,
         folderId: subscriptions.folderId,
         position: subscriptions.position,
+        viewMode: subscriptions.viewMode,
         lastFetchedAt: feeds.lastFetchedAt,
       })
       .from(subscriptions)

@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { api, ApiRequestError } from '@/lib/api';
 import { useToggleArticleState } from '@/lib/articles';
+import { useSettings } from '@/lib/settings';
 import { cn } from '@/lib/utils';
 import { ArticleHtml } from './ArticleHtml';
 
@@ -24,10 +25,15 @@ function formatDate(iso: string | null): string {
 
 export function ReadingPane({ articleId }: { articleId: string }) {
   const queryClient = useQueryClient();
-  const [view, setView] = useState<ArticleView>('simplified');
+  const { settings } = useSettings();
+  const [view, setView] = useState<ArticleView>(() => settings.defaultArticleView);
 
-  // Reset to the default view whenever the article changes.
-  useEffect(() => setView('simplified'), [articleId]);
+  // Open each article in the user's default view (the in-session switcher stays
+  // local and does not persist). Read the default via a ref so changing it
+  // mid-read does not reset the pane.
+  const defaultViewRef = useRef(settings.defaultArticleView);
+  defaultViewRef.current = settings.defaultArticleView;
+  useEffect(() => setView(defaultViewRef.current), [articleId]);
 
   const articleQuery = useQuery({
     queryKey: ['article', articleId],

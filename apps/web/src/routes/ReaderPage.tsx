@@ -13,11 +13,12 @@ import { SubscribeDialog } from '@/components/subscribe-dialog';
 import { Button } from '@/components/ui/button';
 import { useArticleSurface } from '@/hooks/use-article-surface';
 import type { ArticleFilters, ArticleListItem } from '@/hooks/use-articles';
-import { useListView } from '@/hooks/use-list-view';
 import { useShortcuts } from '@/hooks/use-shortcuts';
 import { useSidebar } from '@/hooks/use-sidebar';
 import { useMarkRead, useToggleArticleState, useUnreadCounts } from '@/lib/articles';
-import { useFolders, useSubscriptions } from '@/lib/folders';
+import { useFolders, useSubscriptions, useUpdateSubscription } from '@/lib/folders';
+import { useSettings } from '@/lib/settings';
+import type { ViewMode } from '@rss/shared';
 import type { ShortcutContextName } from '@/lib/shortcuts/registry';
 import { cn } from '@/lib/utils';
 
@@ -37,8 +38,7 @@ function useIsWide(): boolean {
 export function ReaderPage() {
   const isWide = useIsWide();
   const { collapsed, toggle: toggleSidebar } = useSidebar();
-  const [view, setView] = useListView();
-  const isBrowse = view === 'cards' || view === 'magazine';
+  const { settings, update: updateSettings } = useSettings();
 
   const { data: feedsData, isLoading } = useSubscriptions();
   const subs = feedsData?.items ?? [];
@@ -58,6 +58,22 @@ export function ReaderPage() {
   );
 
   const [filters, setFilters] = useState<ArticleFilters>({ sort: 'newest' });
+
+  // Active list view: a per-feed override wins over the user default. The
+  // switcher writes the override when scoped to a feed, else the default.
+  const updateSub = useUpdateSubscription();
+  const currentSub = filters.feedId ? subs.find((s) => s.feedId === filters.feedId) : undefined;
+  const view: ViewMode = currentSub?.viewMode ?? settings.defaultViewMode;
+  const isBrowse = view === 'cards' || view === 'magazine';
+  const hasOverride = Boolean(currentSub?.viewMode);
+  const setView = (mode: ViewMode) => {
+    if (currentSub) updateSub.mutate({ id: currentSub.subscriptionId, viewMode: mode });
+    else updateSettings({ defaultViewMode: mode });
+  };
+  const resetView = () => {
+    if (currentSub) updateSub.mutate({ id: currentSub.subscriptionId, viewMode: null });
+  };
+
   const [searchInput, setSearchInput] = useState('');
   const [debouncedQ, setDebouncedQ] = useState('');
   useEffect(() => {
@@ -197,6 +213,17 @@ export function ReaderPage() {
         {canMarkAll && !isSearching && unreadForView > 0 && (
           <Button variant="ghost" size="sm" className="hidden sm:inline-flex" onClick={markAllRead}>
             Mark all read
+          </Button>
+        )}
+        {hasOverride && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="hidden text-xs text-muted-foreground lg:inline-flex"
+            title="This feed has its own view; reset to your default"
+            onClick={resetView}
+          >
+            Reset view
           </Button>
         )}
         <ViewSwitcher view={view} onChange={setView} />

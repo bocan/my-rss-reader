@@ -43,6 +43,13 @@
       "when": 1784850026874,
       "tag": "0005_certain_bromley",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784890837429,
+      "tag": "0006_slim_zaladane",
+      "breakpoints": true
     }
   ]
 }

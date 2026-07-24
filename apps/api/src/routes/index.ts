@@ -5,6 +5,7 @@ import { countsRoutes } from './counts.js';
 import { feedRoutes } from './feeds.js';
 import { healthRoutes } from './health.js';
 import { opmlRoutes } from './opml.js';
+import { settingsRoutes } from './settings.js';
 
 /** Registers every API route under the given instance (mounted at /api). */
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
@@ -14,4 +15,5 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   await app.register(articleRoutes);
   await app.register(countsRoutes);
   await app.register(opmlRoutes);
+  await app.register(settingsRoutes);
 }

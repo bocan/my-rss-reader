@@ -1,4 +1,13 @@
-import type { ImportOpmlResult } from '@rss/shared';
+import {
+  ARTICLE_VIEWS,
+  THEMES,
+  VIEW_MODES,
+  type ArticleView,
+  type ImportOpmlResult,
+  type Settings,
+  type ThemePref,
+  type ViewMode,
+} from '@rss/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ChevronLeft, Download, Upload } from 'lucide-react';
 import { useRef, useState } from 'react';
@@ -6,12 +15,95 @@ import { Link } from 'react-router';
 import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/button';
 import { api, ApiRequestError } from '@/lib/api';
+import { useSettings } from '@/lib/settings';
+import { cn } from '@/lib/utils';
+
+const THEME_LABEL: Record<ThemePref, string> = { light: 'Light', dark: 'Dark', system: 'System' };
+const VIEW_LABEL: Record<ViewMode, string> = {
+  list: 'List',
+  compact: 'Compact',
+  cards: 'Cards',
+  magazine: 'Magazine',
+};
+const ARTICLE_VIEW_LABEL: Record<ArticleView, string> = {
+  simplified: 'Simplified',
+  readable: 'Readable',
+  web: 'Web',
+};
+
+/** A labeled segmented control for an enum setting. */
+function Segmented<T extends string>({
+  label,
+  value,
+  options,
+  labels,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: readonly T[];
+  labels: Record<T, string>;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="text-sm">{label}</span>
+      <div className="inline-flex rounded-md border p-0.5">
+        {options.map((opt) => (
+          <button
+            key={opt}
+            type="button"
+            aria-pressed={value === opt}
+            onClick={() => onChange(opt)}
+            className={cn(
+              'rounded px-3 py-1 text-sm transition-colors duration-150 motion-reduce:transition-none',
+              value === opt
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {labels[opt]}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Toggle({
+  label,
+  hint,
+  checked,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <label className="flex items-center justify-between gap-4">
+      <span>
+        <span className="block text-sm">{label}</span>
+        <span className="block text-xs text-muted-foreground">{hint}</span>
+      </span>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="size-4 shrink-0 accent-primary"
+      />
+    </label>
+  );
+}
 
 /** Mirrors the server's OPML_MAX_BYTES default so we fail fast client-side. */
 const MAX_BYTES = 5 * 1024 * 1024;
 
 export function SettingsPage() {
   const queryClient = useQueryClient();
+  const { settings, update } = useSettings();
+  const set = <K extends keyof Settings>(key: K, value: Settings[K]) => update({ [key]: value });
   const fileRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ImportOpmlResult | null>(null);
@@ -53,6 +145,43 @@ export function SettingsPage() {
           </Button>
           <h1 className="text-xl font-semibold">Settings</h1>
         </div>
+
+        <section className="space-y-4 rounded-lg border p-4">
+          <h2 className="font-medium">Preferences</h2>
+          <Segmented
+            label="Theme"
+            value={settings.theme}
+            options={THEMES}
+            labels={THEME_LABEL}
+            onChange={(v) => set('theme', v)}
+          />
+          <Segmented
+            label="Default list view"
+            value={settings.defaultViewMode}
+            options={VIEW_MODES}
+            labels={VIEW_LABEL}
+            onChange={(v) => set('defaultViewMode', v)}
+          />
+          <Segmented
+            label="Default article view"
+            value={settings.defaultArticleView}
+            options={ARTICLE_VIEWS}
+            labels={ARTICLE_VIEW_LABEL}
+            onChange={(v) => set('defaultArticleView', v)}
+          />
+          <Toggle
+            label="Mark read on scroll"
+            hint="Mark articles read as you scroll past them."
+            checked={settings.markReadOnScroll}
+            onChange={(v) => set('markReadOnScroll', v)}
+          />
+          <Toggle
+            label="Show unread only"
+            hint="Hide already-read articles from lists by default."
+            checked={settings.showUnreadOnly}
+            onChange={(v) => set('showUnreadOnly', v)}
+          />
+        </section>
 
         <section className="rounded-lg border p-4">
           <h2 className="font-medium">Import subscriptions</h2>
