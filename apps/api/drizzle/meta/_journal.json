@@ -71,6 +71,13 @@
       "when": 1784917899949,
       "tag": "0009_whole_kid_colt",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784921984305,
+      "tag": "0010_flippant_energizer",
+      "breakpoints": true
     }
   ]
 }

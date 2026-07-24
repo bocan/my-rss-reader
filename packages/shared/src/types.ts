@@ -102,9 +102,10 @@ export interface InviteDto {
   link: string;
 }
 
-/** Instance-wide settings visible to admins (SPEC-012). */
+/** Instance-wide settings visible to admins (SPEC-012, SPEC-018). */
 export interface AppSettingsDto {
   registrationMode: RegistrationMode;
+  defaultPollIntervalSec: number;
 }
 
 /** A cursor-paginated response envelope. */

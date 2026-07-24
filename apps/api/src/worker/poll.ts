@@ -2,17 +2,26 @@ import { isNull, lte, or, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { feeds } from '../db/schema.js';
 import { env } from '../env.js';
+import { getAppSettings } from '../lib/app-settings.js';
 import { fetchAndStoreFeed, type FeedRow } from '../lib/feed-fetch.js';
 
-/** Feeds whose lastFetchedAt is null or older than their fetch interval. */
+/**
+ * Feeds whose lastFetchedAt is null or older than their effective interval:
+ * the feed's own fetchIntervalSec, or the app-wide default when it is null
+ * (SPEC-018).
+ */
 export async function findDueFeeds(): Promise<FeedRow[]> {
+  const { defaultPollIntervalSec } = await getAppSettings();
   return db
     .select()
     .from(feeds)
     .where(
       or(
         isNull(feeds.lastFetchedAt),
-        lte(feeds.lastFetchedAt, sql`now() - make_interval(secs => ${feeds.fetchIntervalSec})`),
+        lte(
+          feeds.lastFetchedAt,
+          sql`now() - make_interval(secs => coalesce(${feeds.fetchIntervalSec}, ${defaultPollIntervalSec}))`,
+        ),
       ),
     )
     .limit(200);

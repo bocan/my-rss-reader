@@ -65,8 +65,8 @@ export function useAdminSettings() {
 export function useUpdateAdminSettings() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (registrationMode: RegistrationMode) =>
-      api<AppSettingsDto>('/admin/settings', { method: 'PATCH', body: { registrationMode } }),
+    mutationFn: (patch: { registrationMode?: RegistrationMode; defaultPollIntervalSec?: number }) =>
+      api<AppSettingsDto>('/admin/settings', { method: 'PATCH', body: patch }),
     onSuccess: (data) => qc.setQueryData(SETTINGS_KEY, data),
   });
 }

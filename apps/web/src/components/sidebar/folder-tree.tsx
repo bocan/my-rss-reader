@@ -11,6 +11,7 @@ import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalList
 import { CSS } from '@dnd-kit/utilities';
 import { ChevronDown, ChevronRight, Folder, MoreHorizontal, Plus, Rss } from 'lucide-react';
 import { useEffect, useState, type KeyboardEvent } from 'react';
+import { FeedSettingsDialog } from '@/components/feed/FeedSettingsDialog';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -80,6 +81,7 @@ export function FolderTree({
 
   const [expanded, setExpanded] = useState<Set<string>>(() => loadExpanded());
   const [editing, setEditing] = useState<{ kind: 'folder' | 'feed'; id: string } | null>(null);
+  const [settingsSub, setSettingsSub] = useState<SubscriptionRow | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -217,6 +219,7 @@ export function FolderTree({
               }}
               onMarkRead={() => markRead.mutate({ folderId: folder.id })}
               onRenameFeed={(id) => setEditing({ kind: 'feed', id })}
+              onEditFeed={setSettingsSub}
               onUnsubscribe={(id) => unsubscribe.mutate(id)}
               onMarkFeedRead={(feedId) => markRead.mutate({ feedId })}
             />
@@ -242,6 +245,7 @@ export function FolderTree({
                 onSubmitEdit={submitEdit}
                 onCancelEdit={() => setEditing(null)}
                 onRename={() => setEditing({ kind: 'feed', id: sub.subscriptionId })}
+                onEditSettings={() => setSettingsSub(sub)}
                 onUnsubscribe={() => unsubscribe.mutate(sub.subscriptionId)}
                 onMarkRead={() => markRead.mutate({ feedId: sub.feedId })}
               />
@@ -267,6 +271,13 @@ export function FolderTree({
           </button>
         )}
       </div>
+
+      {settingsSub && (
+        <FeedSettingsDialog
+          sub={settingsSub}
+          onOpenChange={(open) => !open && setSettingsSub(null)}
+        />
+      )}
     </DndContext>
   );
 }
@@ -308,6 +319,7 @@ interface FolderNodeProps {
   onDelete: () => void;
   onMarkRead: () => void;
   onRenameFeed: (subscriptionId: string) => void;
+  onEditFeed: (sub: SubscriptionRow) => void;
   onUnsubscribe: (subscriptionId: string) => void;
   onMarkFeedRead: (feedId: string) => void;
 }
@@ -421,6 +433,7 @@ function FolderNode(props: FolderNodeProps) {
                 onSubmitEdit={props.submitEdit}
                 onCancelEdit={() => props.setEditing(null)}
                 onRename={() => props.onRenameFeed(sub.subscriptionId)}
+                onEditSettings={() => props.onEditFeed(sub)}
                 onUnsubscribe={() => props.onUnsubscribe(sub.subscriptionId)}
                 onMarkRead={() => props.onMarkFeedRead(sub.feedId)}
               />
@@ -459,6 +472,7 @@ interface FeedNodeProps {
   onSubmitEdit: (value: string) => void;
   onCancelEdit: () => void;
   onRename: () => void;
+  onEditSettings: () => void;
   onUnsubscribe: () => void;
   onMarkRead: () => void;
 }
@@ -474,6 +488,7 @@ function FeedNode({
   onSubmitEdit,
   onCancelEdit,
   onRename,
+  onEditSettings,
   onUnsubscribe,
   onMarkRead,
 }: FeedNodeProps) {
@@ -540,6 +555,7 @@ function FeedNode({
       )}
 
       <RowMenu label={`Feed actions for ${label}`}>
+        <DropdownMenuItem onSelect={onEditSettings}>Edit…</DropdownMenuItem>
         <DropdownMenuItem onSelect={onRename}>Rename</DropdownMenuItem>
         <DropdownMenuItem onSelect={onMarkRead}>Mark all read</DropdownMenuItem>
         <DropdownMenuSeparator />

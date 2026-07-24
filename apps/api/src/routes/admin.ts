@@ -168,8 +168,8 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   // --- Instance settings -------------------------------------------------
 
   app.get('/admin/settings', admin, async (): Promise<AppSettingsDto> => {
-    const { registrationMode } = await getAppSettings();
-    return { registrationMode };
+    const { registrationMode, defaultPollIntervalSec } = await getAppSettings();
+    return { registrationMode, defaultPollIntervalSec };
   });
 
   app.patch('/admin/settings', admin, async (request): Promise<AppSettingsDto> => {
@@ -177,9 +177,21 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     await getAppSettings(); // ensure the singleton row exists
     await db
       .update(appSettings)
-      .set({ registrationMode: input.registrationMode, updatedAt: new Date() })
+      .set({
+        ...(input.registrationMode !== undefined
+          ? { registrationMode: input.registrationMode }
+          : {}),
+        ...(input.defaultPollIntervalSec !== undefined
+          ? { defaultPollIntervalSec: input.defaultPollIntervalSec }
+          : {}),
+        updatedAt: new Date(),
+      })
       .where(eq(appSettings.id, 1));
-    return { registrationMode: input.registrationMode };
+    const updated = await getAppSettings();
+    return {
+      registrationMode: updated.registrationMode,
+      defaultPollIntervalSec: updated.defaultPollIntervalSec,
+    };
   });
 }
 

@@ -1,4 +1,4 @@
-import type { ViewMode } from '@rss/shared';
+import type { ArticleView, ViewMode } from '@rss/shared';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { api } from './api';
 
@@ -22,6 +22,12 @@ export interface SubscriptionRow {
   folderId: string | null;
   position: number;
   viewMode: ViewMode | null;
+  articleView: ArticleView | null;
+  hideFromAll: boolean;
+  /** The shared feed's poll interval; null = inherit the app default. */
+  fetchIntervalSec: number | null;
+  lastFetchedAt: string | null;
+  lastError: string | null;
   unreadCount: number;
 }
 
@@ -134,6 +140,9 @@ export function useUpdateSubscription() {
       title?: string | null;
       position?: number;
       viewMode?: ViewMode | null;
+      articleView?: ArticleView | null;
+      hideFromAll?: boolean;
+      fetchIntervalSec?: number | null;
     }) => api<SubscriptionRow>(`/feeds/${id}`, { method: 'PATCH', body }),
     onMutate: async ({ id, ...patch }): Promise<TreeCtx> => {
       const ctx = await snapshotTree(qc);
@@ -148,6 +157,11 @@ export function useUpdateSubscription() {
                       ...(patch.title !== undefined ? { customTitle: patch.title } : {}),
                       ...(patch.position !== undefined ? { position: patch.position } : {}),
                       ...(patch.viewMode !== undefined ? { viewMode: patch.viewMode } : {}),
+                      ...(patch.articleView !== undefined ? { articleView: patch.articleView } : {}),
+                      ...(patch.hideFromAll !== undefined ? { hideFromAll: patch.hideFromAll } : {}),
+                      ...(patch.fetchIntervalSec !== undefined
+                        ? { fetchIntervalSec: patch.fetchIntervalSec }
+                        : {}),
                     }
                   : s,
               ),
@@ -157,7 +171,14 @@ export function useUpdateSubscription() {
       return ctx;
     },
     onError: (_e, _v, ctx) => restoreTree(qc, ctx),
-    onSettled: () => reconcileTree(qc),
+    onSettled: (_d, _e, variables) => {
+      reconcileTree(qc);
+      // Hiding/showing a feed changes the All-items list and its unread total.
+      if (variables.hideFromAll !== undefined) {
+        qc.invalidateQueries({ queryKey: ['counts'] });
+        qc.invalidateQueries({ queryKey: ['articles'] });
+      }
+    },
   });
 }
 

@@ -39,7 +39,11 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
         folderId: subscriptions.folderId,
         position: subscriptions.position,
         viewMode: subscriptions.viewMode,
+        articleView: subscriptions.articleView,
+        hideFromAll: subscriptions.hideFromAll,
+        fetchIntervalSec: feeds.fetchIntervalSec,
         lastFetchedAt: feeds.lastFetchedAt,
+        lastError: feeds.lastError,
       })
       .from(subscriptions)
       .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
@@ -162,8 +166,18 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
       if (input.title !== undefined) changes.customTitle = input.title;
       if (input.folderId !== undefined) changes.folderId = input.folderId;
       if (input.viewMode !== undefined) changes.viewMode = input.viewMode;
+      if (input.articleView !== undefined) changes.articleView = input.articleView;
+      if (input.hideFromAll !== undefined) changes.hideFromAll = input.hideFromAll;
       if (Object.keys(changes).length > 0) {
         await tx.update(subscriptions).set(changes).where(eq(subscriptions.id, id));
+      }
+      // The poll interval lives on the shared feed, so this affects everyone
+      // subscribed to it (the dialog copy says so).
+      if (input.fetchIntervalSec !== undefined) {
+        await tx
+          .update(feeds)
+          .set({ fetchIntervalSec: input.fetchIntervalSec })
+          .where(eq(feeds.id, current.feedId));
       }
       // Renormalize the scope it left, then place it in its destination.
       if (newFolderId !== oldFolderId) {
@@ -184,7 +198,11 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
         folderId: subscriptions.folderId,
         position: subscriptions.position,
         viewMode: subscriptions.viewMode,
+        articleView: subscriptions.articleView,
+        hideFromAll: subscriptions.hideFromAll,
+        fetchIntervalSec: feeds.fetchIntervalSec,
         lastFetchedAt: feeds.lastFetchedAt,
+        lastError: feeds.lastError,
       })
       .from(subscriptions)
       .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))

@@ -92,6 +92,9 @@ export const userSettings = pgTable('user_settings', {
 export const appSettings = pgTable('app_settings', {
   id: integer().primaryKey(),
   registrationMode: registrationMode().notNull().default('open'),
+  // App-wide default feed poll interval; feeds inherit it unless they override
+  // their own fetchIntervalSec (SPEC-018).
+  defaultPollIntervalSec: integer().notNull().default(900),
   updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 }, (t) => [check('app_settings_singleton', sql`${t.id} = 1`)]);
 
@@ -143,7 +146,9 @@ export const feeds = pgTable('feeds', {
   lastFetchedAt: timestamp({ withTimezone: true }),
   lastError: text(),
   failureCount: integer().notNull().default(0),
-  fetchIntervalSec: integer().notNull().default(900),
+  // Poll interval override for this global feed (SPEC-018). null = inherit the
+  // app-wide default (app_settings.defaultPollIntervalSec).
+  fetchIntervalSec: integer(),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 }, (t) => [uniqueIndex('feeds_feed_url_key').on(t.feedUrl)]);
@@ -161,6 +166,10 @@ export const subscriptions = pgTable('subscriptions', {
   position: integer().notNull().default(0),
   // Per-feed list-view override (SPEC-011). null = inherit the user default.
   viewMode: text(),
+  // Per-feed article-view override (SPEC-018). null = inherit the user default.
+  articleView: text(),
+  // Exclude this feed from the All-items list and its unread total (SPEC-018).
+  hideFromAll: boolean().notNull().default(false),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   uniqueIndex('subscriptions_user_feed_key').on(t.userId, t.feedId),

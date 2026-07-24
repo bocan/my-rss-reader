@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { api, ApiRequestError } from '@/lib/api';
 import { useToggleArticleState } from '@/lib/articles';
+import { useSubscriptions } from '@/lib/folders';
 import { useOnlineStatus } from '@/lib/pwa';
 import { useSettings } from '@/lib/settings';
 import { cn } from '@/lib/utils';
@@ -27,21 +28,36 @@ function formatDate(iso: string | null): string {
 export function ReadingPane({ articleId }: { articleId: string }) {
   const queryClient = useQueryClient();
   const { settings } = useSettings();
+  const { data: feedsData } = useSubscriptions();
   const online = useOnlineStatus();
   const [view, setView] = useState<ArticleView>(() => settings.defaultArticleView);
-
-  // Open each article in the user's default view (the in-session switcher stays
-  // local and does not persist). Read the default via a ref so changing it
-  // mid-read does not reset the pane.
-  const defaultViewRef = useRef(settings.defaultArticleView);
-  defaultViewRef.current = settings.defaultArticleView;
-  useEffect(() => setView(defaultViewRef.current), [articleId]);
 
   const articleQuery = useQuery({
     queryKey: ['article', articleId],
     queryFn: () => api<ArticleDetail>(`/articles/${articleId}`),
   });
   const article = articleQuery.data;
+
+  // Seed the view per article: the feed's article-view override (SPEC-018) if
+  // set, else the user default. `switchedRef` guards a manual in-session switch
+  // from being clobbered; it resets on each new article. The seed waits for the
+  // article so the feed id (and its override) is known.
+  const switchedRef = useRef(false);
+  useEffect(() => {
+    switchedRef.current = false;
+  }, [articleId]);
+  const feedId = article?.feed.id;
+  useEffect(() => {
+    if (!feedId || switchedRef.current) return;
+    const override = feedsData?.items.find((s) => s.feedId === feedId)?.articleView ?? null;
+    setView(override ?? settings.defaultArticleView);
+    // subs/settings intentionally excluded: only re-seed on a new article/feed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feedId, articleId]);
+  const chooseView = (v: ArticleView) => {
+    switchedRef.current = true;
+    setView(v);
+  };
 
   // Simplified view: lazily extract once, only when never attempted before.
   const needsReadable = view === 'simplified' && !!article && article.readableFetchedAt === null;
@@ -127,7 +143,7 @@ export function ReadingPane({ articleId }: { articleId: string }) {
             {ARTICLE_VIEWS.map((v) => (
               <button
                 key={v}
-                onClick={() => setView(v)}
+                onClick={() => chooseView(v)}
                 className={cn(
                   'rounded px-3 py-1 text-sm',
                   view === v
@@ -159,7 +175,7 @@ export function ReadingPane({ articleId }: { articleId: string }) {
             loading={readableQuery.isFetching}
             retrying={refresh.isPending}
             onRetry={() => refresh.mutate()}
-            onSwitchReadable={() => setView('readable')}
+            onSwitchReadable={() => chooseView('readable')}
           />
         )}
         {view === 'web' && <WebView article={article} online={online} />}

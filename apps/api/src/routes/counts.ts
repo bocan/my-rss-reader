@@ -16,15 +16,22 @@ export async function countsRoutes(app: FastifyInstance): Promise<void> {
     const feedCounts = await getUnreadCountsByFeed(userId);
 
     const subs = await db
-      .select({ feedId: subscriptions.feedId, folderId: subscriptions.folderId })
+      .select({
+        feedId: subscriptions.feedId,
+        folderId: subscriptions.folderId,
+        hideFromAll: subscriptions.hideFromAll,
+      })
       .from(subscriptions)
       .where(eq(subscriptions.userId, userId));
     const folderByFeed = new Map(subs.map((s) => [s.feedId, s.folderId]));
+    const hiddenFromAll = new Set(subs.filter((s) => s.hideFromAll).map((s) => s.feedId));
 
+    // `total` backs the All-items badge, so it excludes hidden feeds; per-folder
+    // and per-feed counts still include them (SPEC-018).
     const folderTotals = new Map<string, number>();
     let total = 0;
     for (const { feedId, unreadCount } of feedCounts) {
-      total += unreadCount;
+      if (!hiddenFromAll.has(feedId)) total += unreadCount;
       const folderId = folderByFeed.get(feedId);
       if (folderId) folderTotals.set(folderId, (folderTotals.get(folderId) ?? 0) + unreadCount);
     }

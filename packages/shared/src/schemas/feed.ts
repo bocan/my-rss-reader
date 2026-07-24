@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { VIEW_MODES } from '../types.js';
+import { ARTICLE_VIEWS, VIEW_MODES } from '../types.js';
 
 export const subscribeSchema = z.object({
   url: z.url(),
@@ -15,6 +15,15 @@ export const updateSubscriptionSchema = z.object({
   position: z.number().int().nonnegative().optional(),
   /** Per-feed list-view override (SPEC-011). null clears it (inherit default). */
   viewMode: z.enum(VIEW_MODES).nullable().optional(),
+  /** Per-feed article-view override (SPEC-018). null clears it. */
+  articleView: z.enum(ARTICLE_VIEWS).nullable().optional(),
+  /** Exclude this feed from the All-items list and its unread total (SPEC-018). */
+  hideFromAll: z.boolean().optional(),
+  /**
+   * Poll interval for the shared feed, in seconds (SPEC-018). null inherits the
+   * app default. This targets the global feed, so it affects all subscribers.
+   */
+  fetchIntervalSec: z.number().int().min(60).max(86400).nullable().optional(),
 });
 export type UpdateSubscriptionInput = z.infer<typeof updateSubscriptionSchema>;
 

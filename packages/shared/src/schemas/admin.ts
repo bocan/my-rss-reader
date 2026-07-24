@@ -4,10 +4,16 @@ import { REGISTRATION_MODES } from '../types.js';
 /** Registration mode for the instance. */
 export const registrationModeSchema = z.enum(REGISTRATION_MODES);
 
-/** PATCH /admin/settings body. */
-export const updateAppSettingsSchema = z.object({
-  registrationMode: registrationModeSchema,
-});
+/** PATCH /admin/settings body. At least one field must be present. */
+export const updateAppSettingsSchema = z
+  .object({
+    registrationMode: registrationModeSchema.optional(),
+    // App-wide default feed poll interval, in seconds (SPEC-018).
+    defaultPollIntervalSec: z.number().int().min(60).max(86400).optional(),
+  })
+  .refine((v) => v.registrationMode !== undefined || v.defaultPollIntervalSec !== undefined, {
+    message: 'Provide at least one setting to update',
+  });
 export type UpdateAppSettingsInput = z.infer<typeof updateAppSettingsSchema>;
 
 /** POST /admin/invites body. */

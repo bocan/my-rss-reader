@@ -125,6 +125,10 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
     const subFilters = [eq(subscriptions.userId, userId)];
     if (query.feedId) subFilters.push(eq(subscriptions.feedId, query.feedId));
     if (query.folderId) subFilters.push(eq(subscriptions.folderId, query.folderId));
+    // Hidden feeds drop out of the All-items firehose only; an explicit feed,
+    // folder, starred, or search scope still includes them (SPEC-018).
+    const isAllItems = !query.feedId && !query.folderId && !query.starred && !isSearch;
+    if (isAllItems) subFilters.push(eq(subscriptions.hideFromAll, false));
     const subs = await db
       .select({ feedId: subscriptions.feedId })
       .from(subscriptions)

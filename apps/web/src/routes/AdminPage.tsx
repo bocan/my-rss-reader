@@ -51,10 +51,58 @@ export function AdminPage() {
         </div>
 
         <RegistrationSection />
+        <FeedsSection />
         <UsersSection />
         <InvitesSection />
       </div>
     </AppShell>
+  );
+}
+
+// --- Feeds (default poll interval) ---------------------------------------
+
+function FeedsSection() {
+  const { data } = useAdminSettings();
+  const update = useUpdateAdminSettings();
+  const [mins, setMins] = useState('');
+  const current = data ? Math.round(data.defaultPollIntervalSec / 60) : null;
+
+  return (
+    <section className="space-y-3 rounded-lg border p-4">
+      <div>
+        <h2 className="font-medium">Feeds</h2>
+        <p className="text-sm text-muted-foreground">
+          Default poll interval for feeds that don&apos;t set their own.
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          min={1}
+          max={1440}
+          value={mins}
+          placeholder={current != null ? String(current) : '15'}
+          onChange={(e) => setMins(e.target.value)}
+          className="h-9 w-28 rounded-md border border-input bg-background px-3 text-sm"
+        />
+        <span className="text-sm text-muted-foreground">minutes</span>
+        <Button
+          size="sm"
+          disabled={update.isPending || mins.trim() === ''}
+          onClick={() =>
+            update.mutate(
+              { defaultPollIntervalSec: Math.max(1, Math.round(Number(mins))) * 60 },
+              { onSuccess: () => setMins('') },
+            )
+          }
+        >
+          Save
+        </Button>
+        {current != null && (
+          <span className="text-sm text-muted-foreground">Currently every {current} min</span>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -78,7 +126,7 @@ function RegistrationSection() {
             type="button"
             aria-pressed={mode === m}
             disabled={update.isPending}
-            onClick={() => update.mutate(m)}
+            onClick={() => update.mutate({ registrationMode: m })}
             className={cn(
               'flex-1 rounded-md border p-3 text-left transition-colors duration-150 motion-reduce:transition-none',
               mode === m
