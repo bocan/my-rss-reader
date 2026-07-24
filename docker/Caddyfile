@@ -1,0 +1,18 @@
+# Reverse proxy that terminates TLS so Secure session cookies work off-device.
+#
+# LAN setup (default): Caddy signs with its own INTERNAL CA, because Let's
+# Encrypt cannot validate a .local name or a private IP. Trust it on each client
+# by installing Caddy's root cert once:
+#   docker compose --env-file .env -f docker/docker-compose.yml cp \
+#     caddy:/data/caddy/pki/authorities/local/root.crt ./caddy-root.crt
+# then AirDrop/email caddy-root.crt to the device, install the profile, and
+# enable full trust (iOS: Settings > General > About > Certificate Trust Settings).
+#
+# Public domain instead? Delete `tls internal`, set SITE_ADDRESS to the domain,
+# and add an email here so Caddy fetches a real Let's Encrypt cert:
+#   { email you@example.com }
+
+{$SITE_ADDRESS} {
+	tls internal
+	reverse_proxy api:3000
+}

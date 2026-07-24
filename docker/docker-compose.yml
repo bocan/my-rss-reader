@@ -48,8 +48,10 @@ services:
       <<: *app-env
       API_PORT: 3000
       API_HOST: 0.0.0.0
+    # Bound to localhost only: LAN devices reach the app over HTTPS via caddy,
+    # so the plain-HTTP API is not exposed on the network.
     ports:
-      - '${API_PORT:-3000}:3000'
+      - '127.0.0.1:${API_PORT:-3000}:3000'
     depends_on:
       db:
         condition: service_healthy
@@ -70,5 +72,26 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  # TLS reverse proxy in front of the API. Terminates HTTPS (so Secure cookies
+  # work from other devices) and forwards to the API over the internal network.
+  # SITE_ADDRESS is the hostname it serves - use the Mac's Bonjour name (e.g.
+  # Chriss-MacBook-Pro.local) so Apple devices resolve it with no DNS setup.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - api
+
 volumes:
   db-data:
+  caddy-data:
+  caddy-config:
