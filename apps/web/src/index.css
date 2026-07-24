@@ -3,6 +3,9 @@
 @plugin '@tailwindcss/typography';
 
 @custom-variant dark (&:is(.dark *));
+/* `compact:` utilities apply when the root carries data-density="compact"
+   (SPEC-016 Phase 3). Density is set on <html> by lib/theme.ts / AppShell. */
+@custom-variant compact (&:is([data-density='compact'] *));
 
 /* Design tokens (shadcn/ui compatible, oklch). SPEC-016: eight named themes.
    Each theme overrides ~18 tokens; neutrals are tinted a hair toward the accent

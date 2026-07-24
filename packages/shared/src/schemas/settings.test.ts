@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { ARTICLE_VIEWS, THEME_SETTINGS, THEMES, VIEW_MODES } from '../types.js';
+import { ARTICLE_VIEWS, DENSITIES, THEME_SETTINGS, THEMES, VIEW_MODES } from '../types.js';
 import { DEFAULT_SETTINGS, settingsSchema, updateSettingsSchema } from './settings.js';
 
 describe('settingsSchema', () => {
@@ -28,7 +28,8 @@ describe('settingsSchema', () => {
 
 test('preference vocab is the single source of truth', () => {
   // These arrays back the DB pgEnums; a drift here means a migration mismatch.
-  expect([...VIEW_MODES]).toEqual(['cards', 'list', 'magazine', 'compact']);
+  expect([...VIEW_MODES]).toEqual(['cards', 'list', 'magazine']);
+  expect([...DENSITIES]).toEqual(['comfortable', 'compact']);
   expect([...ARTICLE_VIEWS]).toEqual(['simplified', 'readable', 'web']);
   // theme is now a free-form text column of a named theme or 'auto' (SPEC-016).
   expect([...THEME_SETTINGS]).toEqual([

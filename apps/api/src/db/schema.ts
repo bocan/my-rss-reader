@@ -35,10 +35,9 @@ export const userRole = pgEnum('user_role', ['admin', 'user']);
 // @rss/shared's REGISTRATION_MODES.
 export const registrationMode = pgEnum('registration_mode', ['open', 'invite', 'closed']);
 
-// Preference enums (SPEC-011). Members must stay in lockstep with @rss/shared's
-// VIEW_MODES / ARTICLE_VIEWS; a unit test asserts the equality. `theme` is a
-// free-form text column (a named theme id or 'auto') as of SPEC-016.
-export const viewModeEnum = pgEnum('view_mode', ['cards', 'list', 'magazine', 'compact']);
+// Preference enums (SPEC-011). articleView stays a pgEnum (a stable set); a unit
+// test asserts it matches @rss/shared. `theme`, `density`, and the view-mode
+// columns are free-form text (SPEC-016) since their vocabularies changed.
 export const articleViewEnum = pgEnum('article_view', ['simplified', 'readable', 'web']);
 
 // --- Identity ------------------------------------------------------------
@@ -78,7 +77,8 @@ export const userSettings = pgTable('user_settings', {
     .primaryKey()
     .references(() => users.id, { onDelete: 'cascade' }),
   theme: text().notNull().default('auto'),
-  defaultViewMode: viewModeEnum().notNull().default('cards'),
+  density: text().notNull().default('comfortable'),
+  defaultViewMode: text().notNull().default('cards'),
   defaultArticleView: articleViewEnum().notNull().default('simplified'),
   markReadOnScroll: boolean().notNull().default(false),
   showUnreadOnly: boolean().notNull().default(false),
@@ -160,7 +160,7 @@ export const subscriptions = pgTable('subscriptions', {
   customTitle: text(),
   position: integer().notNull().default(0),
   // Per-feed list-view override (SPEC-011). null = inherit the user default.
-  viewMode: viewModeEnum(),
+  viewMode: text(),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   uniqueIndex('subscriptions_user_feed_key').on(t.userId, t.feedId),

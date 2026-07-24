@@ -3,9 +3,13 @@
  * Keep these framework-agnostic: no React, no Fastify, no Drizzle imports.
  */
 
-/** How a list of articles is rendered in the reading pane. */
-export const VIEW_MODES = ['cards', 'list', 'magazine', 'compact'] as const;
+/** How a list of articles is laid out. (Compact is a density now, not a view.) */
+export const VIEW_MODES = ['cards', 'list', 'magazine'] as const;
 export type ViewMode = (typeof VIEW_MODES)[number];
+
+/** Row/spacing density, applied across views (SPEC-016). */
+export const DENSITIES = ['comfortable', 'compact'] as const;
+export type Density = (typeof DENSITIES)[number];
 
 /** How a single article's body is presented. */
 export const ARTICLE_VIEWS = ['simplified', 'readable', 'web'] as const;

@@ -9,6 +9,7 @@ const CACHE_KEY = 'rss-settings';
 
 const SERVER: Settings = {
   theme: 'midnight',
+  density: 'comfortable',
   defaultViewMode: 'magazine',
   defaultArticleView: 'readable',
   markReadOnScroll: true,

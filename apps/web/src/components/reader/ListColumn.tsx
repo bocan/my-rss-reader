@@ -1,29 +1,26 @@
 import type { ArticleSurface } from '@/hooks/use-article-surface';
 import type { ArticleListItem } from '@/hooks/use-articles';
-import type { ViewMode } from '@rss/shared';
 import { ArticleScroller } from './ArticleScroller';
-import { CompactView, ListView } from './views';
+import { ListView } from './views';
 import type { FeedMetaMap } from './article-row';
 
-/** The middle column for list/compact modes: reader stays a separate column. */
+/** The middle column for the list view; density (comfortable/compact) is applied
+ *  inside ListView via the `compact:` variant (SPEC-016). */
 export function ListColumn({
   surface,
   feeds,
-  view,
   selectedId,
   onSelect,
 }: {
   surface: ArticleSurface;
   feeds: FeedMetaMap;
-  view: Extract<ViewMode, 'list' | 'compact'>;
   selectedId: string | null;
   onSelect: (article: ArticleListItem) => void;
 }) {
-  const View = view === 'compact' ? CompactView : ListView;
   return (
     <ArticleScroller surface={surface}>
-      <div key={view} className="animate-in fade-in duration-200 motion-reduce:animate-none">
-        <View
+      <div className="animate-in fade-in duration-200 motion-reduce:animate-none">
+        <ListView
           items={surface.items}
           feeds={feeds}
           selectedId={selectedId}

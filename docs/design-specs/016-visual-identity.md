@@ -1,7 +1,7 @@
 # SPEC-016: Visual identity — themes, typography, and density
 
-- **Status:** In progress — Phase 1 (theme engine) done; Phases 2 (typography)
-  and 3 (density/compact) pending
+- **Status:** Done — Phase 1 (theme engine), Phase 2 (typography), Phase 3
+  (density + compact retirement) all shipped
 - **Phase:** 3
 - **Depends on:** SPEC-011 (server-persisted settings), SPEC-010/014 (views/layout)
 - **Estimated size:** L (multi-day; built in phases)

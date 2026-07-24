@@ -1,9 +1,11 @@
 import { CloudOff, Rss } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { ThemePickerButton } from '@/components/theme/ThemePicker';
 import { useLogout, useSession } from '@/lib/auth';
 import { useOnlineStatus } from '@/lib/pwa';
+import { useSettings } from '@/lib/settings';
+import { applyDensity } from '@/lib/theme';
 
 /**
  * The permanent app frame. `leading` sits before the product mark (the sidebar
@@ -22,6 +24,10 @@ export function AppShell({
   const { data: user } = useSession();
   const logout = useLogout();
   const online = useOnlineStatus();
+  const { settings } = useSettings();
+
+  // Keep the row density in sync with the server-backed setting.
+  useEffect(() => applyDensity(settings.density), [settings.density]);
 
   return (
     <div className="flex h-full flex-col">

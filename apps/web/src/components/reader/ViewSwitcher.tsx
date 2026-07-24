@@ -1,11 +1,10 @@
 import { VIEW_MODES, type ViewMode } from '@rss/shared';
-import { AlignJustify, LayoutGrid, List, Newspaper } from 'lucide-react';
+import { LayoutGrid, List, Newspaper } from 'lucide-react';
 import type { ComponentType } from 'react';
 import { cn } from '@/lib/utils';
 
 const OPTIONS: Record<ViewMode, { label: string; Icon: ComponentType<{ className?: string }> }> = {
   list: { label: 'List view', Icon: List },
-  compact: { label: 'Compact view', Icon: AlignJustify },
   cards: { label: 'Card view', Icon: LayoutGrid },
   magazine: { label: 'Magazine view', Icon: Newspaper },
 };

@@ -64,6 +64,13 @@
       "when": 1784915408383,
       "tag": "0008_many_shiver_man",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784917899949,
+      "tag": "0009_whole_kid_colt",
+      "breakpoints": true
     }
   ]
 }

@@ -428,7 +428,6 @@ export function ReaderPage() {
                 <ListColumn
                   surface={surface}
                   feeds={feedMeta}
-                  view={view}
                   selectedId={selectedId}
                   onSelect={(a) => selectArticle(a.id)}
                 />

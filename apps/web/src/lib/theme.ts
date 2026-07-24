@@ -1,4 +1,10 @@
-import { resolveTheme, THEME_SETTINGS, type ThemeSetting } from '@rss/shared';
+import {
+  DENSITIES,
+  resolveTheme,
+  THEME_SETTINGS,
+  type Density,
+  type ThemeSetting,
+} from '@rss/shared';
 import { useCallback, useEffect } from 'react';
 import { useSettings } from './settings';
 
@@ -40,14 +46,32 @@ function readStored(): ThemeSetting {
   return 'auto';
 }
 
+/** Apply the row density to the DOM (drives the `compact:` variant). */
+export function applyDensity(density: Density): void {
+  document.documentElement.setAttribute('data-density', density);
+}
+
+/** Read the density out of the localStorage settings mirror for a no-flash init. */
+function readStoredDensity(): Density {
+  try {
+    const raw = window.localStorage.getItem('rss-settings');
+    const value = raw ? (JSON.parse(raw) as { density?: string }).density : undefined;
+    if (value && (DENSITIES as readonly string[]).includes(value)) return value as Density;
+  } catch {
+    // no storage access
+  }
+  return 'comfortable';
+}
+
 /**
- * Paint the last-known theme before React mounts, so there is no flash. Reads
- * only localStorage (synchronous); the server value reconciles after hydration
- * via useTheme. Call once at startup.
+ * Paint the last-known theme and density before React mounts, so there is no
+ * flash. Reads only localStorage (synchronous); server values reconcile after
+ * hydration via useTheme. Call once at startup.
  */
 export function initTheme(): ThemeSetting {
   const setting = readStored();
   applyResolved(setting, false);
+  applyDensity(readStoredDensity());
   return setting;
 }
 

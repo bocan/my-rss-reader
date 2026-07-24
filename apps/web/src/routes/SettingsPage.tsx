@@ -1,7 +1,9 @@
 import {
   ARTICLE_VIEWS,
+  DENSITIES,
   VIEW_MODES,
   type ArticleView,
+  type Density,
   type ImportOpmlResult,
   type Settings,
   type ViewMode,
@@ -183,9 +185,12 @@ function AccountSection() {
 
 const VIEW_LABEL: Record<ViewMode, string> = {
   list: 'List',
-  compact: 'Compact',
   cards: 'Cards',
   magazine: 'Magazine',
+};
+const DENSITY_LABEL: Record<Density, string> = {
+  comfortable: 'Comfortable',
+  compact: 'Compact',
 };
 const ARTICLE_VIEW_LABEL: Record<ArticleView, string> = {
   simplified: 'Simplified',
@@ -323,6 +328,13 @@ export function SettingsPage() {
             options={VIEW_MODES}
             labels={VIEW_LABEL}
             onChange={(v) => set('defaultViewMode', v)}
+          />
+          <Segmented
+            label="Density"
+            value={settings.density}
+            options={DENSITIES}
+            labels={DENSITY_LABEL}
+            onChange={(v) => set('density', v)}
           />
           <Segmented
             label="Default article view"

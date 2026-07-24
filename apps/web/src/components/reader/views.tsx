@@ -25,7 +25,9 @@ const ENTER = 'animate-in fade-in slide-in-from-bottom-1 fill-mode-backwards mot
 
 const focusRing = (focused: boolean) => focused && 'ring-2 ring-ring';
 
-// --- List (dense one-line rows) -----------------------------------------
+// --- List --------------------------------------------------------------
+// Two-line rows at comfortable density; the `compact:` variant collapses them
+// to a single dense title-only line (SPEC-016 replaces the old Compact view).
 
 export function ListView({ items, feeds, selectedId, focusedId, onSelect, registerRow }: ViewProps) {
   return (
@@ -42,6 +44,7 @@ export function ListView({ items, feeds, selectedId, focusedId, onSelect, regist
               className={cn(
                 'flex w-full items-start gap-2 border-b px-3 py-2.5 text-left',
                 'transition-colors duration-200 motion-reduce:transition-none',
+                'compact:items-center compact:py-1.5',
                 selectedId === article.id ? 'bg-accent' : 'hover:bg-accent/60',
                 focusRing(focused),
                 ENTER,
@@ -51,6 +54,7 @@ export function ListView({ items, feeds, selectedId, focusedId, onSelect, regist
                 aria-hidden
                 className={cn(
                   'mt-1.5 size-2 shrink-0 rounded-full transition-colors duration-300 motion-reduce:transition-none',
+                  'compact:mt-0 compact:size-1.5',
                   row.isRead ? 'bg-transparent' : 'bg-primary',
                 )}
               />
@@ -63,63 +67,16 @@ export function ListView({ items, feeds, selectedId, focusedId, onSelect, regist
                 >
                   {row.title}
                 </span>
-                <span className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                {/* Meta line: hidden in compact density for a one-line row. */}
+                <span className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground compact:hidden">
                   <span className="truncate">{row.feedName}</span>
                   <span className="shrink-0">{row.when}</span>
                   {row.isStarred && <Star className="size-3 shrink-0 fill-primary text-primary" />}
                 </span>
               </span>
-            </button>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-// --- Compact (title-only, maximum density) ------------------------------
-
-export function CompactView({ items, feeds, selectedId, focusedId, onSelect, registerRow }: ViewProps) {
-  return (
-    <ul role="listbox" aria-label="Articles">
-      {items.map((article, index) => {
-        const row = deriveArticleRow(article, feeds);
-        const focused = focusedId === article.id;
-        return (
-          <li key={article.id} role="option" aria-selected={focused} ref={registerRow(article.id)}>
-            <button
-              type="button"
-              onClick={() => onSelect(article)}
-              style={stagger(index)}
-              className={cn(
-                'group flex w-full items-center gap-2 border-b px-3 py-1.5 text-left',
-                'transition-colors duration-200 motion-reduce:transition-none',
-                selectedId === article.id ? 'bg-accent' : 'hover:bg-accent/60',
-                focusRing(focused),
-                ENTER,
-              )}
-            >
-              <span
-                aria-hidden
-                className={cn(
-                  'size-1.5 shrink-0 rounded-full transition-colors duration-300 motion-reduce:transition-none',
-                  row.isRead ? 'bg-transparent' : 'bg-primary',
-                )}
-              />
-              <span
-                className={cn(
-                  'min-w-0 flex-1 truncate text-sm',
-                  row.isRead ? 'text-muted-foreground' : 'font-medium',
-                )}
-              >
-                {row.title}
-              </span>
-              {row.isStarred ? (
-                <Star className="size-3 shrink-0 fill-primary text-primary" />
-              ) : (
-                <span className="w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-40 motion-reduce:transition-none">
-                  <Star className="size-3" />
-                </span>
+              {/* Starred marker kept visible when the meta line is hidden. */}
+              {row.isStarred && (
+                <Star className="hidden size-3 shrink-0 fill-primary text-primary compact:inline" />
               )}
             </button>
           </li>

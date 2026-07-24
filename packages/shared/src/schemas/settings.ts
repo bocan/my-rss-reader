@@ -1,8 +1,9 @@
 import { z } from 'zod';
-import { ARTICLE_VIEWS, THEME_SETTINGS, VIEW_MODES } from '../types.js';
+import { ARTICLE_VIEWS, DENSITIES, THEME_SETTINGS, VIEW_MODES } from '../types.js';
 
 export const settingsSchema = z.object({
   theme: z.enum(THEME_SETTINGS),
+  density: z.enum(DENSITIES),
   defaultViewMode: z.enum(VIEW_MODES),
   defaultArticleView: z.enum(ARTICLE_VIEWS),
   markReadOnScroll: z.boolean(),
@@ -20,6 +21,7 @@ export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;
  */
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'auto',
+  density: 'comfortable',
   defaultViewMode: 'cards',
   defaultArticleView: 'simplified',
   markReadOnScroll: false,
