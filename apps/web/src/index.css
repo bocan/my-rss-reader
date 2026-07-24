@@ -200,6 +200,13 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 
+  /* Self-hosted type (SPEC-016 Phase 2): Hanken Grotesk for UI, Newsreader for
+     long-form reading, JetBrains Mono for code. Overriding these Tailwind theme
+     keys makes font-sans/serif/mono and the default body font use them. */
+  --font-sans: 'Hanken Grotesk Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'Newsreader Variable', ui-serif, Georgia, Cambria, serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, monospace;
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -221,6 +228,16 @@
 }
 
 @layer base {
+  /* The reading pane reads as a proper article: the Newsreader serif at a
+     comfortable size, line-height, and optical sizing (SPEC-016 Phase 2). The
+     ~65ch measure comes from Tailwind Typography's default max-width. */
+  .prose {
+    font-family: var(--font-serif);
+    font-optical-sizing: auto;
+    font-size: 1.075rem;
+    line-height: 1.75;
+  }
+
   /* Map Tailwind Typography onto the app's design tokens so prose (the reading
      pane) matches the UI and flips correctly under the class-based dark mode. */
   .prose {

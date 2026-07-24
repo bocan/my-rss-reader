@@ -38,6 +38,9 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // Precache the shell AND the self-hosted fonts (woff2 is not in the
+        // plugin default) so reading works fully offline.
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         // Precache the built shell; any route falls back to index.html offline,
         // except /api which must always hit the network / runtime cache.
         navigateFallback: '/index.html',

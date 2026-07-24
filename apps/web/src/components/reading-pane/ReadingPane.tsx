@@ -96,7 +96,9 @@ export function ReadingPane({ articleId }: { articleId: string }) {
   return (
     <div className="flex h-full flex-col">
       <div className="border-b p-4 md:p-6">
-        <h1 className="text-2xl font-semibold leading-tight">{article.title ?? '(untitled)'}</h1>
+        <h1 className="font-serif text-[1.7rem] font-semibold leading-tight tracking-tight">
+          {article.title ?? '(untitled)'}
+        </h1>
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
           <span className="flex items-center gap-1.5">
             {article.feed.faviconUrl ? (

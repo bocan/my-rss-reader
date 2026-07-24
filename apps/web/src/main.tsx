@@ -5,6 +5,13 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router';
 import { App } from './App';
 import { PwaToasts } from './components/pwa/PwaToasts';
+// Self-hosted variable fonts (SPEC-016 Phase 2). Bundled by Vite and precached
+// by the service worker, so they render offline with no external request.
+import '@fontsource-variable/hanken-grotesk';
+import '@fontsource-variable/hanken-grotesk/wght-italic.css';
+import '@fontsource-variable/newsreader';
+import '@fontsource-variable/newsreader/wght-italic.css';
+import '@fontsource-variable/jetbrains-mono';
 import './index.css';
 import { registerMutationDefaults } from './lib/articles';
 import { persister, PERSIST_BUSTER, shouldDehydrateQuery } from './lib/persister';
