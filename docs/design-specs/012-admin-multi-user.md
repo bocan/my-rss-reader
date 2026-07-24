@@ -1,6 +1,6 @@
 # SPEC-012: Admin and multi-user management
 
-- **Status:** Todo
+- **Status:** Done
 - **Phase:** 3
 - **Depends on:** none
 - **Estimated size:** M

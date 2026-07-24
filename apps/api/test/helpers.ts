@@ -6,6 +6,7 @@ import {
   articleStates,
   feeds,
   folders,
+  invites,
   sessions,
   subscriptions,
   users,
@@ -16,6 +17,7 @@ type UserInsert = typeof users.$inferInsert;
 type FeedInsert = typeof feeds.$inferInsert;
 type FolderInsert = typeof folders.$inferInsert;
 type SubscriptionInsert = typeof subscriptions.$inferInsert;
+type InviteInsert = typeof invites.$inferInsert;
 type ArticleInsert = typeof articles.$inferInsert;
 type ArticleStateInsert = typeof articleStates.$inferInsert;
 
@@ -24,7 +26,7 @@ const rand = (bytes = 4) => randomBytes(bytes).toString('hex');
 /** Truncate every app table. Call in beforeEach for a clean slate per test. */
 export async function resetDb(): Promise<void> {
   await db.execute(
-    sql`truncate users, sessions, folders, feeds, subscriptions, articles, article_states restart identity cascade`,
+    sql`truncate users, sessions, folders, feeds, subscriptions, articles, article_states, invites, app_settings restart identity cascade`,
   );
 }
 
@@ -37,6 +39,28 @@ export async function seedUser(overrides: Partial<UserInsert> = {}) {
       username: `u_${n}`,
       displayName: 'Test User',
       passwordHash: 'not-a-real-hash',
+      ...overrides,
+    })
+    .returning();
+  return row!;
+}
+
+/** Seed an admin user (role defaults to 'admin'). */
+export async function seedAdmin(overrides: Partial<UserInsert> = {}) {
+  return seedUser({ role: 'admin', ...overrides });
+}
+
+/** Seed a registration invite; expires in 7 days and is unredeemed by default. */
+export async function seedInvite(
+  createdByUserId: string,
+  overrides: Partial<InviteInsert> = {},
+) {
+  const [row] = await db
+    .insert(invites)
+    .values({
+      token: randomBytes(24).toString('base64url'),
+      createdByUserId,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       ...overrides,
     })
     .returning();

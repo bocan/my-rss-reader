@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, Inbox, Keyboard, PanelLeft, Plus, Settings, Star } from 'lucide-react';
+import { ChevronLeft, Inbox, Keyboard, PanelLeft, Plus, Settings, Shield, Star } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { AppShell } from '@/components/layout/AppShell';
@@ -16,6 +16,7 @@ import type { ArticleFilters, ArticleListItem } from '@/hooks/use-articles';
 import { useShortcuts } from '@/hooks/use-shortcuts';
 import { useSidebar } from '@/hooks/use-sidebar';
 import { useMarkRead, useToggleArticleState, useUnreadCounts } from '@/lib/articles';
+import { useSession } from '@/lib/auth';
 import { useFolders, useSubscriptions, useUpdateSubscription } from '@/lib/folders';
 import { useSettings } from '@/lib/settings';
 import type { ViewMode } from '@rss/shared';
@@ -39,6 +40,7 @@ export function ReaderPage() {
   const isWide = useIsWide();
   const { collapsed, toggle: toggleSidebar } = useSidebar();
   const { settings, update: updateSettings } = useSettings();
+  const { data: me } = useSession();
 
   const { data: feedsData, isLoading } = useSubscriptions();
   const subs = feedsData?.items ?? [];
@@ -294,6 +296,11 @@ export function ReaderPage() {
             />
 
             <div className="mt-auto space-y-0.5 pt-2">
+              {me?.role === 'admin' && (
+                <Link to="/admin" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent">
+                  <Shield className="size-3.5" /> Administration
+                </Link>
+              )}
               <Link to="/settings" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent">
                 <Settings className="size-3.5" /> Settings
               </Link>

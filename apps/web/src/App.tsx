@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router';
 import { useSession } from '@/lib/auth';
+import { AdminPage } from '@/routes/AdminPage';
 import { LoginPage } from '@/routes/LoginPage';
 import { ReaderPage } from '@/routes/ReaderPage';
 import { SettingsPage } from '@/routes/SettingsPage';
@@ -18,8 +19,15 @@ export function App() {
   return (
     <Routes>
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <LoginPage />} />
+      <Route path="/register" element={user ? <Navigate to="/" replace /> : <LoginPage />} />
       <Route path="/" element={user ? <ReaderPage /> : <Navigate to="/login" replace />} />
       <Route path="/settings" element={user ? <SettingsPage /> : <Navigate to="/login" replace />} />
+      <Route
+        path="/admin"
+        element={
+          user?.role === 'admin' ? <AdminPage /> : <Navigate to={user ? '/' : '/login'} replace />
+        }
+      />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

@@ -17,6 +17,10 @@ export type SortOrder = (typeof SORT_ORDERS)[number];
 
 export type UserRole = 'admin' | 'user';
 
+/** How new accounts may be created for the instance (SPEC-012). */
+export const REGISTRATION_MODES = ['open', 'invite', 'closed'] as const;
+export type RegistrationMode = (typeof REGISTRATION_MODES)[number];
+
 /** Public user shape (never includes password hash). */
 export interface PublicUser {
   id: string;
@@ -25,6 +29,30 @@ export interface PublicUser {
   displayName: string;
   role: UserRole;
   createdAt: string;
+}
+
+/** A user as seen by an admin: public fields plus the disabled flag (SPEC-012). */
+export interface AdminUser extends PublicUser {
+  disabledAt: string | null;
+}
+
+/** A registration invite as returned by the admin API (SPEC-012). */
+export interface InviteDto {
+  id: string;
+  token: string;
+  email: string | null;
+  role: UserRole;
+  expiresAt: string;
+  redeemedAt: string | null;
+  redeemedByUserId: string | null;
+  createdAt: string;
+  /** Relative path a new user opens to redeem this invite. */
+  link: string;
+}
+
+/** Instance-wide settings visible to admins (SPEC-012). */
+export interface AppSettingsDto {
+  registrationMode: RegistrationMode;
 }
 
 /** A cursor-paginated response envelope. */

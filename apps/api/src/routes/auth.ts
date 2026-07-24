@@ -1,12 +1,18 @@
 import { loginSchema, registerSchema, type PublicUser } from '@rss/shared';
-import { count, eq, or } from 'drizzle-orm';
+import { and, count, eq, isNull, or } from 'drizzle-orm';
 import type { CookieSerializeOptions } from '@fastify/cookie';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { db } from '../db/index.js';
-import { users } from '../db/schema.js';
+import { invites, users } from '../db/schema.js';
 import { isProd } from '../env.js';
+import { inviteRedeemable } from '../lib/admin.js';
+import { getAppSettings } from '../lib/app-settings.js';
 import { hashPassword, verifyPassword } from '../lib/password.js';
 import { createSession, destroySession, resolveSession, SESSION_COOKIE } from '../lib/session.js';
+
+// Thrown when two registrations race for the same single-use invite; the loser's
+// transaction rolls back and the request is rejected like any invalid invite.
+class InviteRaceError extends Error {}
 
 function cookieOptions(expiresAt?: Date): CookieSerializeOptions {
   return {
@@ -51,24 +57,85 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
-    // The very first account to register becomes the admin.
     const counted = await db.select({ value: count() }).from(users);
-    const role = (counted[0]?.value ?? 0) === 0 ? 'admin' : 'user';
+    const isFirstUser = (counted[0]?.value ?? 0) === 0;
+
+    // Decide the role and which invite (if any) this registration redeems.
+    let role: 'admin' | 'user' = 'user';
+    let inviteToRedeem: { id: string } | null = null;
+
+    if (isFirstUser) {
+      // Bootstrap: the very first account is always the admin, regardless of
+      // registration mode, and does not consume an invite.
+      role = 'admin';
+    } else {
+      const { registrationMode } = await getAppSettings();
+      if (registrationMode === 'closed') {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message: 'Registration is closed',
+          statusCode: 403,
+        });
+      }
+      if (registrationMode === 'invite') {
+        const denied = () =>
+          reply.code(403).send({
+            error: 'Forbidden',
+            message: 'A valid invite is required',
+            statusCode: 403,
+          });
+        if (!input.inviteToken) return denied();
+        const [invite] = await db
+          .select()
+          .from(invites)
+          .where(eq(invites.token, input.inviteToken))
+          .limit(1);
+        if (!invite || !inviteRedeemable(invite, input.email, new Date())) return denied();
+        role = invite.role;
+        inviteToRedeem = { id: invite.id };
+      }
+    }
 
     const passwordHash = await hashPassword(input.password);
-    const [created] = await db
-      .insert(users)
-      .values({
-        email: input.email,
-        username: input.username,
-        displayName: input.displayName,
-        passwordHash,
-        role,
-      })
-      .returning();
 
-    await issueSession(reply, created!.id);
-    return reply.code(201).send(toPublicUser(created!));
+    // Insert the user and redeem the invite atomically. The invite UPDATE
+    // re-checks redeemedAt IS NULL so two concurrent redemptions cannot both win.
+    let created: typeof users.$inferSelect;
+    try {
+      created = await db.transaction(async (tx) => {
+        const [row] = await tx
+          .insert(users)
+          .values({
+            email: input.email,
+            username: input.username,
+            displayName: input.displayName,
+            passwordHash,
+            role,
+          })
+          .returning();
+        if (inviteToRedeem) {
+          const redeemed = await tx
+            .update(invites)
+            .set({ redeemedByUserId: row!.id, redeemedAt: new Date() })
+            .where(and(eq(invites.id, inviteToRedeem.id), isNull(invites.redeemedAt)))
+            .returning({ id: invites.id });
+          if (redeemed.length !== 1) throw new InviteRaceError();
+        }
+        return row!;
+      });
+    } catch (err) {
+      if (err instanceof InviteRaceError) {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message: 'A valid invite is required',
+          statusCode: 403,
+        });
+      }
+      throw err;
+    }
+
+    await issueSession(reply, created.id);
+    return reply.code(201).send(toPublicUser(created));
   });
 
   app.post('/auth/login', async (request, reply) => {
@@ -84,7 +151,8 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const digest = user?.passwordHash ?? '$argon2id$v=19$m=19456,t=2,p=1$notarealhash$notarealhash';
     const ok = await verifyPassword(digest, input.password);
 
-    if (!user || !ok) {
+    // Reject disabled accounts identically to bad credentials (no oracle).
+    if (!user || !ok || user.disabledAt !== null) {
       return reply.code(401).send({
         error: 'Unauthorized',
         message: 'Invalid credentials',
@@ -94,6 +162,12 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
     await issueSession(reply, user.id);
     return toPublicUser(user);
+  });
+
+  // Unauthenticated: lets the register page adapt to the instance's mode.
+  app.get('/auth/registration-mode', async () => {
+    const { registrationMode } = await getAppSettings();
+    return { mode: registrationMode };
   });
 
   app.post('/auth/logout', async (request, reply) => {

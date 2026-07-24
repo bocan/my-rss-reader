@@ -24,4 +24,21 @@ export function registerAuth(app: FastifyInstance): void {
       });
     }
   });
+
+  app.decorate('requireAdmin', async (request: FastifyRequest, reply: FastifyReply) => {
+    if (!request.user) {
+      return reply.code(401).send({
+        error: 'Unauthorized',
+        message: 'Authentication required',
+        statusCode: 401,
+      });
+    }
+    if (request.user.role !== 'admin') {
+      return reply.code(403).send({
+        error: 'Forbidden',
+        message: 'Administrator access required',
+        statusCode: 403,
+      });
+    }
+  });
 }

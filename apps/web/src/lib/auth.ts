@@ -1,8 +1,17 @@
-import type { LoginInput, PublicUser, RegisterInput } from '@rss/shared';
+import type { LoginInput, PublicUser, RegisterInput, RegistrationMode } from '@rss/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiRequestError } from './api';
 
 const SESSION_KEY = ['auth', 'me'] as const;
+
+/** The instance's registration mode; drives what the register page offers. */
+export function useRegistrationMode() {
+  return useQuery({
+    queryKey: ['auth', 'registration-mode'],
+    queryFn: () => api<{ mode: RegistrationMode }>('/auth/registration-mode'),
+    staleTime: 5 * 60_000,
+  });
+}
 
 /** Current signed-in user, or null when anonymous. */
 export function useSession() {

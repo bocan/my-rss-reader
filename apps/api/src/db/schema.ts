@@ -2,6 +2,7 @@ import { relations, sql, type SQL } from 'drizzle-orm';
 import {
   type AnyPgColumn,
   boolean,
+  check,
   customType,
   index,
   integer,
@@ -30,6 +31,10 @@ const tsvector = customType<{ data: string }>({
 
 export const userRole = pgEnum('user_role', ['admin', 'user']);
 
+// How new accounts may be created (SPEC-012). Kept in lockstep with
+// @rss/shared's REGISTRATION_MODES.
+export const registrationMode = pgEnum('registration_mode', ['open', 'invite', 'closed']);
+
 // Preference enums (SPEC-011). Members must stay in lockstep with @rss/shared's
 // VIEW_MODES / ARTICLE_VIEWS; a unit test asserts the equality.
 export const themePref = pgEnum('theme_pref', ['light', 'dark', 'system']);
@@ -45,6 +50,9 @@ export const users = pgTable('users', {
   displayName: text().notNull(),
   passwordHash: text().notNull(),
   role: userRole().notNull().default('user'),
+  // Non-null means the account is disabled (SPEC-012): it cannot log in and its
+  // sessions stop resolving.
+  disabledAt: timestamp({ withTimezone: true }),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
@@ -76,6 +84,36 @@ export const userSettings = pgTable('user_settings', {
   showUnreadOnly: boolean().notNull().default(false),
   updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
+
+// --- Administration (SPEC-012) -------------------------------------------
+
+// Instance-wide settings as a single pinned row (id = 1). getSettings() upserts
+// the seed row on first read so a fresh DB never 500s.
+export const appSettings = pgTable('app_settings', {
+  id: integer().primaryKey(),
+  registrationMode: registrationMode().notNull().default('open'),
+  updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+}, (t) => [check('app_settings_singleton', sql`${t.id} = 1`)]);
+
+// Redeemable registration invites. Single-use: redemption stamps
+// redeemedByUserId/redeemedAt inside the same transaction as the user insert.
+export const invites = pgTable('invites', {
+  id: uuid().primaryKey().defaultRandom(),
+  token: text().notNull(),
+  // Optional pin to a single address; null = usable by anyone with the link.
+  email: text(),
+  role: userRole().notNull().default('user'),
+  createdByUserId: uuid()
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  expiresAt: timestamp({ withTimezone: true }).notNull(),
+  redeemedByUserId: uuid().references(() => users.id, { onDelete: 'set null' }),
+  redeemedAt: timestamp({ withTimezone: true }),
+  createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('invites_token_key').on(t.token),
+  index('invites_created_by_idx').on(t.createdByUserId),
+]);
 
 // --- Organization --------------------------------------------------------
 
@@ -201,6 +239,19 @@ export const usersRelations = relations(users, ({ many }) => ({
   subscriptions: many(subscriptions),
 }));
 
+export const invitesRelations = relations(invites, ({ one }) => ({
+  createdBy: one(users, {
+    fields: [invites.createdByUserId],
+    references: [users.id],
+    relationName: 'invitesCreated',
+  }),
+  redeemedBy: one(users, {
+    fields: [invites.redeemedByUserId],
+    references: [users.id],
+    relationName: 'invitesRedeemed',
+  }),
+}));
+
 export const feedsRelations = relations(feeds, ({ many }) => ({
   subscriptions: many(subscriptions),
   articles: many(articles),
@@ -228,3 +279,5 @@ export type NewUser = typeof users.$inferInsert;
 export type Feed = typeof feeds.$inferSelect;
 export type Article = typeof articles.$inferSelect;
 export type Subscription = typeof subscriptions.$inferSelect;
+export type AppSettings = typeof appSettings.$inferSelect;
+export type Invite = typeof invites.$inferSelect;

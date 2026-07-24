@@ -9,6 +9,8 @@ export const registerSchema = z.object({
     .regex(/^[a-z0-9_-]+$/i, 'Letters, numbers, dashes and underscores only'),
   displayName: z.string().min(1).max(64),
   password: z.string().min(8).max(256),
+  // Present when registering through an invite link (SPEC-012).
+  inviteToken: z.string().optional(),
 });
 export type RegisterInput = z.infer<typeof registerSchema>;
 

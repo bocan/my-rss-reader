@@ -9,5 +9,7 @@ declare module 'fastify' {
   interface FastifyInstance {
     /** preHandler that rejects unauthenticated requests with 401. */
     requireAuth: preHandlerHookHandler;
+    /** preHandler that rejects anonymous (401) or non-admin (403) requests. */
+    requireAdmin: preHandlerHookHandler;
   }
 }

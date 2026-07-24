@@ -34,6 +34,7 @@ export async function resolveSession(token: string | undefined): Promise<PublicU
       displayName: users.displayName,
       role: users.role,
       createdAt: users.createdAt,
+      disabledAt: users.disabledAt,
       expiresAt: sessions.expiresAt,
     })
     .from(sessions)
@@ -43,6 +44,9 @@ export async function resolveSession(token: string | undefined): Promise<PublicU
 
   const record = row[0];
   if (!record) return null;
+
+  // A disabled account's cookie stops working immediately (SPEC-012).
+  if (record.disabledAt !== null) return null;
 
   if (record.expiresAt.getTime() < Date.now()) {
     await destroySession(token);
