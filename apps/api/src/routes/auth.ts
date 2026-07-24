@@ -1,9 +1,15 @@
-import { loginSchema, registerSchema, type PublicUser } from '@rss/shared';
-import { and, count, eq, isNull, or } from 'drizzle-orm';
+import {
+  changePasswordSchema,
+  loginSchema,
+  registerSchema,
+  updateAccountSchema,
+  type PublicUser,
+} from '@rss/shared';
+import { and, count, eq, isNull, ne, or } from 'drizzle-orm';
 import type { CookieSerializeOptions } from '@fastify/cookie';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { db } from '../db/index.js';
-import { invites, users } from '../db/schema.js';
+import { invites, sessions, users } from '../db/schema.js';
 import { isProd } from '../env.js';
 import { inviteRedeemable } from '../lib/admin.js';
 import { getAppSettings } from '../lib/app-settings.js';
@@ -188,5 +194,75 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       });
     }
     return user;
+  });
+
+  // Update the caller's own display name and/or email (SPEC-017). Scoped to
+  // request.user; there is no user id in the path.
+  app.patch('/auth/me', { preHandler: app.requireAuth }, async (request, reply) => {
+    const input = updateAccountSchema.parse(request.body);
+    const userId = request.user!.id;
+
+    if (input.email !== undefined) {
+      // Uniqueness excludes the caller, so re-saving your own email is a no-op.
+      const [clash] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.email, input.email), ne(users.id, userId)))
+        .limit(1);
+      if (clash) {
+        return reply.code(409).send({
+          error: 'Conflict',
+          message: 'Email already in use',
+          statusCode: 409,
+        });
+      }
+    }
+
+    const [updated] = await db
+      .update(users)
+      .set({
+        ...(input.displayName !== undefined ? { displayName: input.displayName } : {}),
+        ...(input.email !== undefined ? { email: input.email } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId))
+      .returning();
+
+    return toPublicUser(updated!);
+  });
+
+  // Change the caller's password after confirming the current one. Other
+  // sessions are invalidated; the current session stays valid (SPEC-017).
+  app.post('/auth/change-password', { preHandler: app.requireAuth }, async (request, reply) => {
+    const input = changePasswordSchema.parse(request.body);
+    const userId = request.user!.id;
+
+    const [row] = await db
+      .select({ passwordHash: users.passwordHash })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    const ok = row ? await verifyPassword(row.passwordHash, input.currentPassword) : false;
+    if (!ok) {
+      return reply.code(400).send({
+        error: 'Bad Request',
+        message: 'Current password is incorrect',
+        statusCode: 400,
+      });
+    }
+
+    const passwordHash = await hashPassword(input.newPassword);
+    const currentToken = request.cookies[SESSION_COOKIE];
+    await db.transaction(async (tx) => {
+      await tx.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, userId));
+      // Sign out every other device; keep the caller's current session working.
+      await tx
+        .delete(sessions)
+        .where(
+          and(eq(sessions.userId, userId), currentToken ? ne(sessions.id, currentToken) : undefined),
+        );
+    });
+
+    return reply.code(204).send();
   });
 }

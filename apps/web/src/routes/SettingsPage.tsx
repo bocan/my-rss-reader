@@ -10,14 +10,177 @@ import {
 } from '@rss/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ChevronLeft, Download, Smartphone, Upload } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
 import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/button';
 import { api, ApiRequestError } from '@/lib/api';
+import { useChangePassword, useSession, useUpdateAccount } from '@/lib/auth';
 import { useInstallPrompt } from '@/lib/pwa';
 import { useSettings } from '@/lib/settings';
 import { cn } from '@/lib/utils';
+
+const inputClass =
+  'h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+
+function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof ApiRequestError ? (err.body?.message ?? err.message) : fallback;
+}
+
+/** Profile (display name + email) and password change (SPEC-017). */
+function AccountSection() {
+  const { data: user } = useSession();
+  const updateAccount = useUpdateAccount();
+  const changePassword = useChangePassword();
+
+  const [displayName, setDisplayName] = useState('');
+  const [email, setEmail] = useState('');
+  const [profileMsg, setProfileMsg] = useState<string | null>(null);
+
+  // Seed the profile fields once the session user is available.
+  useEffect(() => {
+    if (user) {
+      setDisplayName(user.displayName);
+      setEmail(user.email);
+    }
+  }, [user]);
+
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [pwMsg, setPwMsg] = useState<string | null>(null);
+
+  function saveProfile(e: FormEvent) {
+    e.preventDefault();
+    setProfileMsg(null);
+    const patch: { displayName?: string; email?: string } = {};
+    if (user && displayName !== user.displayName) patch.displayName = displayName;
+    if (user && email !== user.email) patch.email = email;
+    if (!patch.displayName && !patch.email) {
+      setProfileMsg('Nothing to save.');
+      return;
+    }
+    updateAccount.mutate(patch, {
+      onSuccess: () => setProfileMsg('Saved.'),
+      onError: (err) => setProfileMsg(errorMessage(err, 'Could not save.')),
+    });
+  }
+
+  const pwTooShort = next.length > 0 && next.length < 8;
+  const pwMismatch = confirm.length > 0 && next !== confirm;
+  const pwValid = current.length > 0 && next.length >= 8 && next === confirm;
+
+  function savePassword(e: FormEvent) {
+    e.preventDefault();
+    setPwMsg(null);
+    changePassword.mutate(
+      { currentPassword: current, newPassword: next },
+      {
+        onSuccess: () => {
+          setPwMsg('Password changed. Other devices have been signed out.');
+          setCurrent('');
+          setNext('');
+          setConfirm('');
+        },
+        onError: (err) => setPwMsg(errorMessage(err, 'Could not change password.')),
+      },
+    );
+  }
+
+  return (
+    <section className="space-y-5 rounded-lg border p-4">
+      <h2 className="font-medium">Account</h2>
+
+      <form onSubmit={saveProfile} className="space-y-3">
+        <label className="block space-y-1">
+          <span className="text-sm">Display name</span>
+          <input
+            className={inputClass}
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            maxLength={64}
+          />
+        </label>
+        <label className="block space-y-1">
+          <span className="text-sm">Email</span>
+          <input
+            type="email"
+            className={inputClass}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
+          />
+        </label>
+        {user && (
+          <p className="text-xs text-muted-foreground">
+            Signed in as <span className="font-medium">@{user.username}</span> (username can&apos;t
+            be changed).
+          </p>
+        )}
+        <div className="flex items-center gap-3">
+          <Button type="submit" size="sm" disabled={updateAccount.isPending}>
+            {updateAccount.isPending ? 'Saving…' : 'Save profile'}
+          </Button>
+          {profileMsg && (
+            <span
+              className={cn(
+                'text-sm',
+                updateAccount.isError ? 'text-destructive' : 'text-muted-foreground',
+              )}
+            >
+              {profileMsg}
+            </span>
+          )}
+        </div>
+      </form>
+
+      <form onSubmit={savePassword} className="space-y-3 border-t pt-4">
+        <h3 className="text-sm font-medium">Change password</h3>
+        <input
+          type="password"
+          className={inputClass}
+          placeholder="Current password"
+          value={current}
+          onChange={(e) => setCurrent(e.target.value)}
+          autoComplete="current-password"
+        />
+        <input
+          type="password"
+          className={inputClass}
+          placeholder="New password (min 8 characters)"
+          value={next}
+          onChange={(e) => setNext(e.target.value)}
+          autoComplete="new-password"
+        />
+        <input
+          type="password"
+          className={inputClass}
+          placeholder="Confirm new password"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          autoComplete="new-password"
+        />
+        {pwTooShort && <p className="text-xs text-destructive">Use at least 8 characters.</p>}
+        {pwMismatch && <p className="text-xs text-destructive">Passwords do not match.</p>}
+        <div className="flex items-center gap-3">
+          <Button type="submit" size="sm" disabled={!pwValid || changePassword.isPending}>
+            {changePassword.isPending ? 'Changing…' : 'Change password'}
+          </Button>
+          {pwMsg && (
+            <span
+              className={cn(
+                'text-sm',
+                changePassword.isError ? 'text-destructive' : 'text-muted-foreground',
+              )}
+            >
+              {pwMsg}
+            </span>
+          )}
+        </div>
+      </form>
+    </section>
+  );
+}
 
 const THEME_LABEL: Record<ThemePref, string> = { light: 'Light', dark: 'Dark', system: 'System' };
 const VIEW_LABEL: Record<ViewMode, string> = {
@@ -147,6 +310,8 @@ export function SettingsPage() {
           </Button>
           <h1 className="text-xl font-semibold">Settings</h1>
         </div>
+
+        <AccountSection />
 
         <section className="space-y-4 rounded-lg border p-4">
           <h2 className="font-medium">Preferences</h2>

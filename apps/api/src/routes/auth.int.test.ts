@@ -212,3 +212,89 @@ test('a disabled user cannot log in and their session stops resolving', async ()
   // Existing cookie no longer resolves.
   expect((await app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie } })).statusCode).toBe(401);
 });
+
+// --- Account settings (SPEC-017) ----------------------------------------
+
+/** Register alice through HTTP (real password hash) and capture her cookie. */
+async function registerAlice() {
+  const res = await register();
+  const value = res.cookies.find((c) => c.name === 'rss_session')!.value;
+  return { user: res.json() as { id: string }, cookie: `rss_session=${value}` };
+}
+
+const me = (cookie: string) =>
+  app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie } });
+const patchMe = (cookie: string, body: Record<string, unknown>) =>
+  app.inject({ method: 'PATCH', url: '/api/auth/me', headers: { cookie }, payload: body });
+const changePassword = (cookie: string, body: Record<string, unknown>) =>
+  app.inject({ method: 'POST', url: '/api/auth/change-password', headers: { cookie }, payload: body });
+const login = (identifier: string, password: string) =>
+  app.inject({ method: 'POST', url: '/api/auth/login', payload: { identifier, password } });
+
+test('PATCH /auth/me updates display name and email', async () => {
+  const { cookie } = await registerAlice();
+  const res = await patchMe(cookie, { displayName: 'Alice B', email: 'alice.b@example.com' });
+  expect(res.statusCode).toBe(200);
+  expect(res.json()).toMatchObject({ displayName: 'Alice B', email: 'alice.b@example.com' });
+  const after = await me(cookie);
+  expect(after.json()).toMatchObject({ displayName: 'Alice B', email: 'alice.b@example.com' });
+});
+
+test('PATCH /auth/me rejects an email another user already holds (409)', async () => {
+  await register({ email: 'taken@example.com', username: 'bob' });
+  const { cookie } = await registerAlice();
+  expect((await patchMe(cookie, { email: 'taken@example.com' })).statusCode).toBe(409);
+});
+
+test('PATCH /auth/me re-saving your own email succeeds', async () => {
+  const { cookie } = await registerAlice();
+  expect((await patchMe(cookie, { email: 'a@example.com' })).statusCode).toBe(200);
+});
+
+test('PATCH /auth/me with an empty body is 400, and anonymous is 401', async () => {
+  const { cookie } = await registerAlice();
+  expect((await patchMe(cookie, {})).statusCode).toBe(400);
+  expect((await app.inject({ method: 'PATCH', url: '/api/auth/me', payload: { displayName: 'X' } })).statusCode).toBe(401);
+});
+
+test('change-password: wrong current is 400 and leaves the old password working', async () => {
+  const { cookie } = await registerAlice();
+  const res = await changePassword(cookie, { currentPassword: 'wrongpass', newPassword: 'brandnewpass9' });
+  expect(res.statusCode).toBe(400);
+  expect((await login('alice', 'supersecret1')).statusCode).toBe(200);
+});
+
+test('change-password: correct current swaps the password', async () => {
+  const { cookie } = await registerAlice();
+  const res = await changePassword(cookie, {
+    currentPassword: 'supersecret1',
+    newPassword: 'brandnewpass9',
+  });
+  expect(res.statusCode).toBe(204);
+  expect((await login('alice', 'brandnewpass9')).statusCode).toBe(200);
+  expect((await login('alice', 'supersecret1')).statusCode).toBe(401);
+});
+
+test('change-password invalidates other sessions but keeps the current one', async () => {
+  const { user, cookie } = await registerAlice();
+  const otherCookie = await loginAs(user); // a second device
+  expect((await me(otherCookie)).statusCode).toBe(200);
+
+  const res = await changePassword(cookie, {
+    currentPassword: 'supersecret1',
+    newPassword: 'brandnewpass9',
+  });
+  expect(res.statusCode).toBe(204);
+
+  expect((await me(cookie)).statusCode).toBe(200); // current device still in
+  expect((await me(otherCookie)).statusCode).toBe(401); // other device signed out
+});
+
+test('change-password requires auth', async () => {
+  const res = await app.inject({
+    method: 'POST',
+    url: '/api/auth/change-password',
+    payload: { currentPassword: 'x', newPassword: 'brandnewpass9' },
+  });
+  expect(res.statusCode).toBe(401);
+});

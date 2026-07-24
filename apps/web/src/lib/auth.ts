@@ -1,4 +1,11 @@
-import type { LoginInput, PublicUser, RegisterInput, RegistrationMode } from '@rss/shared';
+import type {
+  ChangePasswordInput,
+  LoginInput,
+  PublicUser,
+  RegisterInput,
+  RegistrationMode,
+  UpdateAccountInput,
+} from '@rss/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { del } from 'idb-keyval';
 import { api, ApiRequestError } from './api';
@@ -46,6 +53,24 @@ export function useRegister() {
     mutationFn: (input: RegisterInput) =>
       api<PublicUser>('/auth/register', { method: 'POST', body: input }),
     onSuccess: (user) => qc.setQueryData(SESSION_KEY, user),
+  });
+}
+
+/** Update the signed-in user's display name and/or email (SPEC-017). */
+export function useUpdateAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateAccountInput) =>
+      api<PublicUser>('/auth/me', { method: 'PATCH', body: input }),
+    onSuccess: (user) => qc.setQueryData(SESSION_KEY, user),
+  });
+}
+
+/** Change the signed-in user's password after confirming the current one. */
+export function useChangePassword() {
+  return useMutation({
+    mutationFn: (input: ChangePasswordInput) =>
+      api<void>('/auth/change-password', { method: 'POST', body: input }),
   });
 }
 

@@ -34,12 +34,15 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     const userId = request.user!.id;
 
     if (Object.keys(input).length > 0) {
+      // Stamp updatedAt from the app clock on both the insert and the update so
+      // the timestamp never depends on mixing the Postgres and Node clocks.
+      const now = new Date();
       await db
         .insert(userSettings)
-        .values({ userId, ...input })
+        .values({ userId, ...input, updatedAt: now })
         .onConflictDoUpdate({
           target: userSettings.userId,
-          set: { ...input, updatedAt: new Date() },
+          set: { ...input, updatedAt: now },
         });
     }
 
