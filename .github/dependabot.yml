@@ -11,6 +11,15 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 10
+    # pnpm enforces a ~1-day minimumReleaseAge (its built-in default), so an
+    # install --frozen-lockfile rejects any package published under a day ago.
+    # Hold new versions until they clear that window (with margin) or every dep
+    # PR fails CI at the install step. Tune the per-severity days to taste.
+    cooldown:
+      default-days: 7
+      semver-patch-days: 3
+      semver-minor-days: 7
+      semver-major-days: 30
     commit-message:
       prefix: "chore(deps)"
       prefix-development: "chore(deps-dev)"
