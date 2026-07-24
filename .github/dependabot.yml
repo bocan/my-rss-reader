@@ -1,0 +1,53 @@
+# Dependabot configuration. See:
+# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+version: 2
+updates:
+  # --- JavaScript / TypeScript -------------------------------------------
+  # One pnpm workspace with a single root lockfile, so "/" covers apps/* and
+  # packages/* together.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    groups:
+      # Collapse routine minor/patch bumps into a single PR; majors still open
+      # individually so they get a deliberate review.
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # TypeScript is intentionally held at 6.x until typescript-eslint supports
+      # 7 (see docs / the pinned version in every package.json). Allow 6.x
+      # minor/patch, block the major bump.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+
+  # --- GitHub Actions -----------------------------------------------------
+  # Scans .github/workflows/*.yml (ci.yml, docker-publish.yml).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "chore(ci)"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  # --- Docker base image --------------------------------------------------
+  # The production image (docker/Dockerfile, node:22-slim).
+  - package-ecosystem: "docker"
+    directory: "/docker"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "chore(docker)"
