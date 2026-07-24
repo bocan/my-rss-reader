@@ -14,8 +14,10 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
 # Turbo builds @rss/web (vite) and @rss/api (tsup, which bundles @rss/shared).
 RUN pnpm build
-# Produce a self-contained production deployment of the API.
-RUN pnpm --filter @rss/api deploy --prod /app/api
+# Produce a self-contained production deployment of the API. --legacy keeps the
+# pre-pnpm-v10 deploy behavior: @rss/shared is bundled into the API by tsup, so
+# we don't need injected workspace packages, just the external prod deps.
+RUN pnpm --filter @rss/api deploy --legacy --prod /app/api
 # Ship the built SPA so the API can serve it from the same origin.
 RUN cp -r apps/web/dist /app/web
 
