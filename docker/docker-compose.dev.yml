@@ -1,0 +1,26 @@
+# Local development: just Postgres. Run the API and web with pnpm on the host
+# so you get hot reload.
+#   docker compose -f docker/docker-compose.dev.yml up -d
+#   pnpm db:migrate && pnpm dev
+name: rss-reader-dev
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rss}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rss}
+      POSTGRES_DB: ${POSTGRES_DB:-rss}
+    ports:
+      - '5432:5432'
+    volumes:
+      - db-data-dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-rss} -d ${POSTGRES_DB:-rss}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  db-data-dev:

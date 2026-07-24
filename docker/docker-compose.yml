@@ -1,0 +1,74 @@
+# Full self-hosted stack: Postgres + API (serves the SPA) + feed worker.
+# Usage: docker compose -f docker/docker-compose.yml up -d --build
+# Reads variables from the repo-root .env file.
+
+name: rss-reader
+
+x-app-env: &app-env
+  NODE_ENV: production
+  DATABASE_URL: postgres://${POSTGRES_USER:-rss}:${POSTGRES_PASSWORD:-rss}@db:5432/${POSTGRES_DB:-rss}
+  SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
+  APP_ORIGIN: ${APP_ORIGIN:-http://localhost:3000}
+  FEED_POLL_INTERVAL_SEC: ${FEED_POLL_INTERVAL_SEC:-900}
+  FEED_POLL_CONCURRENCY: ${FEED_POLL_CONCURRENCY:-8}
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rss}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rss}
+      POSTGRES_DB: ${POSTGRES_DB:-rss}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-rss} -d ${POSTGRES_DB:-rss}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command: ['node', 'dist/migrate.js']
+    environment: *app-env
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: 'no'
+
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command: ['node', 'dist/server.js']
+    environment:
+      <<: *app-env
+      API_PORT: 3000
+      API_HOST: 0.0.0.0
+    ports:
+      - '${API_PORT:-3000}:3000'
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command: ['node', 'dist/worker.js']
+    environment: *app-env
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  db-data:

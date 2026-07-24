@@ -1,0 +1,1 @@
+CREATE INDEX "articles_sort_key_idx" ON "articles" USING btree (coalesce("published_at", "fetched_at") desc,"id" DESC NULLS LAST);

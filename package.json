@@ -1,0 +1,38 @@
+{
+  "name": "rss-reader",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.16.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:integration": "turbo run test:integration",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:generate": "pnpm --filter @rss/api db:generate",
+    "db:migrate": "pnpm --filter @rss/api db:migrate",
+    "db:studio": "pnpm --filter @rss/api db:studio",
+    "docker:build": "docker build -f docker/Dockerfile -t rss-reader .",
+    "docker:up": "docker compose -f docker/docker-compose.yml up -d",
+    "docker:dev": "docker compose -f docker/docker-compose.dev.yml up -d"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.1.1",
+    "eslint": "10.7.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "eslint-plugin-react-refresh": "0.5.3",
+    "globals": "17.7.0",
+    "prettier": "3.9.6",
+    "turbo": "2.10.6",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.65.0"
+  }
+}
