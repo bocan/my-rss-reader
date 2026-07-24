@@ -1,6 +1,6 @@
 # SPEC-013: PWA, offline reading, and mobile polish
 
-- **Status:** Todo
+- **Status:** Done
 - **Phase:** 3
 - **Depends on:** SPEC-004 (reading pane), SPEC-005 (read/star state)
 - **Estimated size:** L

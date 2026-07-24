@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { api, ApiRequestError } from '@/lib/api';
 import { useToggleArticleState } from '@/lib/articles';
+import { useOnlineStatus } from '@/lib/pwa';
 import { useSettings } from '@/lib/settings';
 import { cn } from '@/lib/utils';
 import { ArticleHtml } from './ArticleHtml';
@@ -26,6 +27,7 @@ function formatDate(iso: string | null): string {
 export function ReadingPane({ articleId }: { articleId: string }) {
   const queryClient = useQueryClient();
   const { settings } = useSettings();
+  const online = useOnlineStatus();
   const [view, setView] = useState<ArticleView>(() => settings.defaultArticleView);
 
   // Open each article in the user's default view (the in-session switcher stays
@@ -76,11 +78,16 @@ export function ReadingPane({ articleId }: { articleId: string }) {
   if (articleQuery.isError) {
     const notFound =
       articleQuery.error instanceof ApiRequestError && articleQuery.error.status === 404;
+    // A network failure with no cached copy means this article was never opened
+    // while online; say so plainly rather than implying it is broken.
+    const offlineMiss = !online && !(articleQuery.error instanceof ApiRequestError);
     return (
-      <div className="p-6 text-sm text-destructive">
-        {notFound
-          ? 'Article not found or you are not subscribed to its feed.'
-          : 'Failed to load article.'}
+      <div className="p-6 text-sm text-muted-foreground">
+        {offlineMiss
+          ? 'Not available offline. Open this article while online to read it later.'
+          : notFound
+            ? 'Article not found or you are not subscribed to its feed.'
+            : 'Failed to load article.'}
       </div>
     );
   }
@@ -146,13 +153,14 @@ export function ReadingPane({ articleId }: { articleId: string }) {
         {view === 'simplified' && (
           <SimplifiedView
             article={article}
+            online={online}
             loading={readableQuery.isFetching}
             retrying={refresh.isPending}
             onRetry={() => refresh.mutate()}
             onSwitchReadable={() => setView('readable')}
           />
         )}
-        {view === 'web' && <WebView article={article} />}
+        {view === 'web' && <WebView article={article} online={online} />}
       </div>
     </div>
   );
@@ -166,12 +174,14 @@ function ReadableView({ article }: { article: ArticleDetail }) {
 
 function SimplifiedView({
   article,
+  online,
   loading,
   retrying,
   onRetry,
   onSwitchReadable,
 }: {
   article: ArticleDetail;
+  online: boolean;
   loading: boolean;
   retrying: boolean;
   onRetry: () => void;
@@ -179,6 +189,19 @@ function SimplifiedView({
 }) {
   if (article.readableHtml) return <ArticleHtml html={article.readableHtml} />;
   if (article.readableFetchedAt === null) {
+    // Extraction needs the network; offline it would spin forever.
+    if (!online) {
+      return (
+        <div className="space-y-3 text-sm">
+          <p className="text-muted-foreground">A clean version was not fetched while online.</p>
+          {article.contentHtml && (
+            <Button size="sm" variant="outline" onClick={onSwitchReadable}>
+              Read feed version
+            </Button>
+          )}
+        </div>
+      );
+    }
     return <Note>{loading ? 'Extracting a clean version…' : 'Preparing…'}</Note>;
   }
   return (
@@ -198,9 +221,17 @@ function SimplifiedView({
   );
 }
 
-function WebView({ article }: { article: ArticleDetail }) {
+function WebView({ article, online }: { article: ArticleDetail; online: boolean }) {
   if (!article.url) {
     return <div className="p-4 text-sm text-muted-foreground">No original URL for this item.</div>;
+  }
+  // The live page cannot be cached; the iframe would just show a browser error.
+  if (!online) {
+    return (
+      <div className="p-4 text-sm text-muted-foreground">
+        The web page is not available offline. Try the Simplified or Readable view.
+      </div>
+    );
   }
   return (
     <div className="flex h-full flex-col">

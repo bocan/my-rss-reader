@@ -1,8 +1,9 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { ChevronLeft, Inbox, Keyboard, PanelLeft, Plus, Settings, Shield, Star } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { AppShell } from '@/components/layout/AppShell';
+import { MobileNav } from '@/components/layout/MobileNav';
 import { BrowseSurface } from '@/components/reader/BrowseSurface';
 import { ListColumn } from '@/components/reader/ListColumn';
 import { ViewSwitcher } from '@/components/reader/ViewSwitcher';
@@ -23,24 +24,39 @@ import type { ViewMode } from '@rss/shared';
 import type { ShortcutContextName } from '@/lib/shortcuts/registry';
 import { cn } from '@/lib/utils';
 
-/** True at the `lg` breakpoint, where list/compact keep the reader as a column. */
-function useIsWide(): boolean {
-  const query = '(min-width: 1024px)';
-  const [wide, setWide] = useState(() => window.matchMedia(query).matches);
+/** Reactively tracks a media query. */
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
   useEffect(() => {
     const mq = window.matchMedia(query);
-    const onChange = () => setWide(mq.matches);
+    const onChange = () => setMatches(mq.matches);
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
-  }, []);
-  return wide;
+  }, [query]);
+  return matches;
+}
+
+/** True at the `lg` breakpoint, where list/compact keep the reader as a column. */
+function useIsWide(): boolean {
+  return useMediaQuery('(min-width: 1024px)');
+}
+
+/** True below `md`: the stacked feeds -> list -> reader phone flow (SPEC-013). */
+function useIsPhone(): boolean {
+  return useMediaQuery('(max-width: 767px)');
 }
 
 export function ReaderPage() {
   const isWide = useIsWide();
+  const isPhone = useIsPhone();
   const { collapsed, toggle: toggleSidebar } = useSidebar();
   const { settings, update: updateSettings } = useSettings();
   const { data: me } = useSession();
+
+  // Phone-only stacked navigation: feeds -> list (-> reader, driven by the
+  // ?article param). Starts on the feed picker, which desktop keeps in the
+  // sidebar but phones otherwise cannot reach.
+  const [mobileStep, setMobileStep] = useState<'feeds' | 'list'>('feeds');
 
   const { data: feedsData, isLoading } = useSubscriptions();
   const subs = feedsData?.items ?? [];
@@ -99,6 +115,16 @@ export function ReaderPage() {
     const next = new URLSearchParams(searchParams);
     next.delete('article');
     setSearchParams(next);
+  };
+
+  // Advance the phone flow to the list when a scope is chosen. The reader step
+  // is driven by the ?article search param, so hardware/browser back pops the
+  // reader back to the list for free; list -> feeds is the explicit control
+  // below (a manual history barrier here would desync react-router's stack).
+  const goToList = () => setMobileStep('list');
+  const pickScope = (apply: () => void) => {
+    apply();
+    goToList();
   };
 
   const [addOpen, setAddOpen] = useState(false);
@@ -182,12 +208,122 @@ export function ReaderPage() {
 
   const navItem = (active: boolean) =>
     cn(
-      'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left',
+      // >=44px hit area on phones for comfortable touch targets (SPEC-013).
+      'flex w-full items-center gap-2 rounded-md px-2 py-2.5 text-left md:py-1.5',
       active ? 'bg-accent font-medium' : 'text-muted-foreground hover:bg-accent',
     );
 
+  // Scope selectors also advance the phone flow to the list step.
+  const onSelectFeed = (feedId: string) => pickScope(() => setFilters({ feedId, sort: 'newest' }));
+  const onSelectFolder = (folderId: string) =>
+    pickScope(() => setFilters({ folderId, sort: 'newest' }));
+
+  // Shared sidebar body, rendered in the desktop aside and the phone feed picker.
+  const sidebarInner = (
+    <>
+      <ul className="space-y-1 text-sm">
+        <li>
+          <button
+            className={navItem(!filters.feedId && !filters.starred && !filters.folderId)}
+            onClick={() => pickScope(() => setFilters({ sort: 'newest' }))}
+          >
+            <Inbox className="size-4" />
+            <span className="flex-1">All items</span>
+            <CountBadge n={counts?.total ?? 0} />
+          </button>
+        </li>
+        <li>
+          <button
+            className={navItem(Boolean(filters.starred))}
+            onClick={() => pickScope(() => setFilters({ starred: true, sort: 'newest' }))}
+          >
+            <Star className="size-4" /> Starred
+          </button>
+        </li>
+      </ul>
+
+      <div className="mt-4 flex items-center justify-between px-2">
+        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Feeds
+        </span>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-6"
+          aria-label="Add subscription"
+          onClick={() => setAddOpen(true)}
+        >
+          <Plus />
+        </Button>
+      </div>
+      {isLoading && <p className="px-2 py-1.5 text-sm text-muted-foreground">Loading…</p>}
+      {!isLoading && subs.length === 0 && (
+        <p className="px-2 py-1.5 text-sm text-muted-foreground">No subscriptions yet.</p>
+      )}
+      <FolderTree
+        activeFeedId={filters.feedId}
+        activeFolderId={filters.folderId}
+        onSelectFeed={onSelectFeed}
+        onSelectFolder={onSelectFolder}
+        countByFeed={countByFeed}
+      />
+
+      <div className="mt-auto space-y-0.5 pt-2">
+        {me?.role === 'admin' && (
+          <Link
+            to="/admin"
+            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent"
+          >
+            <Shield className="size-3.5" /> Administration
+          </Link>
+        )}
+        <Link
+          to="/settings"
+          className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent"
+        >
+          <Settings className="size-3.5" /> Settings
+        </Link>
+        <button
+          onClick={() => setOverlayOpen(true)}
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent"
+        >
+          <Keyboard className="size-3.5" /> Shortcuts
+          <kbd className="ml-auto rounded border bg-muted px-1 font-mono">?</kbd>
+        </button>
+      </div>
+    </>
+  );
+
+  // Swipe-right in the reader returns to the list (phone progressive enhancement).
+  const swipeStart = useRef<{ x: number; y: number } | null>(null);
+  const onReaderPointerDown = (e: ReactPointerEvent) => {
+    swipeStart.current = e.pointerType === 'touch' ? { x: e.clientX, y: e.clientY } : null;
+  };
+  const onReaderPointerUp = (e: ReactPointerEvent) => {
+    const start = swipeStart.current;
+    swipeStart.current = null;
+    if (!start) return;
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    if (dx > 60 && Math.abs(dy) < 40) clearArticle();
+  };
+
+  const showFeedPicker = isPhone && mobileStep === 'feeds' && !selectedId;
+  const showBottomNav = isPhone && !selectedId;
+
   const topBar = (
     <>
+      {isPhone && mobileStep === 'list' && !selectedId && (
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Back to feeds"
+          className="-ml-1 shrink-0"
+          onClick={() => setMobileStep('feeds')}
+        >
+          <ChevronLeft />
+        </Button>
+      )}
       <span className="min-w-0 truncate text-sm font-medium">
         {isSearching ? (
           <>
@@ -251,69 +387,32 @@ export function ReaderPage() {
       <SubscribeDialog open={addOpen} onOpenChange={setAddOpen} />
       <ShortcutsOverlay open={overlayOpen} onOpenChange={setOverlayOpen} />
 
-      <div className="flex h-full">
-        {/* Sidebar: collapses fully to give the content the whole width. */}
+      <div
+        className={cn(
+          'flex h-full',
+          // Lift content above the fixed bottom nav on phones.
+          showBottomNav && 'pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0',
+        )}
+      >
+        {/* Desktop sidebar: collapses fully to give the content the whole width. */}
         <aside
           className={cn(
             'hidden shrink-0 overflow-hidden transition-[width] duration-200 motion-reduce:transition-none md:block',
             collapsed ? 'w-0' : 'w-[260px] border-r',
           )}
         >
-          <nav className="flex h-full w-[260px] flex-col overflow-y-auto p-3">
-            <ul className="space-y-1 text-sm">
-              <li>
-                <button className={navItem(!filters.feedId && !filters.starred && !filters.folderId)} onClick={() => setFilters({ sort: 'newest' })}>
-                  <Inbox className="size-4" />
-                  <span className="flex-1">All items</span>
-                  <CountBadge n={counts?.total ?? 0} />
-                </button>
-              </li>
-              <li>
-                <button className={navItem(Boolean(filters.starred))} onClick={() => setFilters({ starred: true, sort: 'newest' })}>
-                  <Star className="size-4" /> Starred
-                </button>
-              </li>
-            </ul>
-
-            <div className="mt-4 flex items-center justify-between px-2">
-              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Feeds
-              </span>
-              <Button variant="ghost" size="icon" className="size-6" aria-label="Add subscription" onClick={() => setAddOpen(true)}>
-                <Plus />
-              </Button>
-            </div>
-            {isLoading && <p className="px-2 py-1.5 text-sm text-muted-foreground">Loading…</p>}
-            {!isLoading && subs.length === 0 && (
-              <p className="px-2 py-1.5 text-sm text-muted-foreground">No subscriptions yet.</p>
-            )}
-            <FolderTree
-              activeFeedId={filters.feedId}
-              activeFolderId={filters.folderId}
-              onSelectFeed={(feedId) => setFilters({ feedId, sort: 'newest' })}
-              onSelectFolder={(folderId) => setFilters({ folderId, sort: 'newest' })}
-              countByFeed={countByFeed}
-            />
-
-            <div className="mt-auto space-y-0.5 pt-2">
-              {me?.role === 'admin' && (
-                <Link to="/admin" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent">
-                  <Shield className="size-3.5" /> Administration
-                </Link>
-              )}
-              <Link to="/settings" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent">
-                <Settings className="size-3.5" /> Settings
-              </Link>
-              <button onClick={() => setOverlayOpen(true)} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent">
-                <Keyboard className="size-3.5" /> Shortcuts
-                <kbd className="ml-auto rounded border bg-muted px-1 font-mono">?</kbd>
-              </button>
-            </div>
-          </nav>
+          <nav className="flex h-full w-[260px] flex-col overflow-y-auto p-3">{sidebarInner}</nav>
         </aside>
 
+        {/* Phone feed picker: the first step of the stacked flow. */}
+        {showFeedPicker && (
+          <nav className="flex h-full w-full flex-col overflow-y-auto p-3 md:hidden">
+            {sidebarInner}
+          </nav>
+        )}
+
         {/* Content region: list-beside-reader, or the full-width browse surface. */}
-        <div className="min-h-0 flex-1">
+        <div className={cn('min-h-0 flex-1', showFeedPicker && 'hidden')}>
           {isBrowse ? (
             <BrowseSurface
               surface={surface}
@@ -335,6 +434,8 @@ export function ReaderPage() {
                 />
               </section>
               <article
+                onPointerDown={onReaderPointerDown}
+                onPointerUp={onReaderPointerUp}
                 className={cn(
                   'min-h-0 bg-background lg:static lg:z-auto lg:block',
                   selectedId ? 'fixed inset-0 z-40 block' : 'hidden lg:block',
@@ -344,7 +445,7 @@ export function ReaderPage() {
                   <div className="flex h-full flex-col">
                     <button
                       onClick={clearArticle}
-                      className="flex items-center gap-1 border-b p-2 text-sm text-muted-foreground hover:text-foreground lg:hidden"
+                      className="flex min-h-[44px] items-center gap-1 border-b p-2 text-sm text-muted-foreground hover:text-foreground lg:hidden"
                     >
                       <ChevronLeft className="size-4" /> Back to articles
                     </button>
@@ -360,6 +461,26 @@ export function ReaderPage() {
           )}
         </div>
       </div>
+
+      {showBottomNav && (
+        <MobileNav
+          active={
+            isSearching
+              ? 'search'
+              : filters.starred
+                ? 'starred'
+                : !filters.feedId && !filters.folderId
+                  ? 'all'
+                  : null
+          }
+          onAll={() => pickScope(() => setFilters({ sort: 'newest' }))}
+          onStarred={() => pickScope(() => setFilters({ starred: true, sort: 'newest' }))}
+          onSearch={() => {
+            if (mobileStep === 'feeds') goToList();
+            searchRef.current?.focus();
+          }}
+        />
+      )}
     </AppShell>
   );
 }

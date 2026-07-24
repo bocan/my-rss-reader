@@ -1,7 +1,8 @@
-import { Monitor, Moon, Rss, Sun } from 'lucide-react';
+import { CloudOff, Monitor, Moon, Rss, Sun } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { useLogout, useSession } from '@/lib/auth';
+import { useOnlineStatus } from '@/lib/pwa';
 import { useTheme, type Theme } from '@/lib/theme';
 
 const THEME_CYCLE: Record<Theme, Theme> = { light: 'dark', dark: 'system', system: 'light' };
@@ -28,6 +29,7 @@ export function AppShell({
   const { theme, setTheme } = useTheme();
   const { data: user } = useSession();
   const logout = useLogout();
+  const online = useOnlineStatus();
 
   return (
     <div className="flex h-full flex-col">
@@ -39,6 +41,16 @@ export function AppShell({
         </span>
         {bar && <div className="flex min-w-0 flex-1 items-center gap-2">{bar}</div>}
         <div className={bar ? 'flex shrink-0 items-center gap-2' : 'ml-auto flex items-center gap-2'}>
+          {!online && (
+            <span
+              role="status"
+              className="flex items-center gap-1.5 rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground"
+              title="You are offline. Read/star changes will sync when you reconnect."
+            >
+              <CloudOff className="size-3.5" />
+              <span className="hidden sm:inline">Offline &middot; changes will sync</span>
+            </span>
+          )}
           <Button
             variant="ghost"
             size="icon"

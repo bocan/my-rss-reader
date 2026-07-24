@@ -103,6 +103,6 @@ Features to pluck from readers like Fluent, roughly in order:
 - [ ] Mark-all-read, filters (unread / starred / by folder)
 - [ ] Keyset pagination + infinite scroll
 - [ ] HTML sanitization of article content
-- [ ] PWA / offline support
+- [x] PWA / offline support
 - [x] Per-user settings + themes
 ```

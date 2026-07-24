@@ -1,6 +1,8 @@
 import type { LoginInput, PublicUser, RegisterInput, RegistrationMode } from '@rss/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { del } from 'idb-keyval';
 import { api, ApiRequestError } from './api';
+import { CACHE_KEY } from './persister';
 
 const SESSION_KEY = ['auth', 'me'] as const;
 
@@ -51,9 +53,14 @@ export function useLogout() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api<void>('/auth/logout', { method: 'POST' }),
-    onSuccess: () => {
+    onSuccess: async () => {
+      // Purge every trace of the signed-out user so nothing leaks to the next
+      // account on a shared device: in-memory cache, the persisted IndexedDB
+      // copy, and the service worker's API response cache (SPEC-013).
+      qc.clear();
+      await del(CACHE_KEY).catch(() => {});
+      if ('caches' in window) await caches.delete('api-cache').catch(() => {});
       qc.setQueryData(SESSION_KEY, null);
-      void qc.invalidateQueries();
     },
   });
 }

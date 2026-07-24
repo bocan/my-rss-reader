@@ -1,5 +1,5 @@
 import type { ArticleDetail, Paginated, UnreadCounts } from '@rss/shared';
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, type QueryClient } from '@tanstack/react-query';
 import type { ArticleListItem } from '@/hooks/use-articles';
 import { api } from './api';
 
@@ -94,13 +94,24 @@ function reconcile(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ['counts'] });
 }
 
-/** Optimistically toggle read and/or starred on one article. */
-export function useToggleArticleState(articleId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (vars: { read?: boolean; starred?: boolean }) =>
-      api<void>(`/articles/${articleId}/state`, { method: 'PATCH', body: vars }),
-    onMutate: async (vars): Promise<Ctx> => {
+// Stable mutation keys so a rehydrated paused mutation can find its default
+// function and replay after an offline session (SPEC-013).
+export const TOGGLE_STATE_KEY = ['toggle-state'] as const;
+export const MARK_READ_KEY = ['mark-read'] as const;
+
+type ToggleVars = { articleId: string; read?: boolean; starred?: boolean };
+type MarkReadScope = { feedId?: string; folderId?: string; before?: string };
+
+/**
+ * Register the read/star and mark-read mutation logic on the client, keyed by
+ * mutationKey. Called once at startup (before the persister resumes paused
+ * mutations) so an offline tap that was queued and rehydrated knows how to run.
+ */
+export function registerMutationDefaults(qc: QueryClient): void {
+  qc.setMutationDefaults(TOGGLE_STATE_KEY, {
+    mutationFn: ({ articleId, read, starred }: ToggleVars) =>
+      api<void>(`/articles/${articleId}/state`, { method: 'PATCH', body: { read, starred } }),
+    onMutate: async ({ articleId, ...vars }: ToggleVars): Promise<Ctx> => {
       const ctx = await snapshot(qc);
       const state = currentState(qc, articleId);
       // Only a read change moves counts; starred never does.
@@ -110,18 +121,14 @@ export function useToggleArticleState(articleId: string) {
       patchArticle(qc, articleId, vars);
       return ctx;
     },
-    onError: (_e, _v, ctx) => restore(qc, ctx),
+    onError: (_e: unknown, _v: ToggleVars, ctx: Ctx | undefined) => restore(qc, ctx),
     onSettled: () => reconcile(qc),
   });
-}
 
-/** Optimistically mark a whole scope read (feed, folder, or everything). */
-export function useMarkRead() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (scope: { feedId?: string; folderId?: string; before?: string }) =>
+  qc.setMutationDefaults(MARK_READ_KEY, {
+    mutationFn: (scope: MarkReadScope) =>
       api<void>('/articles/mark-read', { method: 'POST', body: scope }),
-    onMutate: async (scope): Promise<Ctx> => {
+    onMutate: async (scope: MarkReadScope): Promise<Ctx> => {
       const ctx = await snapshot(qc);
       // With a `before` cutoff the exact set is unknowable from a partial cache;
       // skip the optimistic write and let onSettled refetch the truth.
@@ -166,7 +173,27 @@ export function useMarkRead() {
       );
       return ctx;
     },
-    onError: (_e, _v, ctx) => restore(qc, ctx),
+    onError: (_e: unknown, _v: MarkReadScope, ctx: Ctx | undefined) => restore(qc, ctx),
     onSettled: () => reconcile(qc),
   });
+}
+
+/**
+ * Optimistically toggle read and/or starred on one article. Thin wrapper over
+ * the registered default (see registerMutationDefaults); injects the articleId
+ * into the variables so the mutation is self-contained and replayable offline.
+ */
+export function useToggleArticleState(articleId: string) {
+  const m = useMutation<void, Error, ToggleVars, Ctx>({ mutationKey: TOGGLE_STATE_KEY });
+  return {
+    isPending: m.isPending,
+    mutate: (vars: { read?: boolean; starred?: boolean }) => m.mutate({ articleId, ...vars }),
+    mutateAsync: (vars: { read?: boolean; starred?: boolean }) =>
+      m.mutateAsync({ articleId, ...vars }),
+  };
+}
+
+/** Optimistically mark a whole scope read (feed, folder, or everything). */
+export function useMarkRead() {
+  return useMutation<void, Error, MarkReadScope, Ctx>({ mutationKey: MARK_READ_KEY });
 }

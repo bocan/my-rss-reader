@@ -9,12 +9,13 @@ import {
   type ViewMode,
 } from '@rss/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, Download, Upload } from 'lucide-react';
+import { ChevronLeft, Download, Smartphone, Upload } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/button';
 import { api, ApiRequestError } from '@/lib/api';
+import { useInstallPrompt } from '@/lib/pwa';
 import { useSettings } from '@/lib/settings';
 import { cn } from '@/lib/utils';
 
@@ -103,6 +104,7 @@ const MAX_BYTES = 5 * 1024 * 1024;
 export function SettingsPage() {
   const queryClient = useQueryClient();
   const { settings, update } = useSettings();
+  const { canInstall, promptInstall } = useInstallPrompt();
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) => update({ [key]: value });
   const fileRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -182,6 +184,19 @@ export function SettingsPage() {
             onChange={(v) => set('showUnreadOnly', v)}
           />
         </section>
+
+        {canInstall && (
+          <section className="rounded-lg border p-4">
+            <h2 className="font-medium">Install app</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Add Reader to your home screen to launch it full-screen and keep already-read
+              articles available offline.
+            </p>
+            <Button className="mt-3" onClick={promptInstall}>
+              <Smartphone className="size-4" /> Install Reader
+            </Button>
+          </section>
+        )}
 
         <section className="rounded-lg border p-4">
           <h2 className="font-medium">Import subscriptions</h2>
