@@ -9,6 +9,10 @@ SHELL := bash
 # Compose files
 COMPOSE_DEV := docker/docker-compose.dev.yml
 COMPOSE_PROD := docker/docker-compose.yml
+# The prod stack reads secrets from the repo-root .env. Compose otherwise looks
+# for .env next to the compose file (docker/.env), so point it at the root one
+# explicitly - this is needed even for `down`, which still interpolates the file.
+COMPOSE_PROD_CMD := docker compose --env-file .env -f $(COMPOSE_PROD)
 
 .PHONY: help
 help: ## Show this help
@@ -123,15 +127,15 @@ docker-build: ## Build the production image
 
 .PHONY: up
 up: ## Start the full stack (Postgres + api + worker) in the background
-	docker compose -f $(COMPOSE_PROD) up -d --build
+	$(COMPOSE_PROD_CMD) up -d --build
 
 .PHONY: down
 down: ## Stop the full stack (keeps data)
-	docker compose -f $(COMPOSE_PROD) down
+	$(COMPOSE_PROD_CMD) down
 
 .PHONY: logs
 logs: ## Tail logs from the full stack
-	docker compose -f $(COMPOSE_PROD) logs -f
+	$(COMPOSE_PROD_CMD) logs -f
 
 # --- Housekeeping ----------------------------------------------------------
 
