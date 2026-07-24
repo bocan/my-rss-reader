@@ -1,11 +1,9 @@
 import {
   ARTICLE_VIEWS,
-  THEMES,
   VIEW_MODES,
   type ArticleView,
   type ImportOpmlResult,
   type Settings,
-  type ThemePref,
   type ViewMode,
 } from '@rss/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -13,6 +11,7 @@ import { ChevronLeft, Download, Smartphone, Upload } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
 import { AppShell } from '@/components/layout/AppShell';
+import { ThemeTiles } from '@/components/theme/ThemePicker';
 import { Button } from '@/components/ui/button';
 import { api, ApiRequestError } from '@/lib/api';
 import { useChangePassword, useSession, useUpdateAccount } from '@/lib/auth';
@@ -182,7 +181,6 @@ function AccountSection() {
   );
 }
 
-const THEME_LABEL: Record<ThemePref, string> = { light: 'Light', dark: 'Dark', system: 'System' };
 const VIEW_LABEL: Record<ViewMode, string> = {
   list: 'List',
   compact: 'Compact',
@@ -315,13 +313,10 @@ export function SettingsPage() {
 
         <section className="space-y-4 rounded-lg border p-4">
           <h2 className="font-medium">Preferences</h2>
-          <Segmented
-            label="Theme"
-            value={settings.theme}
-            options={THEMES}
-            labels={THEME_LABEL}
-            onChange={(v) => set('theme', v)}
-          />
+          <div className="space-y-2">
+            <span className="text-sm">Theme</span>
+            <ThemeTiles />
+          </div>
           <Segmented
             label="Default list view"
             value={settings.defaultViewMode}

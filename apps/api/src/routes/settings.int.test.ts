@@ -36,9 +36,9 @@ test('PUT lazily creates the row, then upserts on the next call', async () => {
   const user = await seedUser();
   const cookie = await loginAs(user);
 
-  const first = await putSettings(cookie, { theme: 'dark' });
+  const first = await putSettings(cookie, { theme: 'midnight' });
   expect(first.statusCode).toBe(200);
-  expect(first.json()).toMatchObject({ ...DEFAULT_SETTINGS, theme: 'dark' });
+  expect(first.json()).toMatchObject({ ...DEFAULT_SETTINGS, theme: 'midnight' });
 
   const [row1] = await db.select().from(userSettings).where(eq(userSettings.userId, user.id));
   expect(row1).toBeTruthy();
@@ -47,7 +47,7 @@ test('PUT lazily creates the row, then upserts on the next call', async () => {
   await new Promise((r) => setTimeout(r, 5));
   const second = await putSettings(cookie, { defaultViewMode: 'magazine' });
   // Partial update leaves the earlier field intact.
-  expect(second.json()).toMatchObject({ theme: 'dark', defaultViewMode: 'magazine' });
+  expect(second.json()).toMatchObject({ theme: 'midnight', defaultViewMode: 'magazine' });
 
   const [row2] = await db.select().from(userSettings).where(eq(userSettings.userId, user.id));
   expect(row2!.updatedAt.getTime()).toBeGreaterThan(firstUpdatedAt); // bumped
@@ -55,10 +55,10 @@ test('PUT lazily creates the row, then upserts on the next call', async () => {
 
 test('an empty PUT body is a no-op that still returns the settings', async () => {
   const cookie = await loginAs(await seedUser());
-  await putSettings(cookie, { theme: 'light' });
+  await putSettings(cookie, { theme: 'daylight' });
   const res = await putSettings(cookie, {});
   expect(res.statusCode).toBe(200);
-  expect(res.json().theme).toBe('light');
+  expect(res.json().theme).toBe('daylight');
 });
 
 test('invalid values are rejected with 400', async () => {
@@ -71,12 +71,12 @@ test('invalid values are rejected with 400', async () => {
 test("a user cannot read or write another user's settings", async () => {
   const a = await seedUser();
   const b = await seedUser();
-  await putSettings(await loginAs(a), { theme: 'dark' });
-  await putSettings(await loginAs(b), { theme: 'light' });
+  await putSettings(await loginAs(a), { theme: 'midnight' });
+  await putSettings(await loginAs(b), { theme: 'daylight' });
 
   // Each sees only their own, scoped by session; there is no id in the path.
-  expect((await getSettings(await loginAs(a))).json().theme).toBe('dark');
-  expect((await getSettings(await loginAs(b))).json().theme).toBe('light');
+  expect((await getSettings(await loginAs(a))).json().theme).toBe('midnight');
+  expect((await getSettings(await loginAs(b))).json().theme).toBe('daylight');
 
   const rows = await db.select().from(userSettings);
   expect(rows).toHaveLength(2);

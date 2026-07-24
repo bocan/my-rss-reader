@@ -1,19 +1,43 @@
-import { useEffect } from 'react';
+import { resolveTheme, THEME_SETTINGS, type ThemeSetting } from '@rss/shared';
+import { useCallback, useEffect } from 'react';
 import { useSettings } from './settings';
 
-export type Theme = 'light' | 'dark' | 'system';
-
-// Theme-only key kept for the synchronous pre-mount paint (initTheme). The full
-// settings object lives under 'rss-settings' (see lib/settings.ts).
+// Theme-only key for the synchronous pre-mount paint (initTheme). Holds a theme
+// setting: a named theme id or 'auto'. The full settings live under 'rss-settings'.
 const STORAGE_KEY = 'rss-theme';
 
 function systemPrefersDark(): boolean {
   return window.matchMedia('(prefers-color-scheme: dark)').matches;
 }
 
-function apply(theme: Theme): void {
-  const dark = theme === 'dark' || (theme === 'system' && systemPrefersDark());
-  document.documentElement.classList.toggle('dark', dark);
+function prefersMotion(): boolean {
+  return window.matchMedia('(prefers-reduced-motion: no-preference)').matches;
+}
+
+let animTimer: number | undefined;
+
+/** Resolve a setting and paint it: set data-theme and toggle the dark class. */
+function applyResolved(setting: ThemeSetting, animate: boolean): void {
+  const { id, mode } = resolveTheme(setting, systemPrefersDark());
+  const el = document.documentElement;
+  if (animate && prefersMotion()) {
+    // Enable the crossfade for a brief window so hover/focus stays snappy.
+    el.classList.add('theme-anim');
+    window.clearTimeout(animTimer);
+    animTimer = window.setTimeout(() => el.classList.remove('theme-anim'), 260);
+  }
+  el.setAttribute('data-theme', id);
+  el.classList.toggle('dark', mode === 'dark');
+}
+
+function readStored(): ThemeSetting {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (raw && (THEME_SETTINGS as readonly string[]).includes(raw)) return raw as ThemeSetting;
+  } catch {
+    // no storage access
+  }
+  return 'auto';
 }
 
 /**
@@ -21,27 +45,24 @@ function apply(theme: Theme): void {
  * only localStorage (synchronous); the server value reconciles after hydration
  * via useTheme. Call once at startup.
  */
-export function initTheme(): Theme {
-  let stored: Theme = 'system';
-  try {
-    stored = (window.localStorage.getItem(STORAGE_KEY) as Theme | null) ?? 'system';
-  } catch {
-    // no storage access; fall back to the initialized 'system'
-  }
-  apply(stored);
-  return stored;
+export function initTheme(): ThemeSetting {
+  const setting = readStored();
+  applyResolved(setting, false);
+  return setting;
 }
 
-/** Server-backed theme (via useSettings), applied to the DOM and mirrored to
- * localStorage so the next cold load paints correctly. */
+/**
+ * Server-backed theme (via useSettings), applied to the DOM and mirrored to
+ * localStorage. `preview` applies a theme without persisting (for hover); pass
+ * null to revert to the saved theme.
+ */
 export function useTheme() {
   const { settings, update } = useSettings();
   const theme = settings.theme;
 
-  // Reconcile: whenever the (server-backed) theme changes, apply it and update
-  // the synchronous cache used by initTheme.
+  // Reconcile: apply and cache whenever the (server-backed) theme changes.
   useEffect(() => {
-    apply(theme);
+    applyResolved(theme, true);
     try {
       window.localStorage.setItem(STORAGE_KEY, theme);
     } catch {
@@ -49,16 +70,21 @@ export function useTheme() {
     }
   }, [theme]);
 
-  // Follow the OS when on 'system'.
+  // Follow the OS while on 'auto'.
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     const onChange = () => {
-      if (theme === 'system') apply('system');
+      if (theme === 'auto') applyResolved('auto', true);
     };
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
   }, [theme]);
 
-  const setTheme = (next: Theme) => update({ theme: next });
-  return { theme, setTheme } as const;
+  const setTheme = useCallback((next: ThemeSetting) => update({ theme: next }), [update]);
+  const preview = useCallback(
+    (next: ThemeSetting | null) => applyResolved(next ?? theme, true),
+    [theme],
+  );
+
+  return { theme, setTheme, preview } as const;
 }

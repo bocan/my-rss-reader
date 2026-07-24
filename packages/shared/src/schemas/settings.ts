@@ -1,11 +1,8 @@
 import { z } from 'zod';
-import { ARTICLE_VIEWS, VIEW_MODES } from '../types.js';
-
-export const THEMES = ['light', 'dark', 'system'] as const;
-export type ThemePref = (typeof THEMES)[number];
+import { ARTICLE_VIEWS, THEME_SETTINGS, VIEW_MODES } from '../types.js';
 
 export const settingsSchema = z.object({
-  theme: z.enum(THEMES),
+  theme: z.enum(THEME_SETTINGS),
   defaultViewMode: z.enum(VIEW_MODES),
   defaultArticleView: z.enum(ARTICLE_VIEWS),
   markReadOnScroll: z.boolean(),
@@ -22,7 +19,7 @@ export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;
  * user_settings and what GET /settings returns when no row exists.
  */
 export const DEFAULT_SETTINGS: Settings = {
-  theme: 'system',
+  theme: 'auto',
   defaultViewMode: 'cards',
   defaultArticleView: 'simplified',
   markReadOnScroll: false,

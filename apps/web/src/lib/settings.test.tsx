@@ -8,7 +8,7 @@ import { useSettings } from './settings';
 const CACHE_KEY = 'rss-settings';
 
 const SERVER: Settings = {
-  theme: 'dark',
+  theme: 'midnight',
   defaultViewMode: 'magazine',
   defaultArticleView: 'readable',
   markReadOnScroll: true,
@@ -41,7 +41,7 @@ function Probe() {
     <div>
       <span data-testid="theme">{settings.theme}</span>
       <span data-testid="view">{settings.defaultViewMode}</span>
-      <button onClick={() => update({ theme: 'light' })}>set-light</button>
+      <button onClick={() => update({ theme: 'daylight' })}>set-light</button>
     </div>
   );
 }
@@ -66,7 +66,7 @@ describe('useSettings', () => {
     render(<Probe />, { wrapper: wrapper(makeClient()) });
 
     // First synchronous render already shows the cached values.
-    expect(screen.getByTestId('theme').textContent).toBe('dark');
+    expect(screen.getByTestId('theme').textContent).toBe('midnight');
     expect(screen.getByTestId('view').textContent).toBe('magazine');
   });
 
@@ -79,16 +79,16 @@ describe('useSettings', () => {
 
   test('reconciles a stale cache to the server value on mount', async () => {
     // Cache disagrees with the server; the server must win after the refetch.
-    const stale: Settings = { ...SERVER, theme: 'light', defaultViewMode: 'cards' };
+    const stale: Settings = { ...SERVER, theme: 'daylight', defaultViewMode: 'cards' };
     window.localStorage.setItem(CACHE_KEY, JSON.stringify(stale));
     fetchMock.mockResolvedValue(jsonResponse(SERVER));
 
     render(<Probe />, { wrapper: wrapper(makeClient()) });
 
     // Seeds from the stale cache first...
-    expect(screen.getByTestId('theme').textContent).toBe('light');
+    expect(screen.getByTestId('theme').textContent).toBe('daylight');
     // ...then reconciles to the server value (initialDataUpdatedAt: 0 forces refetch).
-    await waitFor(() => expect(screen.getByTestId('theme').textContent).toBe('dark'));
+    await waitFor(() => expect(screen.getByTestId('theme').textContent).toBe('midnight'));
     expect(screen.getByTestId('view').textContent).toBe('magazine');
     expect(JSON.parse(window.localStorage.getItem(CACHE_KEY)!)).toEqual(SERVER);
   });
@@ -96,7 +96,7 @@ describe('useSettings', () => {
   test('optimistically applies an update and rolls back on error', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(SERVER)); // initial GET
     render(<Probe />, { wrapper: wrapper(makeClient()) });
-    await waitFor(() => expect(screen.getByTestId('theme').textContent).toBe('dark'));
+    await waitFor(() => expect(screen.getByTestId('theme').textContent).toBe('midnight'));
 
     // Hold the PUT pending so the optimistic state is observable, then fail it.
     let rejectPut!: (reason: unknown) => void;
@@ -104,24 +104,24 @@ describe('useSettings', () => {
     screen.getByText('set-light').click();
 
     // Optimistic write is visible while the request is in flight.
-    await waitFor(() => expect(screen.getByTestId('theme').textContent).toBe('light'));
+    await waitFor(() => expect(screen.getByTestId('theme').textContent).toBe('daylight'));
 
     // Rolls back to the pre-mutation snapshot after the failure.
     rejectPut(new Error('network'));
-    await waitFor(() => expect(screen.getByTestId('theme').textContent).toBe('dark'));
-    expect(JSON.parse(window.localStorage.getItem(CACHE_KEY)!).theme).toBe('dark');
+    await waitFor(() => expect(screen.getByTestId('theme').textContent).toBe('midnight'));
+    expect(JSON.parse(window.localStorage.getItem(CACHE_KEY)!).theme).toBe('midnight');
   });
 
   test('a successful update persists the server response to the cache', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(SERVER)); // initial GET
     render(<Probe />, { wrapper: wrapper(makeClient()) });
-    await waitFor(() => expect(screen.getByTestId('theme').textContent).toBe('dark'));
+    await waitFor(() => expect(screen.getByTestId('theme').textContent).toBe('midnight'));
 
-    const updated: Settings = { ...SERVER, theme: 'light' };
+    const updated: Settings = { ...SERVER, theme: 'daylight' };
     fetchMock.mockResolvedValueOnce(jsonResponse(updated)); // PUT echoes the merged row
     screen.getByText('set-light').click();
 
-    await waitFor(() => expect(screen.getByTestId('theme').textContent).toBe('light'));
-    expect(JSON.parse(window.localStorage.getItem(CACHE_KEY)!).theme).toBe('light');
+    await waitFor(() => expect(screen.getByTestId('theme').textContent).toBe('daylight'));
+    expect(JSON.parse(window.localStorage.getItem(CACHE_KEY)!).theme).toBe('daylight');
   });
 });

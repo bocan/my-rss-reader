@@ -36,8 +36,8 @@ export const userRole = pgEnum('user_role', ['admin', 'user']);
 export const registrationMode = pgEnum('registration_mode', ['open', 'invite', 'closed']);
 
 // Preference enums (SPEC-011). Members must stay in lockstep with @rss/shared's
-// VIEW_MODES / ARTICLE_VIEWS; a unit test asserts the equality.
-export const themePref = pgEnum('theme_pref', ['light', 'dark', 'system']);
+// VIEW_MODES / ARTICLE_VIEWS; a unit test asserts the equality. `theme` is a
+// free-form text column (a named theme id or 'auto') as of SPEC-016.
 export const viewModeEnum = pgEnum('view_mode', ['cards', 'list', 'magazine', 'compact']);
 export const articleViewEnum = pgEnum('article_view', ['simplified', 'readable', 'web']);
 
@@ -77,7 +77,7 @@ export const userSettings = pgTable('user_settings', {
   userId: uuid()
     .primaryKey()
     .references(() => users.id, { onDelete: 'cascade' }),
-  theme: themePref().notNull().default('system'),
+  theme: text().notNull().default('auto'),
   defaultViewMode: viewModeEnum().notNull().default('cards'),
   defaultArticleView: articleViewEnum().notNull().default('simplified'),
   markReadOnScroll: boolean().notNull().default(false),

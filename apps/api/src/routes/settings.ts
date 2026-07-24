@@ -13,7 +13,8 @@ async function loadSettings(userId: string): Promise<Settings> {
     .limit(1);
   if (!row) return DEFAULT_SETTINGS;
   return {
-    theme: row.theme,
+    // `theme` is a text column; values are written only through the Zod schema.
+    theme: row.theme as Settings['theme'],
     defaultViewMode: row.defaultViewMode,
     defaultArticleView: row.defaultArticleView,
     markReadOnScroll: row.markReadOnScroll,

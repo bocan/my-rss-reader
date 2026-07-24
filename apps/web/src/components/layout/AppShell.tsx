@@ -1,16 +1,9 @@
-import { CloudOff, Monitor, Moon, Rss, Sun } from 'lucide-react';
+import { CloudOff, Rss } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
+import { ThemePickerButton } from '@/components/theme/ThemePicker';
 import { useLogout, useSession } from '@/lib/auth';
 import { useOnlineStatus } from '@/lib/pwa';
-import { useTheme, type Theme } from '@/lib/theme';
-
-const THEME_CYCLE: Record<Theme, Theme> = { light: 'dark', dark: 'system', system: 'light' };
-const THEME_ICON: Record<Theme, ReactNode> = {
-  light: <Sun />,
-  dark: <Moon />,
-  system: <Monitor />,
-};
 
 /**
  * The permanent app frame. `leading` sits before the product mark (the sidebar
@@ -26,7 +19,6 @@ export function AppShell({
   leading?: ReactNode;
   bar?: ReactNode;
 }) {
-  const { theme, setTheme } = useTheme();
   const { data: user } = useSession();
   const logout = useLogout();
   const online = useOnlineStatus();
@@ -51,14 +43,7 @@ export function AppShell({
               <span className="hidden sm:inline">Offline &middot; changes will sync</span>
             </span>
           )}
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={`Theme: ${theme}`}
-            onClick={() => setTheme(THEME_CYCLE[theme])}
-          >
-            {THEME_ICON[theme]}
-          </Button>
+          <ThemePickerButton />
           {user && (
             <>
               <span className="hidden text-sm text-muted-foreground lg:inline">
