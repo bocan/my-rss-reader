@@ -4,7 +4,9 @@
 FROM node:26-slim AS base
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
-RUN corepack enable
+# Node 25+ no longer bundles corepack, so install pnpm directly. Keep the
+# version in sync with the "packageManager" field in package.json.
+RUN npm install -g pnpm@11.16.0
 WORKDIR /repo
 
 # ---- Build: install everything, build web + api, prune to prod ----
