@@ -106,10 +106,20 @@ test('failed extraction is a 200 with null html and stops retrying', async () =>
   expect(extractMock).toHaveBeenCalledTimes(1); // failed attempt is cached; no auto-retry
 });
 
-test('readable with a null url returns 422 without extracting', async () => {
+test('readable with a null url stamps the attempt (200) without extracting', async () => {
   const { article, cookie } = await subscribedArticle({ url: null });
   const res = await app.inject({ method: 'GET', url: `/api/articles/${article.id}/readable`, headers: { cookie } });
-  expect(res.statusCode).toBe(422);
+  // Degrades gracefully: no extraction, but the attempt is stamped and cached so
+  // the Simplified view shows the "could not extract" fallback instead of hanging.
+  expect(res.statusCode).toBe(200);
+  expect(res.json().readableHtml).toBeNull();
+  expect(res.json().readableFetchedAt).toBeTruthy();
+  expect(extractMock).not.toHaveBeenCalled();
+
+  // Cached: a second call does not re-attempt.
+  extractMock.mockClear();
+  const again = await app.inject({ method: 'GET', url: `/api/articles/${article.id}/readable`, headers: { cookie } });
+  expect(again.statusCode).toBe(200);
   expect(extractMock).not.toHaveBeenCalled();
 });
 

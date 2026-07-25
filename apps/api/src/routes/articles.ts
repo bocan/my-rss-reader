@@ -245,13 +245,13 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
     if (!query.refresh && detail.readableFetchedAt !== null) {
       return detail;
     }
-    // Nothing to extract from.
+    // No source URL: nothing to extract. Stamp the attempt (so it caches and the
+    // client shows the "could not extract" fallback) rather than erroring, which
+    // the Simplified view would otherwise get stuck on.
     if (!detail.url) {
-      return reply.code(422).send({
-        error: 'UnprocessableEntity',
-        message: 'Article has no source URL',
-        statusCode: 422,
-      });
+      const readableFetchedAt = new Date();
+      await db.update(articles).set({ readableFetchedAt }).where(eq(articles.id, id));
+      return { ...detail, readableFetchedAt };
     }
 
     const clean = await extractReadableHtml(detail.url);

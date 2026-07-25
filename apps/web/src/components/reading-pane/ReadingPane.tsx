@@ -173,6 +173,7 @@ export function ReadingPane({ articleId }: { articleId: string }) {
             article={article}
             online={online}
             loading={readableQuery.isFetching}
+            failed={readableQuery.isError}
             retrying={refresh.isPending}
             onRetry={() => refresh.mutate()}
             onSwitchReadable={() => chooseView('readable')}
@@ -194,6 +195,7 @@ function SimplifiedView({
   article,
   online,
   loading,
+  failed,
   retrying,
   onRetry,
   onSwitchReadable,
@@ -201,12 +203,17 @@ function SimplifiedView({
   article: ArticleDetail;
   online: boolean;
   loading: boolean;
+  failed: boolean;
   retrying: boolean;
   onRetry: () => void;
   onSwitchReadable: () => void;
 }) {
   if (article.readableHtml) return <ArticleHtml html={article.readableHtml} />;
-  if (article.readableFetchedAt === null) {
+  // Only wait ("Preparing"/"Extracting") while an attempt is genuinely pending.
+  // A stamped readableFetchedAt or an errored /readable request (e.g. 422 for an
+  // article with no source URL, or a transient network/proxy error) both fall
+  // through to the recoverable "could not extract" state instead of hanging.
+  if (article.readableFetchedAt === null && !failed) {
     // Extraction needs the network; offline it would spin forever.
     if (!online) {
       return (
