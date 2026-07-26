@@ -154,6 +154,29 @@ export async function opmlRoutes(app: FastifyInstance): Promise<void> {
             // Populate metadata + initial articles. Records fetch errors on the
             // row rather than throwing, matching POST /feeds.
             await fetchAndStoreFeed(inserted!);
+
+            // Reject a brand-new feed whose very first fetch failed (unreachable,
+            // not a feed, unparseable): don't import it, and drop the orphan row
+            // if nobody else has raced a subscription onto it.
+            const [after] = await db
+              .select({ lastError: feeds.lastError })
+              .from(feeds)
+              .where(eq(feeds.id, feedId))
+              .limit(1);
+            if (after?.lastError) {
+              const others = await db
+                .select({ id: subscriptions.id })
+                .from(subscriptions)
+                .where(eq(subscriptions.feedId, feedId))
+                .limit(1);
+              if (others.length === 0) await db.delete(feeds).where(eq(feeds.id, feedId));
+              result.failed.push({
+                title: item.title,
+                xmlUrl: item.xmlUrl,
+                reason: after.lastError,
+              });
+              return;
+            }
           }
 
           const [alreadySubscribed] = await db

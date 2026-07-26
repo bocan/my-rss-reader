@@ -1,8 +1,14 @@
 import { ARTICLE_VIEWS, VIEW_MODES, type ArticleView, type ViewMode } from '@rss/shared';
-import { X } from 'lucide-react';
+import { Check, Copy, X } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
-import { useFolders, useUpdateSubscription, type SubscriptionRow } from '@/lib/folders';
+import { ApiRequestError } from '@/lib/api';
+import {
+  useChangeFeedUrl,
+  useFolders,
+  useUpdateSubscription,
+  type SubscriptionRow,
+} from '@/lib/folders';
 import { cn } from '@/lib/utils';
 
 const inputClass =
@@ -38,7 +44,10 @@ export function FeedSettingsDialog({
   const { data: foldersData } = useFolders();
   const folders = foldersData?.items ?? [];
   const update = useUpdateSubscription();
+  const changeUrl = useChangeFeedUrl();
 
+  const [url, setUrl] = useState(sub.feedUrl);
+  const [urlMsg, setUrlMsg] = useState<string | null>(null);
   const [name, setName] = useState(sub.customTitle ?? '');
   const [folderId, setFolderId] = useState<string>(sub.folderId ?? '');
   const [viewMode, setViewMode] = useState<string>(sub.viewMode ?? '');
@@ -106,6 +115,53 @@ export function FeedSettingsDialog({
               Blank uses the feed&apos;s own title.
             </span>
           </label>
+
+          <div className="space-y-1">
+            <span className="text-sm">Feed URL</span>
+            <div className="flex items-center gap-2">
+              <input
+                type="url"
+                value={url}
+                onChange={(e) => {
+                  setUrl(e.target.value);
+                  setUrlMsg(null);
+                }}
+                className={cn(inputClass, 'font-mono text-xs')}
+              />
+              <CopyButton value={url} />
+            </div>
+            {url.trim() !== sub.feedUrl && (
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={changeUrl.isPending || !url.trim()}
+                  onClick={() => {
+                    setUrlMsg(null);
+                    changeUrl.mutate(
+                      { id: sub.subscriptionId, feedUrl: url.trim() },
+                      {
+                        onSuccess: () => onOpenChange(false),
+                        onError: (err) =>
+                          setUrlMsg(
+                            err instanceof ApiRequestError
+                              ? (err.body?.message ?? err.message)
+                              : 'Could not change the URL.',
+                          ),
+                      },
+                    );
+                  }}
+                >
+                  {changeUrl.isPending ? 'Checking feed…' : 'Change URL'}
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  Re-points this subscription; the new URL is fetched to verify it.
+                </span>
+              </div>
+            )}
+            {urlMsg && <p className="text-xs text-destructive">{urlMsg}</p>}
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <label className="block space-y-1">
@@ -185,10 +241,18 @@ export function FeedSettingsDialog({
             />
           </label>
 
-          <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-            Last fetched {relativeTime(sub.lastFetchedAt)}
-            {sub.lastError ? ` · last error: ${sub.lastError}` : ' · no errors'}. The poll interval
-            is shared by everyone subscribed to this feed.
+          {sub.lastError ? (
+            <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              <span className="font-medium">This feed failed to update</span> (last tried{' '}
+              {relativeTime(sub.lastFetchedAt)}): {sub.lastError}
+            </p>
+          ) : (
+            <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+              Last fetched {relativeTime(sub.lastFetchedAt)} · no errors.
+            </p>
+          )}
+          <p className="text-xs text-muted-foreground">
+            The poll interval is shared by everyone subscribed to this feed.
           </p>
 
           {update.isError && (
@@ -206,5 +270,30 @@ export function FeedSettingsDialog({
         </form>
       </div>
     </div>
+  );
+}
+
+function CopyButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // clipboard denied; the field is selectable for manual copy
+    }
+  }
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="icon"
+      aria-label="Copy feed URL"
+      onClick={copy}
+      className="shrink-0"
+    >
+      {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+    </Button>
   );
 }

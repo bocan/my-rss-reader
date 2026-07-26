@@ -156,17 +156,61 @@ export function extractImageUrl(
 }
 
 /** Pure mapping of parsed feed items to sanitized article insert rows. */
+/**
+ * rss-parser returns nested OBJECTS for xhtml/html Atom fields (e.g.
+ * `<title type="xhtml">`) and for RSS nodes carrying attributes (e.g. a
+ * `<guid isPermaLink>` or an Atom `<author>`). An object landing in a text
+ * column breaks the whole insert batch (this is why some valid Atom feeds
+ * imported with zero articles), so flatten any value to plain text. `$` holds
+ * the XML attributes and is skipped.
+ */
+function flattenXmlText(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return value.map(flattenXmlText).join(' ');
+  if (typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>)
+      .filter(([k]) => k !== '$')
+      .map(([, v]) => flattenXmlText(v))
+      .join(' ');
+  }
+  return '';
+}
+
+/** Display text: a string as-is (trimmed) or a flattened XML node; null if empty. */
+function asText(value: unknown): string | null {
+  if (typeof value === 'string') return value.trim() || null;
+  const s = flattenXmlText(value).replace(/\s+/g, ' ').trim();
+  return s || null;
+}
+
+/** An id/URL: preserved verbatim when already a string, else flattened. */
+function asId(value: unknown): string | null {
+  if (typeof value === 'string') return value || null;
+  return asText(value);
+}
+
+/** Author name, preferring dc:creator, then an Atom author object's `name`. */
+function authorText(item: { creator?: unknown; author?: unknown }): string | null {
+  if (typeof item.creator === 'string') return item.creator.trim() || null;
+  const a = item.author;
+  if (a && typeof a === 'object' && 'name' in a) return asText((a as { name?: unknown }).name);
+  return asText(a);
+}
+
 export function feedArticleRows(feedId: string, parsed: ParsedFeed): NewArticleInsert[] {
   return parsed.items
     .map((item): NewArticleInsert | null => {
-      const guid = item.guid ?? item.link ?? item.id;
+      const guid = asId(item.guid) ?? asId(item.link) ?? asId(item.id);
       if (!guid) return null;
-      const raw = item['content:encoded'] ?? item.content ?? null;
-      const baseUrl = item.link ?? parsed.link ?? null;
+      const rawContent = item['content:encoded'] ?? item.content ?? null;
+      const raw = typeof rawContent === 'string' ? rawContent : asText(rawContent);
+      const baseUrl = asId(item.link) ?? parsed.link ?? null;
       const cleanHtml = raw ? sanitizeArticleHtml(raw, baseUrl) : null;
       // Search text: prefer the body, fall back to the summary so summary-only
       // feeds stay searchable (SPEC-006). searchVector regenerates on write.
-      const summaryText = item.contentSnippet ?? item.summary ?? null;
+      const summaryText = asText(item.contentSnippet ?? item.summary);
       const contentText = cleanHtml
         ? extractText(cleanHtml)
         : summaryText
@@ -175,9 +219,9 @@ export function feedArticleRows(feedId: string, parsed: ParsedFeed): NewArticleI
       return {
         feedId,
         guid,
-        url: item.link ?? null,
-        title: item.title ?? null,
-        author: item.creator ?? item.author ?? null,
+        url: asId(item.link),
+        title: asText(item.title),
+        author: authorText(item),
         contentHtml: cleanHtml,
         contentText,
         imageUrl: extractImageUrl(

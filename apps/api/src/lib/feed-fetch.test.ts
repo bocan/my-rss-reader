@@ -28,7 +28,8 @@ vi.mock('undici', () => ({
 }));
 
 // Import after the mock is registered.
-const { discoverFeedCandidates, fetchAndParseFeed, resolveFavicon } = await import('./feed-fetch.js');
+const { discoverFeedCandidates, fetchAndParseFeed, feedArticleRows, resolveFavicon } =
+  await import('./feed-fetch.js');
 
 const RSS = (title = 'My Feed') =>
   `<?xml version="1.0"?><rss version="2.0"><channel><title>${title}</title>` +
@@ -100,6 +101,40 @@ describe('discoverFeedCandidates', () => {
   test('returns empty for an unreachable host (no throw)', async () => {
     const out = await discoverFeedCandidates('https://down.example/');
     expect(out).toEqual([]);
+  });
+});
+
+describe('feedArticleRows text coercion', () => {
+  // rss-parser returns objects for xhtml/html Atom fields; those must never
+  // reach a text column (they broke the whole insert -> feeds imported empty).
+  test('flattens xhtml/object titles and Atom author objects to strings', () => {
+    const parsed = {
+      link: 'https://ex.com',
+      items: [
+        {
+          id: 'g1',
+          link: 'https://ex.com/1',
+          title: { $: { type: 'xhtml' }, div: [{ _: 'Hello World', $: {} }] },
+          isoDate: '2026-01-01T00:00:00.000Z',
+        },
+        // A title-less note (empty xhtml div, attributes only) -> null title.
+        { id: 'g2', link: 'https://ex.com/2', title: { $: { type: 'xhtml' }, div: [{ $: { class: 'x' } }] } },
+        // Atom <author> object -> its name.
+        { id: 'g3', link: 'https://ex.com/3', title: 'plain', author: { name: 'Jane', email: 'j@x.com' } },
+      ],
+    } as unknown as Parameters<typeof feedArticleRows>[1];
+
+    const rows = feedArticleRows('feed-1', parsed);
+    expect(rows).toHaveLength(3);
+    expect(rows[0]!.title).toBe('Hello World');
+    expect(rows[1]!.title).toBeNull();
+    expect(rows[2]!.author).toBe('Jane');
+    // Nothing bound to a text column is ever a non-string object.
+    for (const r of rows) {
+      for (const v of [r.title, r.author, r.guid, r.url, r.summary, r.contentHtml]) {
+        expect(v === null || typeof v === 'string').toBe(true);
+      }
+    }
   });
 });
 

@@ -5,7 +5,7 @@ import { afterAll, beforeAll, beforeEach, expect, test, vi } from 'vitest';
 import type * as FeedFetch from '../lib/feed-fetch.js';
 
 // Keep the importer off the network: every feed "fetch" is a no-op here.
-const fetchAndStoreFeed = vi.hoisted(() => vi.fn(async () => {}));
+const fetchAndStoreFeed = vi.hoisted(() => vi.fn(async (_feed?: { id: string }) => {}));
 vi.mock('../lib/feed-fetch.js', async (importOriginal) => {
   const actual = await importOriginal<typeof FeedFetch>();
   return { ...actual, fetchAndStoreFeed };
@@ -122,6 +122,29 @@ test('one failing feed is recorded without aborting the rest', async () => {
   expect(body.failed).toHaveLength(1);
   expect(body.failed[0].reason).toContain('boom');
   expect(body.feedsAdded).toBe(1); // the other one still imported
+});
+
+test('a new feed whose first fetch fails (no throw) is rejected, not imported', async () => {
+  const user = await seedUser();
+  const cookie = await loginAs(user);
+  // The fetch does not throw, but marks the feed errored (a parking page / moved
+  // feed): the importer must not keep it.
+  fetchAndStoreFeed.mockImplementationOnce(async (feed) => {
+    await db.update(feeds).set({ lastError: 'not a feed' }).where(eq(feeds.id, feed!.id));
+  });
+
+  const res = await importOpml(cookie, wrap('<outline text="Dead" xmlUrl="https://a.example/dead.xml" />'));
+  const body = res.json();
+  expect(body.feedsAdded).toBe(0);
+  expect(body.failed).toHaveLength(1);
+  expect(body.failed[0].reason).toContain('not a feed');
+  // Orphan feed row dropped; no subscription created.
+  expect(
+    await db.select().from(feeds).where(eq(feeds.feedUrl, 'https://a.example/dead.xml')),
+  ).toHaveLength(0);
+  expect(
+    await db.select().from(subscriptions).where(eq(subscriptions.userId, user.id)),
+  ).toHaveLength(0);
 });
 
 test('an outline with no xmlUrl and no children is reported as failed', async () => {

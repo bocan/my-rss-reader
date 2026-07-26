@@ -1,4 +1,5 @@
 import {
+  changeFeedUrlSchema,
   createFolderSchema,
   discoverFeedsQuerySchema,
   subscribeSchema,
@@ -20,6 +21,35 @@ import { getUnreadCountsByFeed } from '../lib/unread-counts.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const notFound = { error: 'NotFound', message: 'Not found', statusCode: 404 } as const;
+
+/** The GET /feeds row shape for one subscription, including its unread count. */
+async function subscriptionRow(subscriptionId: string, userId: string) {
+  const [row] = await db
+    .select({
+      subscriptionId: subscriptions.id,
+      feedId: feeds.id,
+      title: feeds.title,
+      customTitle: subscriptions.customTitle,
+      feedUrl: feeds.feedUrl,
+      siteUrl: feeds.siteUrl,
+      faviconUrl: feeds.faviconUrl,
+      folderId: subscriptions.folderId,
+      position: subscriptions.position,
+      viewMode: subscriptions.viewMode,
+      articleView: subscriptions.articleView,
+      hideFromAll: subscriptions.hideFromAll,
+      fetchIntervalSec: feeds.fetchIntervalSec,
+      lastFetchedAt: feeds.lastFetchedAt,
+      lastError: feeds.lastError,
+    })
+    .from(subscriptions)
+    .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
+    .where(eq(subscriptions.id, subscriptionId))
+    .limit(1);
+  if (!row) return null;
+  const counts = await getUnreadCountsByFeed(userId);
+  return { ...row, unreadCount: counts.find((c) => c.feedId === row.feedId)?.unreadCount ?? 0 };
+}
 
 export async function feedRoutes(app: FastifyInstance): Promise<void> {
   // Everything here requires a signed-in user.
@@ -186,32 +216,84 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
       await placeSubscription(tx, userId, id, newFolderId, input.position);
     });
 
-    const [row] = await db
-      .select({
-        subscriptionId: subscriptions.id,
-        feedId: feeds.id,
-        title: feeds.title,
-        customTitle: subscriptions.customTitle,
-        feedUrl: feeds.feedUrl,
-        siteUrl: feeds.siteUrl,
-        faviconUrl: feeds.faviconUrl,
-        folderId: subscriptions.folderId,
-        position: subscriptions.position,
-        viewMode: subscriptions.viewMode,
-        articleView: subscriptions.articleView,
-        hideFromAll: subscriptions.hideFromAll,
-        fetchIntervalSec: feeds.fetchIntervalSec,
-        lastFetchedAt: feeds.lastFetchedAt,
-        lastError: feeds.lastError,
-      })
+    return (await subscriptionRow(id, userId))!;
+  });
+
+  // Re-point a subscription at a feed hosted at a new URL (e.g. a feed that
+  // moved). Feeds are global/deduplicated, so this finds-or-creates the target
+  // feed, validates it by fetching, moves the subscription, and drops the old
+  // feed when it is left with no subscribers. Never mutates a shared feed's URL.
+  app.patch<{ Params: { id: string } }>('/feeds/:id/url', auth, async (request, reply) => {
+    const { id } = request.params;
+    const { feedUrl } = changeFeedUrlSchema.parse(request.body);
+    const userId = request.user!.id;
+    if (!UUID_RE.test(id)) return reply.code(404).send(notFound);
+
+    const [sub] = await db
+      .select({ feedId: subscriptions.feedId, currentUrl: feeds.feedUrl })
       .from(subscriptions)
       .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
-      .where(eq(subscriptions.id, id))
+      .where(and(eq(subscriptions.id, id), eq(subscriptions.userId, userId)))
       .limit(1);
+    if (!sub) return reply.code(404).send(notFound);
+    if (sub.currentUrl === feedUrl) return (await subscriptionRow(id, userId))!; // no-op
 
-    const counts = await getUnreadCountsByFeed(userId);
-    const unreadCount = counts.find((c) => c.feedId === row!.feedId)?.unreadCount ?? 0;
-    return { ...row!, unreadCount };
+    // Resolve the target feed, creating and validating it when new.
+    let [target] = await db.select().from(feeds).where(eq(feeds.feedUrl, feedUrl)).limit(1);
+    if (!target) {
+      const [created] = await db
+        .insert(feeds)
+        .values({ feedUrl })
+        .onConflictDoUpdate({ target: feeds.feedUrl, set: { updatedAt: new Date() } })
+        .returning();
+      await fetchAndStoreFeed(created!);
+      [target] = await db.select().from(feeds).where(eq(feeds.id, created!.id)).limit(1);
+      if (target!.lastError) {
+        // Not a valid/reachable feed: drop the orphan row we just made and reject.
+        const [used] = await db
+          .select({ id: subscriptions.id })
+          .from(subscriptions)
+          .where(eq(subscriptions.feedId, target!.id))
+          .limit(1);
+        if (!used) await db.delete(feeds).where(eq(feeds.id, target!.id));
+        return reply.code(422).send({
+          error: 'invalid_feed',
+          message: `Could not fetch a valid feed at that URL: ${target!.lastError}`,
+          statusCode: 422,
+        });
+      }
+    } else if (target.lastFetchedAt === null) {
+      await fetchAndStoreFeed(target);
+    }
+
+    if (target!.id === sub.feedId) return (await subscriptionRow(id, userId))!;
+
+    // Guard the (userId, feedId) unique index.
+    const [dupe] = await db
+      .select({ id: subscriptions.id })
+      .from(subscriptions)
+      .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, target!.id)))
+      .limit(1);
+    if (dupe) {
+      return reply.code(409).send({
+        error: 'already_subscribed',
+        message: 'You are already subscribed to the feed at that URL',
+        statusCode: 409,
+      });
+    }
+
+    const oldFeedId = sub.feedId;
+    await db.update(subscriptions).set({ feedId: target!.id }).where(eq(subscriptions.id, id));
+
+    // Drop the previous feed if this was its last subscriber.
+    const [stillUsed] = await db
+      .select({ id: subscriptions.id })
+      .from(subscriptions)
+      .where(eq(subscriptions.feedId, oldFeedId))
+      .limit(1);
+    if (!stillUsed) await db.delete(feeds).where(eq(feeds.id, oldFeedId));
+
+    return (await subscriptionRow(id, userId))!;
   });
 
   // Unsubscribe (removes only this user's subscription, not the shared feed).

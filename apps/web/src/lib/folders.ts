@@ -182,6 +182,20 @@ export function useUpdateSubscription() {
   });
 }
 
+/** Re-point a subscription at a feed hosted at a new URL (validates by fetching). */
+export function useChangeFeedUrl() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, feedUrl }: { id: string; feedUrl: string }) =>
+      api<SubscriptionRow>(`/feeds/${id}/url`, { method: 'PATCH', body: { feedUrl } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['feeds'] });
+      qc.invalidateQueries({ queryKey: ['counts'] });
+      qc.invalidateQueries({ queryKey: ['articles'] });
+    },
+  });
+}
+
 export function useUnsubscribe() {
   const qc = useQueryClient();
   return useMutation({

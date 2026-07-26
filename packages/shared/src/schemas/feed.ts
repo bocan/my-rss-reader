@@ -27,6 +27,12 @@ export const updateSubscriptionSchema = z.object({
 });
 export type UpdateSubscriptionInput = z.infer<typeof updateSubscriptionSchema>;
 
+/** Re-point a subscription at a feed living at a new URL (SPEC-018). */
+export const changeFeedUrlSchema = z.object({
+  feedUrl: z.url(),
+});
+export type ChangeFeedUrlInput = z.infer<typeof changeFeedUrlSchema>;
+
 export const createFolderSchema = z.object({
   name: z.string().min(1).max(100),
   parentId: z.uuid().nullable().optional(),

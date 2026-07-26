@@ -9,7 +9,15 @@ import {
 } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { ChevronDown, ChevronRight, Folder, MoreHorizontal, Plus, Rss } from 'lucide-react';
+import {
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  Folder,
+  MoreHorizontal,
+  Plus,
+  Rss,
+} from 'lucide-react';
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import { FeedSettingsDialog } from '@/components/feed/FeedSettingsDialog';
 import { Button } from '@/components/ui/button';
@@ -546,6 +554,15 @@ function FeedNode({
           <button onClick={onSelect} className="min-w-0 flex-1 truncate text-left">
             {label}
           </button>
+          {sub.lastError && (
+            <span
+              className="shrink-0 text-destructive"
+              title={`This feed failed to update: ${sub.lastError}`}
+              aria-label={`Feed error: ${sub.lastError}`}
+            >
+              <AlertTriangle className="size-3.5" />
+            </span>
+          )}
           {unread > 0 && (
             <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
               {unread}
