@@ -516,15 +516,21 @@ function FeedNode({
   onUnsubscribe,
   onMarkRead,
 }: FeedNodeProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: `feed:${sub.subscriptionId}`,
-    data: {
-      type: 'feed',
-      subscriptionId: sub.subscriptionId,
-      folderId: sub.folderId,
-      index,
-    } satisfies DragData,
-  });
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
+    useSortable({
+      id: `feed:${sub.subscriptionId}`,
+      data: {
+        type: 'feed',
+        subscriptionId: sub.subscriptionId,
+        folderId: sub.folderId,
+        index,
+      } satisfies DragData,
+    });
+
+  // A favicon that fails to load must fall back to the generic icon, not
+  // vanish: the icon keeps titles aligned across rows. Keyed by URL so a
+  // corrected favicon (feed URL change) gets a fresh attempt.
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
 
   // When this row becomes the active feed (e.g. from n/p keyboard nav), pull it
   // into view. `nearest` scrolls the sidebar minimally and is a no-op if it is
@@ -554,22 +560,28 @@ function FeedNode({
         isDragging && 'opacity-50',
       )}
       title={sub.feedUrl}
+      // The whole row is a pointer drag surface: activation needs 4px of
+      // travel (sensor config above), so plain clicks still select/open.
+      // Suppressed while renaming, or selecting text in the inline input
+      // would drag the row. Keyboard drag stays on the icon handle: it is
+      // the registered activator node, so Enter/Space bubbling up from the
+      // row's buttons is rejected by the keyboard sensor.
+      {...(isEditing ? undefined : listeners)}
     >
       <span
+        ref={setActivatorNodeRef}
         {...attributes}
         {...listeners}
         className="shrink-0 cursor-grab rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         aria-label={`Drag ${label}`}
         title={`Drag to reorder or move ${label}`}
       >
-        {sub.faviconUrl ? (
+        {sub.faviconUrl && sub.faviconUrl !== failedSrc ? (
           <img
             src={sub.faviconUrl}
             alt=""
             className="size-4 rounded-sm"
-            onError={(e) => {
-              e.currentTarget.style.display = 'none';
-            }}
+            onError={() => setFailedSrc(sub.faviconUrl)}
           />
         ) : (
           <Rss className="size-4 text-muted-foreground" />
