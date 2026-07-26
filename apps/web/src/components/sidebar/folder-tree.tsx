@@ -18,7 +18,7 @@ import {
   Plus,
   Rss,
 } from 'lucide-react';
-import { useEffect, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { FeedSettingsDialog } from '@/components/feed/FeedSettingsDialog';
 import { Button } from '@/components/ui/button';
 import {
@@ -29,6 +29,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useMarkRead } from '@/lib/articles';
+import { byFolderName, makeFeedComparator, type FeedSort } from '@/lib/feed-order';
 import {
   useCreateFolder,
   useDeleteFolder,
@@ -40,27 +41,13 @@ import {
   type FolderRow,
   type SubscriptionRow,
 } from '@/lib/folders';
+import { toggleFolderExpanded, useExpandedFolders } from '@/lib/sidebar-expanded';
 import { cn } from '@/lib/utils';
-
-const STORAGE_KEY = 'reader:sidebar-expanded';
-
-function loadExpanded(): Set<string> {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
-  } catch {
-    return new Set();
-  }
-}
 
 type DragData =
   | { type: 'feed'; subscriptionId: string; folderId: string | null; index: number }
   | { type: 'folder'; folderId: string; parentId: string | null; index: number }
   | { type: 'dropzone'; folderId: string | null };
-
-/** How the sidebar is ordered. Folders are always alphabetical; this controls
- *  the feeds within each scope (SPEC: feed ordering). */
-export type FeedSort = 'name' | 'unread';
 
 interface FolderTreeProps {
   activeFeedId?: string;
@@ -70,8 +57,6 @@ interface FolderTreeProps {
   countByFeed: Map<string, number>;
   sort: FeedSort;
 }
-
-const feedName = (s: SubscriptionRow) => (s.customTitle ?? s.title ?? s.feedUrl).toLowerCase();
 
 export function FolderTree({
   activeFeedId,
@@ -93,37 +78,17 @@ export function FolderTree({
   const unsubscribe = useUnsubscribe();
   const markRead = useMarkRead();
 
-  const [expanded, setExpanded] = useState<Set<string>>(() => loadExpanded());
+  const expanded = useExpandedFolders();
   const [editing, setEditing] = useState<{ kind: 'folder' | 'feed'; id: string } | null>(null);
   const [settingsSub, setSettingsSub] = useState<SubscriptionRow | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify([...expanded]));
-    } catch {
-      // display preference only; ignore quota/private-mode failures
-    }
-  }, [expanded]);
-
-  // Folders are always alphabetical. Feeds follow the sort mode: by name, or by
-  // unread count (feeds with unread first, descending; feeds with none fall back
-  // to alphabetical). Because counts come from a live query, marking read
-  // re-sorts on the next render for free.
-  const byFolderName = (a: FolderRow, b: FolderRow) =>
-    a.name.toLowerCase().localeCompare(b.name.toLowerCase());
-  const byFeed = (a: SubscriptionRow, b: SubscriptionRow) => {
-    if (sort === 'unread') {
-      const ua = countByFeed.get(a.feedId) ?? 0;
-      const ub = countByFeed.get(b.feedId) ?? 0;
-      if (ua === 0 && ub === 0) return feedName(a).localeCompare(feedName(b));
-      if (ua === 0) return 1;
-      if (ub === 0) return -1;
-      if (ua !== ub) return ub - ua;
-    }
-    return feedName(a).localeCompare(feedName(b));
-  };
+  // Folders are always alphabetical. Feeds follow the sort mode (by name, or by
+  // unread count). Because counts come from a live query, marking read re-sorts
+  // on the next render for free. Shared with the keyboard layer via feed-order so
+  // next/prev-feed steps through the exact order shown here.
+  const byFeed = makeFeedComparator(sort, countByFeed);
 
   const rootFolders = folders.filter((f) => f.parentId === null).sort(byFolderName);
   const childrenOf = (id: string) => folders.filter((f) => f.parentId === id).sort(byFolderName);
@@ -131,13 +96,7 @@ export function FolderTree({
     subs.filter((s) => s.folderId === folderId).sort(byFeed);
   const hasChildren = (id: string) => folders.some((f) => f.parentId === id);
 
-  const toggle = (id: string) =>
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  const toggle = toggleFolderExpanded;
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -534,11 +493,23 @@ function FeedNode({
     } satisfies DragData,
   });
 
+  // When this row becomes the active feed (e.g. from n/p keyboard nav), pull it
+  // into view. `nearest` scrolls the sidebar minimally and is a no-op if it is
+  // already visible, so clicks and drags do not jump the list.
+  const rowRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (isActive) rowRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [isActive]);
+  const setRefs = (node: HTMLDivElement | null) => {
+    setNodeRef(node);
+    rowRef.current = node;
+  };
+
   const label = sub.customTitle ?? sub.title ?? sub.feedUrl;
 
   return (
     <div
-      ref={setNodeRef}
+      ref={setRefs}
       style={{
         transform: CSS.Transform.toString(transform),
         transition,

@@ -21,7 +21,7 @@ import { ListColumn } from '@/components/reader/ListColumn';
 import { ViewSwitcher } from '@/components/reader/ViewSwitcher';
 import { ReadingPane } from '@/components/reading-pane/ReadingPane';
 import { ShortcutsOverlay } from '@/components/shortcuts/ShortcutsOverlay';
-import { FolderTree, type FeedSort } from '@/components/sidebar/folder-tree';
+import { FolderTree } from '@/components/sidebar/folder-tree';
 import { SubscribeDialog } from '@/components/subscribe-dialog';
 import { Button } from '@/components/ui/button';
 import { useArticleSurface } from '@/hooks/use-article-surface';
@@ -30,7 +30,9 @@ import { useShortcuts } from '@/hooks/use-shortcuts';
 import { useSidebar } from '@/hooks/use-sidebar';
 import { useMarkRead, useToggleArticleState, useUnreadCounts } from '@/lib/articles';
 import { useSession } from '@/lib/auth';
+import { orderedVisibleFeedIds, type FeedSort } from '@/lib/feed-order';
 import { useFolders, useRefreshFeeds, useSubscriptions } from '@/lib/folders';
+import { useExpandedFolders } from '@/lib/sidebar-expanded';
 import { useSettings } from '@/lib/settings';
 import type { ViewMode } from '@rss/shared';
 import type { ShortcutContextName } from '@/lib/shortcuts/registry';
@@ -87,7 +89,8 @@ export function ReaderPage() {
   }, [feedSort]);
 
   const { data: feedsData, isLoading } = useSubscriptions();
-  const subs = feedsData?.items ?? [];
+  // Stable identity so downstream useMemos (feedMeta, feedOrder) do not churn.
+  const subs = useMemo(() => feedsData?.items ?? [], [feedsData]);
   const { data: foldersData } = useFolders();
   const { data: counts } = useUnreadCounts();
 
@@ -191,7 +194,21 @@ export function ReaderPage() {
   }
 
   // --- Keyboard layer (SPEC-008) ---------------------------------------
-  const feedOrder = subs.map((s) => s.feedId);
+  // n/p step through feeds in the exact order the sidebar shows them (folders
+  // alphabetical, feeds by the active sort), skipping feeds hidden inside
+  // collapsed folders. Shares the ordering and expanded state with the tree.
+  const expandedFolders = useExpandedFolders();
+  const feedOrder = useMemo(
+    () =>
+      orderedVisibleFeedIds({
+        folders: foldersData?.items ?? [],
+        subs,
+        sort: feedSort,
+        countByFeed,
+        expanded: expandedFolders,
+      }),
+    [foldersData, subs, feedSort, countByFeed, expandedFolders],
+  );
   const stepFeed = (delta: number) => {
     if (feedOrder.length === 0) return;
     const at = filters.feedId ? feedOrder.indexOf(filters.feedId) : -1;
