@@ -3,6 +3,8 @@ import {
   ArrowDownAZ,
   ArrowDownWideNarrow,
   ChevronLeft,
+  Circle,
+  CircleDot,
   Inbox,
   Keyboard,
   PanelLeft,
@@ -89,6 +91,23 @@ export function ReaderPage() {
     }
   }, [feedSort]);
 
+  // "Unread only": hides read articles from the lists and read-empty feeds from
+  // the sidebar. A global toggle (not per-scope), persisted locally.
+  const [unreadOnly, setUnreadOnly] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem('reader:unread-only') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('reader:unread-only', String(unreadOnly));
+    } catch {
+      // display preference only
+    }
+  }, [unreadOnly]);
+
   const { data: feedsData, isLoading } = useSubscriptions();
   // Stable identity so downstream useMemos (feedMeta, feedOrder) do not churn.
   const subs = useMemo(() => feedsData?.items ?? [], [feedsData]);
@@ -141,10 +160,12 @@ export function ReaderPage() {
     return () => clearTimeout(timer);
   }, [searchInput]);
   const isSearching = debouncedQ.length > 0;
-  const effectiveFilters = useMemo(
-    () => (debouncedQ ? { ...filters, q: debouncedQ } : filters),
-    [filters, debouncedQ],
-  );
+  const effectiveFilters = useMemo(() => {
+    let f = filters;
+    if (unreadOnly) f = { ...f, unread: true };
+    if (debouncedQ) f = { ...f, q: debouncedQ };
+    return f;
+  }, [filters, unreadOnly, debouncedQ]);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedId = searchParams.get('article');
@@ -348,6 +369,7 @@ export function ReaderPage() {
         onSelectFolder={onSelectFolder}
         countByFeed={countByFeed}
         sort={feedSort}
+        hideRead={unreadOnly}
       />
 
       <div className="mt-auto space-y-0.5 pt-2">
@@ -455,6 +477,26 @@ export function ReaderPage() {
             Mark all read
           </Button>
         )}
+        <Button
+          variant={unreadOnly ? 'default' : 'ghost'}
+          size="icon"
+          aria-pressed={unreadOnly}
+          aria-label={unreadOnly ? 'Showing unread only' : 'Show unread only'}
+          title={
+            unreadOnly
+              ? 'Showing unread only — click to show all'
+              : 'Show unread only'
+          }
+          onClick={() =>
+            setUnreadOnly((v) => {
+              const next = !v;
+              announce(next ? 'Showing unread only' : 'Showing all articles');
+              return next;
+            })
+          }
+        >
+          {unreadOnly ? <CircleDot /> : <Circle />}
+        </Button>
         <ViewSwitcher view={view} onChange={setView} />
       </div>
     </>

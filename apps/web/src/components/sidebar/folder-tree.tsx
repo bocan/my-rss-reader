@@ -56,6 +56,8 @@ interface FolderTreeProps {
   onSelectFolder: (folderId: string) => void;
   countByFeed: Map<string, number>;
   sort: FeedSort;
+  /** When true, hide feeds (and now-empty folders) that have no unread items. */
+  hideRead?: boolean;
 }
 
 export function FolderTree({
@@ -65,6 +67,7 @@ export function FolderTree({
   onSelectFolder,
   countByFeed,
   sort,
+  hideRead = false,
 }: FolderTreeProps) {
   const { data: foldersData } = useFolders();
   const { data: feedsData } = useSubscriptions();
@@ -102,10 +105,25 @@ export function FolderTree({
   // next/prev-feed steps through the exact order shown here.
   const byFeed = makeFeedComparator(sort, countByFeed);
 
-  const rootFolders = folders.filter((f) => f.parentId === null).sort(byFolderName);
-  const childrenOf = (id: string) => folders.filter((f) => f.parentId === id).sort(byFolderName);
+  // In hide-read mode a feed is shown only if it has unread items - except the
+  // feed you are currently reading, which stays put so it never vanishes from
+  // under you as you mark its last item read.
+  const feedVisible = (s: SubscriptionRow) =>
+    !hideRead || (countByFeed.get(s.feedId) ?? 0) > 0 || s.feedId === activeFeedId;
   const feedsIn = (folderId: string | null) =>
-    subs.filter((s) => s.folderId === folderId).sort(byFeed);
+    subs.filter((s) => s.folderId === folderId && feedVisible(s)).sort(byFeed);
+  // A folder is shown while it (or a child folder) still has a visible feed, or
+  // it is the folder currently in view.
+  const folderHasVisible = (id: string): boolean =>
+    !hideRead ||
+    id === activeFolderId ||
+    feedsIn(id).length > 0 ||
+    folders.some((c) => c.parentId === id && feedsIn(c.id).length > 0);
+  const childrenOf = (id: string) =>
+    folders.filter((f) => f.parentId === id && folderHasVisible(f.id)).sort(byFolderName);
+  const rootFolders = folders
+    .filter((f) => f.parentId === null && folderHasVisible(f.id))
+    .sort(byFolderName);
   const hasChildren = (id: string) => folders.some((f) => f.parentId === id);
 
   const toggle = toggleFolderExpanded;
