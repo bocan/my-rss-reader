@@ -64,7 +64,7 @@ export function ReaderPage() {
   const isWide = useIsWide();
   const isPhone = useIsPhone();
   const { collapsed, toggle: toggleSidebar } = useSidebar();
-  const { settings } = useSettings();
+  const { settings, update: updateSettings } = useSettings();
   const { data: me } = useSession();
 
   // Phone-only stacked navigation: feeds -> list (-> reader, driven by the
@@ -108,11 +108,18 @@ export function ReaderPage() {
 
   const [filters, setFilters] = useState<ArticleFilters>({ sort: 'newest' });
 
-  // The switcher changes the view for the CURRENT viewing session only; it never
-  // persists. Each scope opens at its effective default (the feed's own override,
-  // set in its settings dialog, else the user default), and the transient choice
-  // resets when you move to a different scope. Persistent defaults live in feed
-  // settings and the Settings page, never in the switcher.
+  // View resolution. Each scope opens at its effective view: the feed's own
+  // override (set in feed settings) if it has one, else the user's default view.
+  // The user default is their LAST PICK from the switcher - persisted server-side
+  // (settings.defaultViewMode), so it survives login and is only 'cards' until the
+  // user has ever clicked the switcher.
+  //
+  // The switcher does two things: shows the pick immediately for the current scope
+  // (viewOverride, so it responds even on a feed that has its own override), and
+  // records it as the user default. It never writes a feed's override - that lives
+  // only in feed settings, so an overridden feed keeps its view on the next visit.
+  // The session override clears on scope change, so navigating to a feed always
+  // lands on its effective view.
   const refreshFeeds = useRefreshFeeds();
   const currentSub = filters.feedId ? subs.find((s) => s.feedId === filters.feedId) : undefined;
   const effectiveView: ViewMode = currentSub?.viewMode ?? settings.defaultViewMode;
@@ -121,7 +128,10 @@ export function ReaderPage() {
   useEffect(() => setViewOverride(null), [scopeKey]);
   const view: ViewMode = viewOverride ?? effectiveView;
   const isBrowse = view === 'cards' || view === 'magazine';
-  const setView = (mode: ViewMode) => setViewOverride(mode);
+  const setView = (mode: ViewMode) => {
+    setViewOverride(mode);
+    if (mode !== settings.defaultViewMode) updateSettings({ defaultViewMode: mode });
+  };
 
   const [searchInput, setSearchInput] = useState('');
   const [debouncedQ, setDebouncedQ] = useState('');
@@ -143,6 +153,7 @@ export function ReaderPage() {
     setSearchParams(next);
   };
   const clearArticle = () => {
+    if (!searchParams.has('article')) return; // idempotent: no spurious history entry
     const next = new URLSearchParams(searchParams);
     next.delete('article');
     setSearchParams(next);
@@ -153,7 +164,11 @@ export function ReaderPage() {
   // reader back to the list for free; list -> feeds is the explicit control
   // below (a manual history barrier here would desync react-router's stack).
   const goToList = () => setMobileStep('list');
+  // Changing scope always drops the article you were reading, so the reading
+  // region resets to the new scope's list/cards/magazine instead of stranding the
+  // old article in view while the list underneath changes feeds.
   const pickScope = (apply: () => void) => {
+    clearArticle();
     apply();
     goToList();
   };
@@ -214,7 +229,10 @@ export function ReaderPage() {
     const at = filters.feedId ? feedOrder.indexOf(filters.feedId) : -1;
     const next = (at + delta + feedOrder.length) % feedOrder.length;
     const feedId = feedOrder[at === -1 && delta < 0 ? feedOrder.length - 1 : next];
-    if (feedId) setFilters({ feedId, sort: 'newest' });
+    if (feedId) {
+      clearArticle(); // same reset as clicking a feed: don't strand the open article
+      setFilters({ feedId, sort: 'newest' });
+    }
   };
 
   const targetId = selectedId ?? surface.getFocused()?.id ?? null;
