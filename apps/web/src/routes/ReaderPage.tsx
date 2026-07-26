@@ -1,5 +1,15 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, Inbox, Keyboard, PanelLeft, Plus, Settings, Shield, Star } from 'lucide-react';
+import {
+  ChevronLeft,
+  Inbox,
+  Keyboard,
+  PanelLeft,
+  Plus,
+  RefreshCw,
+  Settings,
+  Shield,
+  Star,
+} from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { AppShell } from '@/components/layout/AppShell';
@@ -18,7 +28,12 @@ import { useShortcuts } from '@/hooks/use-shortcuts';
 import { useSidebar } from '@/hooks/use-sidebar';
 import { useMarkRead, useToggleArticleState, useUnreadCounts } from '@/lib/articles';
 import { useSession } from '@/lib/auth';
-import { useFolders, useSubscriptions, useUpdateSubscription } from '@/lib/folders';
+import {
+  useFolders,
+  useRefreshFeeds,
+  useSubscriptions,
+  useUpdateSubscription,
+} from '@/lib/folders';
 import { useSettings } from '@/lib/settings';
 import type { ViewMode } from '@rss/shared';
 import type { ShortcutContextName } from '@/lib/shortcuts/registry';
@@ -80,6 +95,7 @@ export function ReaderPage() {
   // Active list view: a per-feed override wins over the user default. The
   // switcher writes the override when scoped to a feed, else the default.
   const updateSub = useUpdateSubscription();
+  const refreshFeeds = useRefreshFeeds();
   const currentSub = filters.feedId ? subs.find((s) => s.feedId === filters.feedId) : undefined;
   const view: ViewMode = currentSub?.viewMode ?? settings.defaultViewMode;
   const isBrowse = view === 'cards' || view === 'magazine';
@@ -339,6 +355,20 @@ export function ReaderPage() {
         )}
       </span>
       <div className="ml-auto flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Fetch all feeds now"
+          title="Fetch all feeds now"
+          disabled={refreshFeeds.isPending}
+          onClick={() => refreshFeeds.mutate()}
+        >
+          <RefreshCw
+            className={cn(
+              refreshFeeds.isPending && 'animate-spin motion-reduce:animate-none',
+            )}
+          />
+        </Button>
         <input
           ref={searchRef}
           type="search"

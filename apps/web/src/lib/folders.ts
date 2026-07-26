@@ -182,6 +182,19 @@ export function useUpdateSubscription() {
   });
 }
 
+/** Force-fetch all of the user's feeds now (the "Fetch now" button). */
+export function useRefreshFeeds() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<{ refreshed: number }>('/feeds/refresh', { method: 'POST' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['feeds'] });
+      qc.invalidateQueries({ queryKey: ['articles'] });
+      qc.invalidateQueries({ queryKey: ['counts'] });
+    },
+  });
+}
+
 /** Re-point a subscription at a feed hosted at a new URL (validates by fetching). */
 export function useChangeFeedUrl() {
   const qc = useQueryClient();

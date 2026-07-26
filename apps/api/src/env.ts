@@ -26,7 +26,10 @@ const envSchema = z.object({
   SESSION_SECRET: z.string().min(16),
   SESSION_TTL_DAYS: z.coerce.number().int().positive().default(30),
 
-  FEED_POLL_INTERVAL_SEC: z.coerce.number().int().positive().default(900),
+  // How often the worker WAKES to check for due feeds. This gates the shortest
+  // effective poll interval, so keep it small (per-feed intervals decide the
+  // rest). Not the per-feed default - that is app_settings.defaultPollIntervalSec.
+  FEED_POLL_INTERVAL_SEC: z.coerce.number().int().positive().default(60),
   FEED_POLL_CONCURRENCY: z.coerce.number().int().positive().default(8),
 
   // Largest OPML document accepted by POST /opml/import (SPEC-009).

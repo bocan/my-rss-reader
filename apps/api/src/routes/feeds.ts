@@ -6,7 +6,7 @@ import {
   updateFolderSchema,
   updateSubscriptionSchema,
 } from '@rss/shared';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { db } from '../db/index.js';
 import { feeds, folders, subscriptions } from '../db/schema.js';
@@ -86,6 +86,30 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
     return {
       items: rows.map((r) => ({ ...r, unreadCount: countByFeed.get(r.feedId) ?? 0 })),
     };
+  });
+
+  // Force-fetch all of the caller's feeds right now, bypassing per-feed poll
+  // intervals (the "Fetch now" button). Bounded concurrency; returns when done
+  // so the client can refresh its views and see errors/new articles immediately.
+  app.post('/feeds/refresh', auth, async (request) => {
+    const userId = request.user!.id;
+    const subs = await db
+      .select({ feedId: subscriptions.feedId })
+      .from(subscriptions)
+      .where(eq(subscriptions.userId, userId));
+    const feedIds = [...new Set(subs.map((s) => s.feedId))];
+    if (feedIds.length === 0) return { refreshed: 0 };
+
+    const feedRows = await db.select().from(feeds).where(inArray(feeds.id, feedIds));
+    let index = 0;
+    const worker = async (): Promise<void> => {
+      while (index < feedRows.length) {
+        const feed = feedRows[index++];
+        if (feed) await fetchAndStoreFeed(feed); // records errors on the row, never throws
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(8, feedRows.length) }, worker));
+    return { refreshed: feedRows.length };
   });
 
   // Discover feed candidates for a URL (feed or homepage). Writes nothing.

@@ -81,6 +81,26 @@ test('rejects re-pointing to a feed the user already subscribes to (409)', async
   expect((await changeUrl(cookie, subA.id, 'https://b.example/feed.xml')).statusCode).toBe(409);
 });
 
+test('POST /feeds/refresh force-fetches all of the caller’s feeds only', async () => {
+  const user = await seedUser();
+  const f1 = await seedFeed();
+  const f2 = await seedFeed();
+  await seedSubscription(user.id, f1.id);
+  await seedSubscription(user.id, f2.id);
+  // Another user's feed must not be fetched.
+  const other = await seedUser();
+  const f3 = await seedFeed();
+  await seedSubscription(other.id, f3.id);
+  const cookie = await loginAs(user);
+
+  const res = await app.inject({ method: 'POST', url: '/api/feeds/refresh', headers: { cookie } });
+  expect(res.statusCode).toBe(200);
+  expect(res.json().refreshed).toBe(2);
+  expect(fetchAndStoreFeed).toHaveBeenCalledTimes(2);
+  const fetched = fetchAndStoreFeed.mock.calls.map((c) => c[0]!.id).sort();
+  expect(fetched).toEqual([f1.id, f2.id].sort());
+});
+
 test('a no-op change to the same URL returns 200 without fetching', async () => {
   const user = await seedUser();
   const feed = await seedFeed({ feedUrl: 'https://same.example/feed.xml' });
