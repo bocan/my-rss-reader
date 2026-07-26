@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import type { AmbiguousFeedError, FeedCandidate } from '@rss/shared';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { announce } from '@/lib/announce';
 import { ApiRequestError } from '@/lib/api';
 import { useSubscribe } from '@/lib/feeds';
 import { cn } from '@/lib/utils';
@@ -30,6 +31,7 @@ export function SubscribeDialog({ open, onOpenChange }: SubscribeDialogProps) {
     setError(null);
     try {
       await subscribe.mutateAsync(targetUrl);
+      announce('Subscription added');
       onOpenChange(false);
     } catch (err) {
       if (err instanceof ApiRequestError && err.status === 409) {

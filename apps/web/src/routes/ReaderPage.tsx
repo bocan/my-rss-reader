@@ -28,6 +28,7 @@ import { useArticleSurface } from '@/hooks/use-article-surface';
 import type { ArticleFilters, ArticleListItem } from '@/hooks/use-articles';
 import { useShortcuts } from '@/hooks/use-shortcuts';
 import { useSidebar } from '@/hooks/use-sidebar';
+import { announce } from '@/lib/announce';
 import { useMarkRead, useToggleArticleState, useUnreadCounts } from '@/lib/articles';
 import { useSession } from '@/lib/auth';
 import { orderedVisibleFeedIds, type FeedSort } from '@/lib/feed-order';
@@ -206,6 +207,7 @@ export function ReaderPage() {
     markRead.mutate(
       filters.feedId ? { feedId: filters.feedId } : filters.folderId ? { folderId: filters.folderId } : {},
     );
+    announce(`Marked ${unreadForView} ${unreadForView === 1 ? 'article' : 'articles'} as read in ${scopeLabel}`);
   }
 
   // --- Keyboard layer (SPEC-008) ---------------------------------------
@@ -425,7 +427,13 @@ export function ReaderPage() {
           aria-label="Fetch all feeds now"
           title="Fetch all feeds now"
           disabled={refreshFeeds.isPending}
-          onClick={() => refreshFeeds.mutate()}
+          onClick={() => {
+            announce('Fetching all feeds');
+            refreshFeeds.mutate(undefined, {
+              onSuccess: () => announce('Feeds updated'),
+              onError: () => announce('Could not fetch feeds'),
+            });
+          }}
         >
           <RefreshCw
             className={cn(

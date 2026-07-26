@@ -7,6 +7,13 @@ import { useOnlineStatus } from '@/lib/pwa';
 import { useSettings } from '@/lib/settings';
 import { applyDensity } from '@/lib/theme';
 
+/** Move focus (and the viewport) to the main content region. */
+function focusMainContent(): void {
+  const main = document.getElementById('main-content');
+  main?.focus();
+  main?.scrollIntoView();
+}
+
 /**
  * The permanent app frame. `leading` sits before the product mark (the sidebar
  * toggle); `bar` is the flexible middle region (scope chrome + view switcher).
@@ -31,6 +38,27 @@ export function AppShell({
 
   return (
     <div className="flex h-full flex-col">
+      {/* First focusable element: lets keyboard users jump past the header
+          straight into the content. Off-screen until focused. */}
+      <a
+        href="#main-content"
+        onClick={(e) => {
+          e.preventDefault();
+          focusMainContent();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            // Handle activation here and stop the event: the global shortcut layer
+            // listens on document and binds Enter, which would otherwise consume it.
+            e.preventDefault();
+            e.stopPropagation();
+            focusMainContent();
+          }
+        }}
+        className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-[100] focus:rounded-md focus:bg-primary focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+      >
+        Skip to content
+      </a>
       <header className="flex h-14 shrink-0 items-center gap-3 border-b px-3">
         {leading}
         <span className="flex shrink-0 items-center gap-2">
@@ -62,7 +90,9 @@ export function AppShell({
           )}
         </div>
       </header>
-      <main className="min-h-0 flex-1">{children}</main>
+      <main id="main-content" tabIndex={-1} className="min-h-0 flex-1 focus:outline-none">
+        {children}
+      </main>
     </div>
   );
 }

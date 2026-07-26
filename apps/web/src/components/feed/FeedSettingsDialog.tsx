@@ -3,6 +3,7 @@ import { Check, Copy } from 'lucide-react';
 import { useState, type FormEvent, type RefObject } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { announce } from '@/lib/announce';
 import { ApiRequestError } from '@/lib/api';
 import {
   useChangeFeedUrl,
@@ -74,7 +75,12 @@ export function FeedSettingsDialog({
         hideFromAll,
         fetchIntervalSec: min == null ? null : min * 60,
       },
-      { onSuccess: () => onOpenChange(false) },
+      {
+        onSuccess: () => {
+          announce('Feed settings saved');
+          onOpenChange(false);
+        },
+      },
     );
   }
 

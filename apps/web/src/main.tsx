@@ -4,6 +4,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router';
 import { App } from './App';
+import { Announcer } from './components/a11y/Announcer';
 import { PwaToasts } from './components/pwa/PwaToasts';
 // Self-hosted variable fonts (SPEC-016 Phase 2). Bundled by Vite and precached
 // by the service worker, so they render offline with no external request.
@@ -51,6 +52,7 @@ createRoot(container).render(
         <App />
       </BrowserRouter>
       <PwaToasts />
+      <Announcer />
       {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
     </PersistQueryClientProvider>
   </StrictMode>,
