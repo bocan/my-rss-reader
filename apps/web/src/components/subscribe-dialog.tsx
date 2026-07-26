@@ -67,11 +67,16 @@ export function SubscribeDialog({ open, onOpenChange }: SubscribeDialogProps) {
       onMouseDown={() => onOpenChange(false)}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="subscribe-dialog-title"
         className="w-full max-w-md rounded-lg border bg-background p-4 shadow-lg"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Add subscription</h2>
+          <h2 id="subscribe-dialog-title" className="text-sm font-semibold">
+            Add subscription
+          </h2>
           <Button variant="ghost" size="icon" onClick={() => onOpenChange(false)} aria-label="Close">
             <X />
           </Button>
@@ -82,6 +87,7 @@ export function SubscribeDialog({ open, onOpenChange }: SubscribeDialogProps) {
             autoFocus
             type="url"
             required
+            aria-label="Site or feed URL"
             placeholder="https://example.com or a feed URL"
             value={url}
             onChange={(e) => setUrl(e.target.value)}

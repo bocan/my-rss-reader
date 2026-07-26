@@ -345,6 +345,7 @@ function FolderNode(props: FolderNodeProps) {
         <button
           onClick={props.onToggle}
           aria-label={expanded ? 'Collapse folder' : 'Expand folder'}
+          title={expanded ? 'Collapse folder' : 'Expand folder'}
           className="shrink-0 rounded text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
@@ -354,6 +355,7 @@ function FolderNode(props: FolderNodeProps) {
           {...listeners}
           className="cursor-grab rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label={`Drag folder ${folder.name}`}
+          title={`Drag to reorder ${folder.name}`}
         >
           <Folder className="size-4 shrink-0 text-muted-foreground" />
         </span>
@@ -527,6 +529,7 @@ function FeedNode({
         {...listeners}
         className="shrink-0 cursor-grab rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         aria-label={`Drag ${label}`}
+        title={`Drag to reorder or move ${label}`}
       >
         {sub.faviconUrl ? (
           <img

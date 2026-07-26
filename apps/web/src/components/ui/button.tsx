@@ -35,9 +35,16 @@ export interface ButtonProps
   asChild?: boolean;
 }
 
-export function Button({ className, variant, size, asChild = false, ...props }: ButtonProps) {
+export function Button({ className, variant, size, asChild = false, title, ...props }: ButtonProps) {
   const Comp = asChild ? Slot : 'button';
-  return <Comp className={cn(buttonVariants({ variant, size, className }))} {...props} />;
+  // Icon-only buttons carry an aria-label but no visible text. Mirror that label
+  // into a hover tooltip (unless the caller passed their own title), so every
+  // such control explains itself on hover as well as to a screen reader.
+  const ariaLabel = props['aria-label'];
+  const hoverTitle = title ?? (typeof ariaLabel === 'string' ? ariaLabel : undefined);
+  return (
+    <Comp title={hoverTitle} className={cn(buttonVariants({ variant, size, className }))} {...props} />
+  );
 }
 
 export { buttonVariants };

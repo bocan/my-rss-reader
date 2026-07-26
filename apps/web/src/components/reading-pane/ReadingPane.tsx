@@ -144,6 +144,8 @@ export function ReadingPane({ articleId }: { articleId: string }) {
               <button
                 key={v}
                 onClick={() => chooseView(v)}
+                aria-pressed={view === v}
+                title={`${VIEW_LABELS[v]} view`}
                 className={cn(
                   'rounded px-3 py-1 text-sm',
                   view === v
