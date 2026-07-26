@@ -37,7 +37,6 @@ export function Dialog({ open, ...props }: ComponentProps<typeof DialogPrimitive
   );
 }
 
-export const DialogTrigger = DialogPrimitive.Trigger;
 export const DialogClose = DialogPrimitive.Close;
 
 function DialogOverlay({ className, ...props }: ComponentProps<typeof DialogPrimitive.Overlay>) {
@@ -116,14 +115,5 @@ export function DialogTitle({
 }: ComponentProps<typeof DialogPrimitive.Title>) {
   return (
     <DialogPrimitive.Title className={cn('text-base font-semibold leading-none', className)} {...props} />
-  );
-}
-
-export function DialogDescription({
-  className,
-  ...props
-}: ComponentProps<typeof DialogPrimitive.Description>) {
-  return (
-    <DialogPrimitive.Description className={cn('text-sm text-muted-foreground', className)} {...props} />
   );
 }
