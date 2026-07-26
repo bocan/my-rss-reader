@@ -83,6 +83,18 @@ export function FolderTree({
   const [settingsSub, setSettingsSub] = useState<SubscriptionRow | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The row-menu button that opened the feed-settings dialog, so focus returns
+  // to it on close. Captured while the menu is still open (the menu item that was
+  // clicked is gone by the time the dialog closes).
+  const settingsTrigger = useRef<HTMLElement | null>(null);
+  const openFeedSettings = (sub: SubscriptionRow) => {
+    settingsTrigger.current = document.querySelector<HTMLElement>(
+      '[data-state="open"][aria-haspopup="menu"]',
+    );
+    // Let the menu finish closing (and its own focus handling) before the dialog
+    // mounts, so the dialog's focus trap is not fought by the closing menu.
+    setTimeout(() => setSettingsSub(sub), 0);
+  };
 
   // Folders are always alphabetical. Feeds follow the sort mode (by name, or by
   // unread count). Because counts come from a live query, marking read re-sorts
@@ -210,7 +222,7 @@ export function FolderTree({
               }}
               onMarkRead={() => markRead.mutate({ folderId: folder.id })}
               onRenameFeed={(id) => setEditing({ kind: 'feed', id })}
-              onEditFeed={setSettingsSub}
+              onEditFeed={openFeedSettings}
               onUnsubscribe={(id) => unsubscribe.mutate(id)}
               onMarkFeedRead={(feedId) => markRead.mutate({ feedId })}
             />
@@ -236,7 +248,7 @@ export function FolderTree({
                 onSubmitEdit={submitEdit}
                 onCancelEdit={() => setEditing(null)}
                 onRename={() => setEditing({ kind: 'feed', id: sub.subscriptionId })}
-                onEditSettings={() => setSettingsSub(sub)}
+                onEditSettings={() => openFeedSettings(sub)}
                 onUnsubscribe={() => unsubscribe.mutate(sub.subscriptionId)}
                 onMarkRead={() => markRead.mutate({ feedId: sub.feedId })}
               />
@@ -266,6 +278,7 @@ export function FolderTree({
       {settingsSub && (
         <FeedSettingsDialog
           sub={settingsSub}
+          restoreFocusRef={settingsTrigger}
           onOpenChange={(open) => !open && setSettingsSub(null)}
         />
       )}

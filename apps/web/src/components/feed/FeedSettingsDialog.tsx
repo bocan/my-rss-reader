@@ -1,7 +1,8 @@
 import { ARTICLE_VIEWS, VIEW_MODES, type ArticleView, type ViewMode } from '@rss/shared';
-import { Check, Copy, X } from 'lucide-react';
-import { useEffect, useState, type FormEvent } from 'react';
+import { Check, Copy } from 'lucide-react';
+import { useState, type FormEvent, type RefObject } from 'react';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ApiRequestError } from '@/lib/api';
 import {
   useChangeFeedUrl,
@@ -36,9 +37,11 @@ function relativeTime(iso: string | null): string {
  *  and the shared poll interval, saved in one PATCH. */
 export function FeedSettingsDialog({
   sub,
+  restoreFocusRef,
   onOpenChange,
 }: {
   sub: SubscriptionRow;
+  restoreFocusRef?: RefObject<HTMLElement | null>;
   onOpenChange: (open: boolean) => void;
 }) {
   const { data: foldersData } = useFolders();
@@ -56,14 +59,6 @@ export function FeedSettingsDialog({
   const [intervalMin, setIntervalMin] = useState<string>(
     sub.fetchIntervalSec != null ? String(Math.round(sub.fetchIntervalSec / 60)) : '',
   );
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onOpenChange(false);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onOpenChange]);
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -84,22 +79,11 @@ export function FeedSettingsDialog({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={() => onOpenChange(false)}
-    >
-      <div
-        role="dialog"
-        aria-label="Feed settings"
-        className="w-full max-w-md rounded-xl border bg-card p-5 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="font-semibold">Feed settings</h2>
-          <Button variant="ghost" size="icon" aria-label="Close" onClick={() => onOpenChange(false)}>
-            <X className="size-4" />
-          </Button>
-        </div>
+    <Dialog open onOpenChange={onOpenChange}>
+      <DialogContent restoreFocusRef={restoreFocusRef} className="max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Feed settings</DialogTitle>
+        </DialogHeader>
 
         <form onSubmit={submit} className="space-y-3">
           <label className="block space-y-1">
@@ -268,8 +252,8 @@ export function FeedSettingsDialog({
             </Button>
           </div>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

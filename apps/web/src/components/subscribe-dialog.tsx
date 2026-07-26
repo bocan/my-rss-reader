@@ -1,7 +1,7 @@
-import { X } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import type { AmbiguousFeedError, FeedCandidate } from '@rss/shared';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ApiRequestError } from '@/lib/api';
 import { useSubscribe } from '@/lib/feeds';
 import { cn } from '@/lib/utils';
@@ -25,18 +25,6 @@ export function SubscribeDialog({ open, onOpenChange }: SubscribeDialogProps) {
       setError(null);
     }
   }, [open]);
-
-  // Close on Escape.
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onOpenChange(false);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onOpenChange]);
-
-  if (!open) return null;
 
   async function submit(targetUrl: string) {
     setError(null);
@@ -62,25 +50,11 @@ export function SubscribeDialog({ open, onOpenChange }: SubscribeDialogProps) {
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      onMouseDown={() => onOpenChange(false)}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="subscribe-dialog-title"
-        className="w-full max-w-md rounded-lg border bg-background p-4 shadow-lg"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <div className="mb-3 flex items-center justify-between">
-          <h2 id="subscribe-dialog-title" className="text-sm font-semibold">
-            Add subscription
-          </h2>
-          <Button variant="ghost" size="icon" onClick={() => onOpenChange(false)} aria-label="Close">
-            <X />
-          </Button>
-        </div>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add subscription</DialogTitle>
+        </DialogHeader>
 
         <form onSubmit={onSubmit} className="space-y-3">
           <input
@@ -125,15 +99,17 @@ export function SubscribeDialog({ open, onOpenChange }: SubscribeDialogProps) {
           )}
 
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
+            <DialogClose asChild>
+              <Button type="button" variant="ghost">
+                Cancel
+              </Button>
+            </DialogClose>
             <Button type="submit" disabled={subscribe.isPending}>
               {subscribe.isPending ? 'Adding...' : 'Add'}
             </Button>
           </div>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
