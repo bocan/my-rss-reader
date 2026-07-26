@@ -1,11 +1,42 @@
 # Reader
 
-A calm, elegant, self-hosted RSS reader. Multi-user, responsive across desktop /
-tablet / phone, with configurable reading views. Built as a small monorepo you can
-run in a single container next to a Postgres database.
+A calm, self-hosted RSS reader for people who miss the old web.
 
-> Status: **scaffolding**. The machinery (build, CI/CD, Docker, auth, schema,
-> feed worker) is in place; most reading features are stubs waiting to be filled in.
+There is no algorithm here. No ranking, no "For You", no engagement bait.
+Just the sites you chose to follow, in the order they published, in a quiet
+interface that gets out of your way. It runs as a single container next to a
+Postgres database, and it is multi-user from the ground up, so your family,
+your club, or your team can read on the same instance without stepping on
+each other.
+
+## Why you might like it
+
+- **Reading first.** Three list layouts (cards, list, magazine), comfortable
+  and compact densities, and three article views: a clean readability
+  extraction, the feed's own content, or the full web page. Long-form text is
+  set in a proper serif at a readable measure.
+- **Your keyboard works.** `j`/`k` through articles, `s` to star, `a` to mark
+  a view read, `/` to search, `?` for the full shortcut overlay. The mouse is
+  optional.
+- **Fast, honest search.** Postgres full-text search across everything you
+  are subscribed to, with phrase and exclusion syntax, ranked sensibly.
+- **It respects your attention.** Unread-only mode, mark-all-read that does
+  what it says, per-feed controls (custom titles, poll intervals, hide from
+  All Items), and folders that drag and drop.
+- **It looks after itself.** Feeds are discovered from a plain site URL,
+  favicons fetched, HTML sanitized server-side before it ever reaches your
+  browser, and articles deduplicated globally no matter how many users
+  subscribe.
+- **It works offline.** Installable PWA with cached articles, so the train
+  tunnel does not end your morning read.
+- **It is yours.** OPML import and export (leave whenever you like), eight
+  named themes from paper-warm to void-black, sessions in your own database,
+  and not a single external service in the serving path.
+- **Built to be read by screen readers too.** Live-region announcements,
+  focus-managed dialogs, skip links, labeled controls.
+
+The first account to register becomes the admin; after that, open
+registration, invites, or closed, your call.
 
 ## Stack
 
@@ -32,8 +63,8 @@ docker/     Dockerfile + compose files
 .github/    CI (lint/typecheck/test/build) + GHCR image publish
 ```
 
-The API serves the built SPA from the same origin in production, so the whole app
-is one container image (plus Postgres).
+The API serves the built SPA from the same origin in production, so the whole
+app is one container image (plus Postgres).
 
 ## Getting started (development)
 
@@ -90,19 +121,44 @@ Per-user data lives in `subscriptions` (which feeds a user follows) and
 `article_states` (read / starred). This keeps storage flat as users grow and lets
 the worker fetch each feed a single time regardless of how many people subscribe.
 
-## Roadmap
+## What it does today
 
-Features to pluck from readers like Fluent, roughly in order:
-
-- [ ] Feed discovery from a site URL + favicon fetching
-- [ ] OPML import / export
-- [ ] Reading views: cards, list, magazine, compact
-- [ ] Article views: simplified (readability), readable, full web
-- [ ] Full-text search (Postgres `tsvector`)
-- [ ] Keyboard-driven navigation (j/k, mark read, star)
-- [ ] Mark-all-read, filters (unread / starred / by folder)
-- [ ] Keyset pagination + infinite scroll
-- [ ] HTML sanitization of article content
+- [x] Feed discovery from a site URL + favicon fetching
+- [x] OPML import / export
+- [x] Reading views: cards, list, magazine (+ comfortable/compact density)
+- [x] Article views: simplified (readability), readable, full web
+- [x] Full-text search (Postgres `tsvector`)
+- [x] Keyboard-driven navigation (j/k, mark read, star)
+- [x] Mark-all-read, filters (unread / starred / by folder)
+- [x] Keyset pagination + infinite scroll
+- [x] HTML sanitization of article content
 - [x] PWA / offline support
 - [x] Per-user settings + themes
-```
+- [x] Admin, invites, and multi-user management
+
+## What's coming: the open-web era
+
+The next phase leans into what made the old web good. Each item is fully
+specced in [`docs/design-specs`](docs/design-specs) and waiting to be built:
+
+- [ ] **Sharing and shared items** ([SPEC-019](docs/design-specs/019-sharing-and-shared-items.md)):
+      a proper share button, Google-Reader-style shared items with notes, and
+      an opt-in public linkblog at `/u/you` that is itself an Atom + JSON
+      feed others can subscribe to.
+- [ ] **Public blogrolls** ([SPEC-020](docs/design-specs/020-public-blogroll.md)):
+      a "who I read" page with an importable OPML twin.
+- [ ] **Realtime delivery via WebSub** ([SPEC-021](docs/design-specs/021-websub-realtime.md)):
+      new posts arrive in seconds when a feed offers a hub; polite polling
+      otherwise.
+- [ ] **Attention tiers** ([SPEC-022](docs/design-specs/022-attention-tiers.md)):
+      mark a feed firehose (no unread guilt, ever) or precious (never miss a
+      post).
+- [ ] **Follow the new social web too** ([SPEC-023](docs/design-specs/023-social-web-profiles.md)):
+      paste a Mastodon or Bluesky profile and it just subscribes; their pages
+      were feeds all along.
+- [ ] **Link-rot armor** ([SPEC-024](docs/design-specs/024-link-rot-armor.md)):
+      starring keeps a readable copy forever, with a Wayback Machine escape
+      hatch for pages that already died.
+- [ ] **Saved searches and rules** ([SPEC-025](docs/design-specs/025-saved-searches-and-rules.md)):
+      searches pinned to the sidebar as virtual feeds, plus auto-mark-read /
+      auto-star rules applied at ingestion.

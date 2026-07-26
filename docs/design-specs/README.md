@@ -60,19 +60,35 @@ Legend: **Todo** / **In progress** / **Done**
 
 | #   | Spec                                             | Depends on | Status |
 | --- | ------------------------------------------------ | ---------- | ------ |
-| 011 | User settings and preferences (server-persisted) | 010        | Todo   |
-| 012 | Admin and multi-user management                  | -          | Todo   |
-| 013 | PWA, offline, and mobile polish                  | 004, 005   | Todo   |
+| 011 | User settings and preferences (server-persisted) | 010        | Done   |
+| 012 | Admin and multi-user management                  | -          | Done   |
+| 013 | PWA, offline, and mobile polish                  | 004, 005   | Done   |
 
 ### Design pass (cross-cutting)
 
-Split in two: 014 is the structural rework (spec'd, buildable now), 016 is the
-visual identity, which still needs a direction conversation before it is written.
+Split in two: 014 is the structural rework, 016 the visual identity.
 
 | #   | Spec                                             | Depends on          | Status      |
 | --- | ------------------------------------------------ | ------------------- | ----------- |
 | 014 | Layout chrome and view-driven screens            | 003, 004, 008, 010  | Done        |
-| 016 | Visual identity (palette, type, personality)     | 014                 | Not specced |
+| 016 | Visual identity (palette, type, personality)     | 014                 | Done        |
+
+### Phase 4 - The open web (sharing, realtime, resilience)
+
+The reading core is done; this phase makes the reader a good citizen of the
+open web. 019 comes first (it creates the `profiles` table, the public route
+scope, and the HTML helpers that 020 reuses); the rest are independent of
+each other unless noted.
+
+| #   | Spec                                              | Depends on            | Status |
+| --- | ------------------------------------------------- | --------------------- | ------ |
+| 019 | Sharing, shared items, and the public linkblog    | 005, 011, 017         | Todo   |
+| 020 | Public blogroll (HTML + OPML)                     | 019, 009              | Todo   |
+| 021 | WebSub realtime delivery (subscriber side)        | 002                   | Todo   |
+| 022 | Attention tiers (firehose / normal / precious)    | 005, 007, 018         | Todo   |
+| 023 | Subscribe to social-web profiles                  | 002                   | Todo   |
+| 024 | Link-rot armor (archives, retention, Wayback)     | 004, 005              | Todo   |
+| 025 | Saved searches (virtual feeds) + filter rules     | 006, 015              | Todo   |
 
 ## Scope summary
 
@@ -115,5 +131,31 @@ visual identity, which still needs a direction conversation before it is written
   place to the article with a back control. Includes the square card's
   hover reveal (image slides out, text rises, excerpt fades in, card size fixed).
 - **016 Visual identity** - Palette, typography, depth and personality beyond the
-  current neutral shadcn theme. Needs a direction conversation first; do not just
-  tweak the primary hue.
+  current neutral shadcn theme (landed as the eight named themes + serif
+  reading face).
+- **019 Sharing, shared items, and the public linkblog** - A share button
+  (OS share sheet / copy link), Google-Reader-style shared items with notes,
+  an opt-in server-rendered public page per user at `/u/<slug>` that is also
+  an Atom + JSON feed, and an instance-local Community view with
+  subscribe-from-share.
+- **020 Public blogroll** - An opt-in public "who I read" page grouped by
+  folder, with per-subscription exclusion and an OPML twin
+  (`/u/<slug>/blogroll.opml`) plus `rel="blogroll"` autodiscovery.
+- **021 WebSub realtime delivery** - Subscriber-side W3C WebSub: hub
+  discovery from Link headers / atom:link, signed content pushes to a
+  callback endpoint, lease renewal in the worker, and a 6-hour polling floor
+  for push-active feeds. Feeds without a hub are unaffected.
+- **022 Attention tiers** - Per-subscription firehose / normal / precious
+  contract: firehoses stop generating unread pressure (no badges, quiet
+  14-day expiry, all query-time), precious feeds get a dedicated sidebar
+  node and accent treatment so they are never missable.
+- **023 Social-web profiles** - Paste a Mastodon profile URL, a
+  `@user@instance` handle, or a Bluesky profile and subscribe to it as the
+  feed it already is; YouTube channels pinned by regression test.
+- **024 Link-rot armor** - Starring captures a readable snapshot while the
+  page is alive; admin-configurable retention that always spares
+  starred/shared items and each feed's newest window; Wayback Machine
+  links where readers actually need them.
+- **025 Saved searches + filter rules** - Named scoped searches pinned to
+  the sidebar as virtual feeds, and phrase-based ingestion rules
+  (auto-mark-read / auto-star) with a bounded retroactive apply.
