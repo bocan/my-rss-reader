@@ -30,12 +30,7 @@ import { useShortcuts } from '@/hooks/use-shortcuts';
 import { useSidebar } from '@/hooks/use-sidebar';
 import { useMarkRead, useToggleArticleState, useUnreadCounts } from '@/lib/articles';
 import { useSession } from '@/lib/auth';
-import {
-  useFolders,
-  useRefreshFeeds,
-  useSubscriptions,
-  useUpdateSubscription,
-} from '@/lib/folders';
+import { useFolders, useRefreshFeeds, useSubscriptions } from '@/lib/folders';
 import { useSettings } from '@/lib/settings';
 import type { ViewMode } from '@rss/shared';
 import type { ShortcutContextName } from '@/lib/shortcuts/registry';
@@ -67,7 +62,7 @@ export function ReaderPage() {
   const isWide = useIsWide();
   const isPhone = useIsPhone();
   const { collapsed, toggle: toggleSidebar } = useSidebar();
-  const { settings, update: updateSettings } = useSettings();
+  const { settings } = useSettings();
   const { data: me } = useSession();
 
   // Phone-only stacked navigation: feeds -> list (-> reader, driven by the
@@ -110,21 +105,20 @@ export function ReaderPage() {
 
   const [filters, setFilters] = useState<ArticleFilters>({ sort: 'newest' });
 
-  // Active list view: a per-feed override wins over the user default. The
-  // switcher writes the override when scoped to a feed, else the default.
-  const updateSub = useUpdateSubscription();
+  // The switcher changes the view for the CURRENT viewing session only; it never
+  // persists. Each scope opens at its effective default (the feed's own override,
+  // set in its settings dialog, else the user default), and the transient choice
+  // resets when you move to a different scope. Persistent defaults live in feed
+  // settings and the Settings page, never in the switcher.
   const refreshFeeds = useRefreshFeeds();
   const currentSub = filters.feedId ? subs.find((s) => s.feedId === filters.feedId) : undefined;
-  const view: ViewMode = currentSub?.viewMode ?? settings.defaultViewMode;
+  const effectiveView: ViewMode = currentSub?.viewMode ?? settings.defaultViewMode;
+  const [viewOverride, setViewOverride] = useState<ViewMode | null>(null);
+  const scopeKey = `${filters.feedId ?? ''}|${filters.folderId ?? ''}|${filters.starred ?? ''}`;
+  useEffect(() => setViewOverride(null), [scopeKey]);
+  const view: ViewMode = viewOverride ?? effectiveView;
   const isBrowse = view === 'cards' || view === 'magazine';
-  const hasOverride = Boolean(currentSub?.viewMode);
-  const setView = (mode: ViewMode) => {
-    if (currentSub) updateSub.mutate({ id: currentSub.subscriptionId, viewMode: mode });
-    else updateSettings({ defaultViewMode: mode });
-  };
-  const resetView = () => {
-    if (currentSub) updateSub.mutate({ id: currentSub.subscriptionId, viewMode: null });
-  };
+  const setView = (mode: ViewMode) => setViewOverride(mode);
 
   const [searchInput, setSearchInput] = useState('');
   const [debouncedQ, setDebouncedQ] = useState('');
@@ -416,17 +410,6 @@ export function ReaderPage() {
         {canMarkAll && !isSearching && unreadForView > 0 && (
           <Button variant="ghost" size="sm" className="hidden sm:inline-flex" onClick={markAllRead}>
             Mark all read
-          </Button>
-        )}
-        {hasOverride && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="hidden text-xs text-muted-foreground lg:inline-flex"
-            title="This feed has its own view; reset to your default"
-            onClick={resetView}
-          >
-            Reset view
           </Button>
         )}
         <ViewSwitcher view={view} onChange={setView} />
