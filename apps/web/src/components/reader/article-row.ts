@@ -21,6 +21,11 @@ export interface ArticleRowView {
 
 const relative = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
 const absolute = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
+const absoluteWithYear = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+});
 
 const DIVISIONS: [seconds: number, unit: Intl.RelativeTimeFormatUnit][] = [
   [60, 'second'],
@@ -28,7 +33,11 @@ const DIVISIONS: [seconds: number, unit: Intl.RelativeTimeFormatUnit][] = [
   [86_400, 'hour'],
 ];
 
-/** "5 minutes ago" for recent items, a short date beyond a day. */
+/**
+ * "5 minutes ago" for recent items, a short date beyond a day, and the year
+ * appears once the date is not from the current year ("Jul 12, 2023"), so
+ * old items (Starred especially) are never ambiguous.
+ */
 export function formatWhen(iso: string | null): string {
   if (!iso) return '';
   const date = new Date(iso);
@@ -42,7 +51,9 @@ export function formatWhen(iso: string | null): string {
       return relative.format(Math.round(diffSeconds / divisor), unit);
     }
   }
-  return absolute.format(date);
+  return date.getFullYear() === new Date().getFullYear()
+    ? absolute.format(date)
+    : absoluteWithYear.format(date);
 }
 
 /**
