@@ -1,5 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import {
+  ArrowDownAZ,
+  ArrowDownWideNarrow,
   ChevronLeft,
   Inbox,
   Keyboard,
@@ -19,7 +21,7 @@ import { ListColumn } from '@/components/reader/ListColumn';
 import { ViewSwitcher } from '@/components/reader/ViewSwitcher';
 import { ReadingPane } from '@/components/reading-pane/ReadingPane';
 import { ShortcutsOverlay } from '@/components/shortcuts/ShortcutsOverlay';
-import { FolderTree } from '@/components/sidebar/folder-tree';
+import { FolderTree, type FeedSort } from '@/components/sidebar/folder-tree';
 import { SubscribeDialog } from '@/components/subscribe-dialog';
 import { Button } from '@/components/ui/button';
 import { useArticleSurface } from '@/hooks/use-article-surface';
@@ -72,6 +74,22 @@ export function ReaderPage() {
   // ?article param). Starts on the feed picker, which desktop keeps in the
   // sidebar but phones otherwise cannot reach.
   const [mobileStep, setMobileStep] = useState<'feeds' | 'list'>('feeds');
+
+  // Sidebar feed ordering (folders are always alphabetical). Persisted locally.
+  const [feedSort, setFeedSort] = useState<FeedSort>(() => {
+    try {
+      return window.localStorage.getItem('reader:feed-sort') === 'unread' ? 'unread' : 'name';
+    } catch {
+      return 'name';
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('reader:feed-sort', feedSort);
+    } catch {
+      // display preference only
+    }
+  }, [feedSort]);
 
   const { data: feedsData, isLoading } = useSubscriptions();
   const subs = feedsData?.items ?? [];
@@ -262,15 +280,31 @@ export function ReaderPage() {
         <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Feeds
         </span>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-6"
-          aria-label="Add subscription"
-          onClick={() => setAddOpen(true)}
-        >
-          <Plus />
-        </Button>
+        <div className="flex items-center gap-0.5">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-6"
+            aria-label={feedSort === 'name' ? 'Sort feeds by unread' : 'Sort feeds by name'}
+            title={feedSort === 'name' ? 'Sorted by name — click to sort by unread' : 'Sorted by unread — click to sort by name'}
+            onClick={() => setFeedSort((s) => (s === 'name' ? 'unread' : 'name'))}
+          >
+            {feedSort === 'name' ? (
+              <ArrowDownAZ className="size-3.5" />
+            ) : (
+              <ArrowDownWideNarrow className="size-3.5" />
+            )}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-6"
+            aria-label="Add subscription"
+            onClick={() => setAddOpen(true)}
+          >
+            <Plus />
+          </Button>
+        </div>
       </div>
       {isLoading && <p className="px-2 py-1.5 text-sm text-muted-foreground">Loading…</p>}
       {!isLoading && subs.length === 0 && (
@@ -282,6 +316,7 @@ export function ReaderPage() {
         onSelectFeed={onSelectFeed}
         onSelectFolder={onSelectFolder}
         countByFeed={countByFeed}
+        sort={feedSort}
       />
 
       <div className="mt-auto space-y-0.5 pt-2">

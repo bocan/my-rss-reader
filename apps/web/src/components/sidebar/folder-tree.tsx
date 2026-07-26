@@ -58,15 +58,20 @@ type DragData =
   | { type: 'folder'; folderId: string; parentId: string | null; index: number }
   | { type: 'dropzone'; folderId: string | null };
 
+/** How the sidebar is ordered. Folders are always alphabetical; this controls
+ *  the feeds within each scope (SPEC: feed ordering). */
+export type FeedSort = 'name' | 'unread';
+
 interface FolderTreeProps {
   activeFeedId?: string;
   activeFolderId?: string;
   onSelectFeed: (feedId: string) => void;
   onSelectFolder: (folderId: string) => void;
   countByFeed: Map<string, number>;
+  sort: FeedSort;
 }
 
-const byPosition = <T extends { position: number }>(a: T, b: T) => a.position - b.position;
+const feedName = (s: SubscriptionRow) => (s.customTitle ?? s.title ?? s.feedUrl).toLowerCase();
 
 export function FolderTree({
   activeFeedId,
@@ -74,6 +79,7 @@ export function FolderTree({
   onSelectFeed,
   onSelectFolder,
   countByFeed,
+  sort,
 }: FolderTreeProps) {
   const { data: foldersData } = useFolders();
   const { data: feedsData } = useSubscriptions();
@@ -101,10 +107,28 @@ export function FolderTree({
     }
   }, [expanded]);
 
-  const rootFolders = folders.filter((f) => f.parentId === null).sort(byPosition);
-  const childrenOf = (id: string) => folders.filter((f) => f.parentId === id).sort(byPosition);
+  // Folders are always alphabetical. Feeds follow the sort mode: by name, or by
+  // unread count (feeds with unread first, descending; feeds with none fall back
+  // to alphabetical). Because counts come from a live query, marking read
+  // re-sorts on the next render for free.
+  const byFolderName = (a: FolderRow, b: FolderRow) =>
+    a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+  const byFeed = (a: SubscriptionRow, b: SubscriptionRow) => {
+    if (sort === 'unread') {
+      const ua = countByFeed.get(a.feedId) ?? 0;
+      const ub = countByFeed.get(b.feedId) ?? 0;
+      if (ua === 0 && ub === 0) return feedName(a).localeCompare(feedName(b));
+      if (ua === 0) return 1;
+      if (ub === 0) return -1;
+      if (ua !== ub) return ub - ua;
+    }
+    return feedName(a).localeCompare(feedName(b));
+  };
+
+  const rootFolders = folders.filter((f) => f.parentId === null).sort(byFolderName);
+  const childrenOf = (id: string) => folders.filter((f) => f.parentId === id).sort(byFolderName);
   const feedsIn = (folderId: string | null) =>
-    subs.filter((s) => s.folderId === folderId).sort(byPosition);
+    subs.filter((s) => s.folderId === folderId).sort(byFeed);
   const hasChildren = (id: string) => folders.some((f) => f.parentId === id);
 
   const toggle = (id: string) =>
