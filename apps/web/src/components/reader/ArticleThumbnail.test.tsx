@@ -1,38 +1,24 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { expect, test } from 'vitest';
 import { ArticleThumbnail } from './ArticleThumbnail';
+import { isUsableImageSize } from './article-image';
 
-const base = { feedId: 'feed-1', title: 'Hello world' };
-
-test('renders the article image lazily when one exists', () => {
-  render(<ArticleThumbnail {...base} imageUrl="https://x.example/a.jpg" faviconUrl={null} />);
+test('renders the article image lazily', () => {
+  render(<ArticleThumbnail imageUrl="https://x.example/a.jpg" />);
   const img = screen.getByRole('presentation', { hidden: true }) as HTMLImageElement;
   expect(img.getAttribute('src')).toBe('https://x.example/a.jpg');
   expect(img.getAttribute('loading')).toBe('lazy');
   expect(img.getAttribute('decoding')).toBe('async');
 });
 
-test('uses the feed favicon when there is no article image', () => {
-  render(<ArticleThumbnail {...base} imageUrl={null} faviconUrl="https://x.example/i.ico" />);
-  const img = screen.getByRole('presentation', { hidden: true }) as HTMLImageElement;
-  expect(img.getAttribute('src')).toBe('https://x.example/i.ico');
+test('isUsableImageSize accepts images that fill the box without upscaling', () => {
+  expect(isUsableImageSize(800, 600, 320, 180)).toBe(true);
+  expect(isUsableImageSize(320, 180, 320, 180)).toBe(true); // exact boundary
 });
 
-test('falls back down the chain on error, never leaving a broken image', () => {
-  const { container } = render(
-    <ArticleThumbnail {...base} imageUrl="https://x.example/a.jpg" faviconUrl="https://x.example/i.ico" />,
-  );
-  // article image fails -> favicon
-  fireEvent.error(container.querySelector('img')!);
-  expect(container.querySelector('img')!.getAttribute('src')).toBe('https://x.example/i.ico');
-  // favicon fails -> generated placeholder (no <img> at all)
-  fireEvent.error(container.querySelector('img')!);
-  expect(container.querySelector('img')).toBeNull();
-  expect(container.textContent).toBe('H'); // first initial
-});
-
-test('renders the placeholder directly when there is nothing to load', () => {
-  const { container } = render(<ArticleThumbnail {...base} imageUrl={null} faviconUrl={null} />);
-  expect(container.querySelector('img')).toBeNull();
-  expect(container.textContent).toBe('H');
+test('isUsableImageSize rejects icons and images too small for the box', () => {
+  expect(isUsableImageSize(16, 16, 320, 180)).toBe(false); // feed favicon
+  expect(isUsableImageSize(64, 64, 320, 180)).toBe(false); // small icon
+  expect(isUsableImageSize(300, 180, 320, 180)).toBe(false); // too narrow
+  expect(isUsableImageSize(320, 120, 320, 180)).toBe(false); // too short
 });

@@ -2,7 +2,15 @@ import { Star } from 'lucide-react';
 import type { ArticleListItem } from '@/hooks/use-articles';
 import { cn } from '@/lib/utils';
 import { ArticleThumbnail } from './ArticleThumbnail';
+import { useUsableArticleImage } from './article-image';
 import { deriveArticleRow, type FeedMetaMap } from './article-row';
+
+// Minimum natural size for an article image to be shown as cover art without
+// upscaling into blur. Below this we show no image (never the feed favicon). The
+// card hero fills the card width; the magazine tile is small (128x96), so its
+// floor is lower - but both comfortably reject favicon-sized icons.
+const CARD_IMAGE_MIN = { w: 320, h: 180 };
+const MAGAZINE_IMAGE_MIN = { w: 160, h: 120 };
 
 export interface ViewProps {
   items: ArticleListItem[];
@@ -111,7 +119,7 @@ function Card({
   registerRow: ViewProps['registerRow'];
 }) {
   const row = deriveArticleRow(article, feeds);
-  const hasImage = Boolean(row.imageUrl || row.feedFaviconUrl);
+  const showImage = useUsableArticleImage(row.imageUrl, CARD_IMAGE_MIN.w, CARD_IMAGE_MIN.h);
 
   return (
     <li role="option" aria-selected={focused} ref={registerRow(article.id)}>
@@ -133,15 +141,12 @@ function Card({
           className={cn(
             'absolute inset-x-0 top-0 flex flex-col',
             'transition-transform duration-300 ease-out motion-reduce:transition-none',
-            hasImage && 'group-hover:-translate-y-[58%] group-focus-visible:-translate-y-[58%]',
+            showImage && 'group-hover:-translate-y-[58%] group-focus-visible:-translate-y-[58%]',
           )}
         >
-          {hasImage && (
+          {showImage && row.imageUrl && (
             <ArticleThumbnail
               imageUrl={row.imageUrl}
-              faviconUrl={row.feedFaviconUrl}
-              feedId={row.feedId}
-              title={row.title}
               className="aspect-[16/10] w-full rounded-none"
             />
           )}
@@ -167,7 +172,7 @@ function Card({
                   'mt-2 line-clamp-4 text-xs text-muted-foreground',
                   // Below the fold at rest when there is an image; revealed as
                   // the stack rises. Always visible when there is no image.
-                  hasImage &&
+                  showImage &&
                     'opacity-0 transition-opacity duration-300 group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:opacity-100 motion-reduce:transition-none',
                 )}
               >
@@ -212,58 +217,82 @@ export function CardsView({ items, feeds, selectedId, focusedId, onSelect, regis
 
 // --- Magazine (two columns of wide rows) --------------------------------
 
+function MagazineRow({
+  article,
+  feeds,
+  index,
+  selected,
+  focused,
+  onSelect,
+  registerRow,
+}: {
+  article: ArticleListItem;
+  feeds: FeedMetaMap;
+  index: number;
+  selected: boolean;
+  focused: boolean;
+  onSelect: (a: ArticleListItem) => void;
+  registerRow: ViewProps['registerRow'];
+}) {
+  const row = deriveArticleRow(article, feeds);
+  const showImage = useUsableArticleImage(row.imageUrl, MAGAZINE_IMAGE_MIN.w, MAGAZINE_IMAGE_MIN.h);
+
+  return (
+    <li role="option" aria-selected={focused} ref={registerRow(article.id)}>
+      <button
+        type="button"
+        onClick={() => onSelect(article)}
+        style={stagger(index)}
+        className={cn(
+          'flex w-full gap-3 rounded-lg border p-3 text-left',
+          'transition-[transform,box-shadow,background-color] duration-200',
+          'hover:-translate-y-0.5 hover:shadow-md motion-reduce:hover:translate-y-0',
+          selected && 'bg-accent',
+          focusRing(focused),
+          ENTER,
+        )}
+      >
+        {showImage && row.imageUrl && (
+          <ArticleThumbnail imageUrl={row.imageUrl} className="h-24 w-32 shrink-0" />
+        )}
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="truncate">{row.feedName}</span>
+            <span className="shrink-0">{row.when}</span>
+            {row.isStarred && <Star className="size-3 shrink-0 fill-primary text-primary" />}
+          </span>
+          <span
+            className={cn(
+              'mt-0.5 line-clamp-2 text-sm',
+              row.isRead ? 'text-muted-foreground' : 'font-semibold',
+            )}
+          >
+            {row.title}
+          </span>
+          {row.excerpt && (
+            <span className="mt-1 line-clamp-2 text-xs text-muted-foreground">{row.excerpt}</span>
+          )}
+        </span>
+      </button>
+    </li>
+  );
+}
+
 export function MagazineView({ items, feeds, selectedId, focusedId, onSelect, registerRow }: ViewProps) {
   return (
     <ul role="listbox" aria-label="Articles" className="grid grid-cols-1 gap-3 p-3 lg:grid-cols-2">
-      {items.map((article, index) => {
-        const row = deriveArticleRow(article, feeds);
-        const focused = focusedId === article.id;
-        return (
-          <li key={article.id} role="option" aria-selected={focused} ref={registerRow(article.id)}>
-            <button
-              type="button"
-              onClick={() => onSelect(article)}
-              style={stagger(index)}
-              className={cn(
-                'flex w-full gap-3 rounded-lg border p-3 text-left',
-                'transition-[transform,box-shadow,background-color] duration-200',
-                'hover:-translate-y-0.5 hover:shadow-md motion-reduce:hover:translate-y-0',
-                selectedId === article.id && 'bg-accent',
-                focusRing(focused),
-                ENTER,
-              )}
-            >
-              <ArticleThumbnail
-                imageUrl={row.imageUrl}
-                faviconUrl={row.feedFaviconUrl}
-                feedId={row.feedId}
-                title={row.title}
-                className="h-24 w-32 shrink-0"
-              />
-              <span className="min-w-0 flex-1">
-                <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className="truncate">{row.feedName}</span>
-                  <span className="shrink-0">{row.when}</span>
-                  {row.isStarred && <Star className="size-3 shrink-0 fill-primary text-primary" />}
-                </span>
-                <span
-                  className={cn(
-                    'mt-0.5 line-clamp-2 text-sm',
-                    row.isRead ? 'text-muted-foreground' : 'font-semibold',
-                  )}
-                >
-                  {row.title}
-                </span>
-                {row.excerpt && (
-                  <span className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                    {row.excerpt}
-                  </span>
-                )}
-              </span>
-            </button>
-          </li>
-        );
-      })}
+      {items.map((article, index) => (
+        <MagazineRow
+          key={article.id}
+          article={article}
+          feeds={feeds}
+          index={index}
+          selected={selectedId === article.id}
+          focused={focusedId === article.id}
+          onSelect={onSelect}
+          registerRow={registerRow}
+        />
+      ))}
     </ul>
   );
 }
