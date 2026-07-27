@@ -380,7 +380,7 @@ export function SettingsPage() {
           <input
             ref={fileRef}
             type="file"
-            accept=".opml,.xml,text/xml,text/x-opml"
+            accept=".opml,.xml,text/xml,text/x-opml,application/xml"
             className="hidden"
             onChange={(e) => void onPick(e.target.files?.[0])}
           />
