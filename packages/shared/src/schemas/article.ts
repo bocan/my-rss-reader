@@ -42,6 +42,9 @@ export const articleDetailSchema = z.object({
   publishedAt: z.iso.datetime().nullable(),
   readableHtml: z.string().nullable(),
   readableFetchedAt: z.iso.datetime().nullable(),
+  /** Playable podcast/video enclosure (audio/* or video/* only). */
+  enclosureUrl: z.string().nullable(),
+  enclosureType: z.string().nullable(),
   feed: articleFeedSchema,
   read: z.boolean(),
   starred: z.boolean(),

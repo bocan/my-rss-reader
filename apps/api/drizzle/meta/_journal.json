@@ -78,6 +78,13 @@
       "when": 1784921984305,
       "tag": "0010_flippant_energizer",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1785110857316,
+      "tag": "0011_lethal_doctor_octopus",
+      "breakpoints": true
     }
   ]
 }

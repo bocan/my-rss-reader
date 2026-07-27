@@ -1,6 +1,6 @@
 import { ARTICLE_VIEWS, type ArticleDetail, type ArticleView } from '@rss/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, Rss, Star } from 'lucide-react';
+import { Download, ExternalLink, Rss, Star } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { api, ApiRequestError } from '@/lib/api';
@@ -168,6 +168,8 @@ export function ReadingPane({ articleId }: { articleId: string }) {
         </div>
       </div>
 
+      {article.enclosureUrl && <EnclosurePlayer article={article} />}
+
       <div className={cn('min-h-0 flex-1', view === 'web' ? '' : 'overflow-y-auto p-4 md:p-6')}>
         {view === 'readable' && <ReadableView article={article} />}
         {view === 'simplified' && (
@@ -183,6 +185,41 @@ export function ReadingPane({ articleId }: { articleId: string }) {
         )}
         {view === 'web' && <WebView article={article} online={online} />}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Native player for the item's podcast/video enclosure. Sits between the
+ * header and the article body so the episode stays playable in every view,
+ * including while reading show notes or the original page.
+ */
+function EnclosurePlayer({ article }: { article: ArticleDetail }) {
+  const url = article.enclosureUrl!;
+  const isVideo = (article.enclosureType ?? '').startsWith('video/');
+  const mediaLabel = `${isVideo ? 'Video' : 'Audio'} for ${article.title ?? 'this item'}`;
+  return (
+    <div className="border-b p-4 md:px-6">
+      {isVideo ? (
+        <video
+          controls
+          preload="metadata"
+          src={url}
+          aria-label={mediaLabel}
+          className="max-h-96 w-full rounded-md bg-black"
+        />
+      ) : (
+        <audio controls preload="metadata" src={url} aria-label={mediaLabel} className="w-full" />
+      )}
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+        title={`Download this ${isVideo ? 'video' : 'episode'}`}
+      >
+        <Download className="size-3.5" /> Download {isVideo ? 'video' : 'episode'}
+      </a>
     </div>
   );
 }

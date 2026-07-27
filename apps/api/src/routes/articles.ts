@@ -41,6 +41,8 @@ async function loadArticleDetail(userId: string, id: string) {
       publishedAt: articles.publishedAt,
       readableHtml: articles.readableHtml,
       readableFetchedAt: articles.readableFetchedAt,
+      enclosureUrl: articles.enclosureUrl,
+      enclosureType: articles.enclosureType,
       feedId: feeds.id,
       feedTitle: feeds.title,
       feedSiteUrl: feeds.siteUrl,
@@ -73,6 +75,8 @@ async function loadArticleDetail(userId: string, id: string) {
     publishedAt: r.publishedAt,
     readableHtml: r.readableHtml,
     readableFetchedAt: r.readableFetchedAt,
+    enclosureUrl: r.enclosureUrl,
+    enclosureType: r.enclosureType,
     feed: {
       id: r.feedId,
       title: r.feedTitle,

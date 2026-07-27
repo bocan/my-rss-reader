@@ -102,7 +102,7 @@ export async function fetchAndParseFeed(
 }
 
 /** Absolute http(s) URL, or null. Feed-controlled input is never trusted raw. */
-function toImageUrl(value: string | undefined | null, baseUrl: string | null): string | null {
+function toHttpUrl(value: string | undefined | null, baseUrl: string | null): string | null {
   if (!value) return null;
   try {
     const url = baseUrl ? new URL(value, baseUrl) : new URL(value);
@@ -135,24 +135,41 @@ export function extractImageUrl(
       const width = Number(img.getAttribute('width') ?? '0');
       const height = Number(img.getAttribute('height') ?? '0');
       if ((width > 0 && width <= 2) || (height > 0 && height <= 2)) continue;
-      const resolved = toImageUrl(img.getAttribute('src'), baseUrl);
+      const resolved = toHttpUrl(img.getAttribute('src'), baseUrl);
       if (resolved) return resolved;
     }
   }
 
   const enclosure = item.enclosure as { url?: string; type?: string } | undefined;
   if (enclosure?.url && (enclosure.type ?? '').startsWith('image')) {
-    const resolved = toImageUrl(enclosure.url, baseUrl);
+    const resolved = toHttpUrl(enclosure.url, baseUrl);
     if (resolved) return resolved;
   }
 
   for (const key of ['media:content', 'media:thumbnail']) {
     const media = item[key] as { $?: { url?: string } } | undefined;
-    const resolved = toImageUrl(media?.$?.url, baseUrl);
+    const resolved = toHttpUrl(media?.$?.url, baseUrl);
     if (resolved) return resolved;
   }
 
   return null;
+}
+
+/**
+ * The item's playable enclosure (podcast audio, video), if any. Only declared
+ * audio/* and video/* types are kept: image enclosures feed the thumbnail
+ * picker above, and anything else (pdf, torrent) has no in-app player.
+ */
+export function extractEnclosure(
+  item: Record<string, unknown>,
+  baseUrl: string | null,
+): { url: string; type: string } | null {
+  const enclosure = item.enclosure as { url?: string; type?: string } | undefined;
+  if (!enclosure?.url) return null;
+  const type = (enclosure.type ?? '').trim().toLowerCase();
+  if (!type.startsWith('audio/') && !type.startsWith('video/')) return null;
+  const url = toHttpUrl(enclosure.url, baseUrl);
+  return url ? { url, type } : null;
 }
 
 /** Pure mapping of parsed feed items to sanitized article insert rows. */
@@ -216,6 +233,7 @@ export function feedArticleRows(feedId: string, parsed: ParsedFeed): NewArticleI
         : summaryText
           ? extractText(summaryText)
           : null;
+      const enclosure = extractEnclosure(item as Record<string, unknown>, baseUrl);
       return {
         feedId,
         guid,
@@ -229,6 +247,8 @@ export function feedArticleRows(feedId: string, parsed: ParsedFeed): NewArticleI
           item as Record<string, unknown>,
           baseUrl,
         ),
+        enclosureUrl: enclosure?.url ?? null,
+        enclosureType: enclosure?.type ?? null,
         summary: summaryText,
         publishedAt: item.isoDate ? new Date(item.isoDate) : null,
         sanitizedAt: new Date(),
@@ -400,10 +420,21 @@ export async function fetchAndStoreFeed(feed: FeedRow): Promise<void> {
 
     const rows = feedArticleRows(feed.id, parsed);
     if (rows.length > 0) {
+      // Known articles are left alone, with one exception: an enclosure is
+      // backfilled onto rows ingested before enclosure support existed, as
+      // long as the item is still in the feed. The setWhere keeps this a
+      // no-op write on every ordinary poll.
       await db
         .insert(articles)
         .values(rows)
-        .onConflictDoNothing({ target: [articles.feedId, articles.guid] });
+        .onConflictDoUpdate({
+          target: [articles.feedId, articles.guid],
+          set: {
+            enclosureUrl: sql`excluded.enclosure_url`,
+            enclosureType: sql`excluded.enclosure_type`,
+          },
+          setWhere: sql`${articles.enclosureUrl} is null and excluded.enclosure_url is not null`,
+        });
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

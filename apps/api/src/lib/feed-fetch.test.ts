@@ -28,7 +28,7 @@ vi.mock('undici', () => ({
 }));
 
 // Import after the mock is registered.
-const { discoverFeedCandidates, fetchAndParseFeed, feedArticleRows, resolveFavicon } =
+const { discoverFeedCandidates, extractEnclosure, fetchAndParseFeed, feedArticleRows, resolveFavicon } =
   await import('./feed-fetch.js');
 
 const RSS = (title = 'My Feed') =>
@@ -135,6 +135,57 @@ describe('feedArticleRows text coercion', () => {
         expect(v === null || typeof v === 'string').toBe(true);
       }
     }
+  });
+});
+
+describe('extractEnclosure', () => {
+  const base = 'https://pod.example/ep1';
+
+  test('keeps a declared audio enclosure and lowercases its type', () => {
+    const out = extractEnclosure(
+      { enclosure: { url: 'https://cdn.example/ep1.mp3', type: 'Audio/MPEG' } },
+      base,
+    );
+    expect(out).toEqual({ url: 'https://cdn.example/ep1.mp3', type: 'audio/mpeg' });
+  });
+
+  test('keeps a video enclosure and resolves a relative URL against the item', () => {
+    const out = extractEnclosure({ enclosure: { url: '/media/ep1.mp4', type: 'video/mp4' } }, base);
+    expect(out).toEqual({ url: 'https://pod.example/media/ep1.mp4', type: 'video/mp4' });
+  });
+
+  test('rejects image enclosures (those feed the thumbnail picker instead)', () => {
+    expect(
+      extractEnclosure({ enclosure: { url: 'https://x.example/a.jpg', type: 'image/jpeg' } }, base),
+    ).toBeNull();
+  });
+
+  test('rejects missing/undeclared types and non-http schemes', () => {
+    expect(extractEnclosure({ enclosure: { url: 'https://x.example/a.mp3' } }, base)).toBeNull();
+    expect(
+      extractEnclosure({ enclosure: { url: 'ftp://x.example/a.mp3', type: 'audio/mpeg' } }, base),
+    ).toBeNull();
+    expect(extractEnclosure({}, base)).toBeNull();
+  });
+
+  test('flows into feedArticleRows rows', () => {
+    const parsed = {
+      link: 'https://pod.example',
+      items: [
+        {
+          id: 'ep1',
+          link: 'https://pod.example/ep1',
+          title: 'Episode 1',
+          enclosure: { url: 'https://cdn.example/ep1.mp3', type: 'audio/mpeg' },
+        },
+        { id: 'post', link: 'https://pod.example/post', title: 'Plain post' },
+      ],
+    } as unknown as Parameters<typeof feedArticleRows>[1];
+    const rows = feedArticleRows('feed-1', parsed);
+    expect(rows[0]!.enclosureUrl).toBe('https://cdn.example/ep1.mp3');
+    expect(rows[0]!.enclosureType).toBe('audio/mpeg');
+    expect(rows[1]!.enclosureUrl).toBeNull();
+    expect(rows[1]!.enclosureType).toBeNull();
   });
 });
 

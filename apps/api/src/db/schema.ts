@@ -207,6 +207,11 @@ export const articles = pgTable('articles', {
   // Thumbnail for the card/magazine list views (SPEC-010). Absolute http(s)
   // URL resolved at ingestion, or null when the entry has no usable image.
   imageUrl: text(),
+  // Playable podcast/video enclosure from the feed item: absolute http(s)
+  // URL plus its declared audio/* or video/* MIME type. Image enclosures
+  // feed imageUrl instead; other types are dropped at ingestion.
+  enclosureUrl: text(),
+  enclosureType: text(),
   // Generated STORED search vector; never written by app code. Weights:
   // title A (strongest), body B, author C.
   searchVector: tsvector('search_vector').generatedAlwaysAs(
