@@ -114,6 +114,30 @@ function toHttpUrl(value: string | undefined | null, baseUrl: string | null): st
 }
 
 /**
+ * Canonical form of a feed URL for storage and lookup. Feeds are globally
+ * deduplicated by exact string, so trivial variants of the same URL (trailing
+ * slash, host case, fragment, default port) must collapse to one form or the
+ * same podcast ends up as two feed rows. Scheme is left alone (http is not
+ * upgraded) and the query string is preserved: both can be load-bearing.
+ * Non-parseable or non-http(s) input is returned trimmed but untouched; the
+ * fetch layer will surface the real error.
+ */
+export function normalizeFeedUrl(raw: string): string {
+  const trimmed = raw.trim();
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return trimmed;
+    url.hash = '';
+    if (url.pathname !== '/' && url.pathname.endsWith('/')) {
+      url.pathname = url.pathname.replace(/\/+$/, '');
+    }
+    return url.href;
+  } catch {
+    return trimmed;
+  }
+}
+
+/**
  * Pick a thumbnail for the card/magazine views (SPEC-010): the first usable
  * <img> in the item's HTML (body first, then the summary, since summary-only
  * feeds like xkcd put the image there), else an image enclosure or

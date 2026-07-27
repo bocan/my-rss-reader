@@ -28,8 +28,14 @@ vi.mock('undici', () => ({
 }));
 
 // Import after the mock is registered.
-const { discoverFeedCandidates, extractEnclosure, fetchAndParseFeed, feedArticleRows, resolveFavicon } =
-  await import('./feed-fetch.js');
+const {
+  discoverFeedCandidates,
+  extractEnclosure,
+  fetchAndParseFeed,
+  feedArticleRows,
+  normalizeFeedUrl,
+  resolveFavicon,
+} = await import('./feed-fetch.js');
 
 const RSS = (title = 'My Feed') =>
   `<?xml version="1.0"?><rss version="2.0"><channel><title>${title}</title>` +
@@ -135,6 +141,36 @@ describe('feedArticleRows text coercion', () => {
         expect(v === null || typeof v === 'string').toBe(true);
       }
     }
+  });
+});
+
+describe('normalizeFeedUrl', () => {
+  test('strips a trailing slash from a path (the day2cloud duplicate)', () => {
+    expect(normalizeFeedUrl('https://feeds.packetpushers.net/day2cloud/')).toBe(
+      'https://feeds.packetpushers.net/day2cloud',
+    );
+    expect(normalizeFeedUrl('https://feeds.packetpushers.net/day2cloud')).toBe(
+      'https://feeds.packetpushers.net/day2cloud',
+    );
+  });
+
+  test('collapses root-URL variants to one form', () => {
+    expect(normalizeFeedUrl('https://example.com')).toBe(normalizeFeedUrl('https://example.com/'));
+  });
+
+  test('lowercases the host, drops fragments and default ports, keeps the query', () => {
+    expect(normalizeFeedUrl('https://Example.COM:443/Feed?a=1#frag')).toBe(
+      'https://example.com/Feed?a=1',
+    );
+    expect(normalizeFeedUrl('https://www.youtube.com/feeds/videos.xml?channel_id=UC1')).toBe(
+      'https://www.youtube.com/feeds/videos.xml?channel_id=UC1',
+    );
+  });
+
+  test('does not upgrade http to https or touch unparseable input', () => {
+    expect(normalizeFeedUrl('http://example.com/feed/')).toBe('http://example.com/feed');
+    expect(normalizeFeedUrl('  not a url  ')).toBe('not a url');
+    expect(normalizeFeedUrl('ftp://example.com/feed/')).toBe('ftp://example.com/feed/');
   });
 });
 

@@ -4,7 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import { db } from '../db/index.js';
 import { feeds, folders, subscriptions } from '../db/schema.js';
 import { env } from '../env.js';
-import { fetchAndStoreFeed } from '../lib/feed-fetch.js';
+import { fetchAndStoreFeed, normalizeFeedUrl } from '../lib/feed-fetch.js';
 import {
   buildOpml,
   OpmlParseError,
@@ -105,7 +105,9 @@ export async function opmlRoutes(app: FastifyInstance): Promise<void> {
       async function walk(outlines: OpmlOutline[], folderId: string | null, depth: number) {
         for (const outline of outlines) {
           if (outline.xmlUrl) {
-            pending.push({ title: outline.title, xmlUrl: outline.xmlUrl, folderId });
+            // Canonical form so an OPML variant of an already-known feed
+            // (trailing slash, host case) matches its existing row.
+            pending.push({ title: outline.title, xmlUrl: normalizeFeedUrl(outline.xmlUrl), folderId });
             continue;
           }
           // No xmlUrl but a htmlUrl and no children: a bare link we cannot
@@ -189,13 +191,21 @@ export async function opmlRoutes(app: FastifyInstance): Promise<void> {
             return;
           }
 
-          await db.insert(subscriptions).values({
-            userId,
-            feedId,
-            folderId: item.folderId,
-            customTitle: item.title,
-          });
-          result.feedsAdded++;
+          // An OPML that lists the same feed twice (or an import racing a
+          // concurrent subscribe) must count as a skip, not surface a
+          // unique-violation error in the failed list.
+          const inserted = await db
+            .insert(subscriptions)
+            .values({
+              userId,
+              feedId,
+              folderId: item.folderId,
+              customTitle: item.title,
+            })
+            .onConflictDoNothing({ target: [subscriptions.userId, subscriptions.feedId] })
+            .returning({ id: subscriptions.id });
+          if (inserted.length > 0) result.feedsAdded++;
+          else result.skipped++;
         } catch (err) {
           result.failed.push({
             title: item.title,

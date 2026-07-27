@@ -10,7 +10,7 @@ import { and, asc, eq, inArray } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { db } from '../db/index.js';
 import { feeds, folders, subscriptions } from '../db/schema.js';
-import { discoverFeedCandidates, fetchAndStoreFeed } from '../lib/feed-fetch.js';
+import { discoverFeedCandidates, fetchAndStoreFeed, normalizeFeedUrl } from '../lib/feed-fetch.js';
 import {
   placeFolder,
   placeSubscription,
@@ -125,14 +125,16 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
   app.post('/feeds', auth, async (request, reply) => {
     const input = subscribeSchema.parse(request.body);
     const userId = request.user!.id;
+    // Canonical form so slash/case variants of a known feed match its row.
+    const inputUrl = normalizeFeedUrl(input.url);
 
     // Fast path: an existing feed for the pasted URL. Skip discovery + fetch.
     let feedRow = (
-      await db.select().from(feeds).where(eq(feeds.feedUrl, input.url)).limit(1)
+      await db.select().from(feeds).where(eq(feeds.feedUrl, inputUrl)).limit(1)
     )[0];
 
     if (!feedRow) {
-      const candidates = await discoverFeedCandidates(input.url);
+      const candidates = await discoverFeedCandidates(inputUrl);
       if (candidates.length === 0) {
         return reply.code(422).send({
           error: 'no_feed_found',
@@ -150,7 +152,7 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
-      const feedUrl = candidates[0]!.feedUrl;
+      const feedUrl = normalizeFeedUrl(candidates[0]!.feedUrl);
       // The resolved URL may already exist (homepage pasted, feed already known).
       const existing = (
         await db.select().from(feeds).where(eq(feeds.feedUrl, feedUrl)).limit(1)
@@ -249,7 +251,7 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
   // feed when it is left with no subscribers. Never mutates a shared feed's URL.
   app.patch<{ Params: { id: string } }>('/feeds/:id/url', auth, async (request, reply) => {
     const { id } = request.params;
-    const { feedUrl } = changeFeedUrlSchema.parse(request.body);
+    const feedUrl = normalizeFeedUrl(changeFeedUrlSchema.parse(request.body).feedUrl);
     const userId = request.user!.id;
     if (!UUID_RE.test(id)) return reply.code(404).send(notFound);
 
