@@ -5,10 +5,10 @@ import { api } from './api';
 export function useSubscribe() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (url: string) =>
+    mutationFn: ({ url, folderId }: { url: string; folderId?: string | null }) =>
       api<{ subscription: unknown; feed: unknown }>('/feeds', {
         method: 'POST',
-        body: { url },
+        body: { url, folderId: folderId ?? null },
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['feeds'] }),
   });
