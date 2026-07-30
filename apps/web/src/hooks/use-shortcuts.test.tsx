@@ -13,6 +13,7 @@ function makeActions(): ShortcutActions {
     toggleRead: vi.fn(),
     markUnread: vi.fn(),
     toggleStar: vi.fn(),
+    toggleShared: vi.fn(),
     markAllRead: vi.fn(),
     refresh: vi.fn(),
     focusSearch: vi.fn(),

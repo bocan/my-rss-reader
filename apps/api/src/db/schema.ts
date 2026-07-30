@@ -238,12 +238,41 @@ export const articleStates = pgTable('article_states', {
     .references(() => articles.id, { onDelete: 'cascade' }),
   read: boolean().notNull().default(false),
   starred: boolean().notNull().default(false),
+  // Shared items (SPEC-019): shown on the user's public page / feeds when
+  // their profile visibility allows. Un-sharing clears the note.
+  shared: boolean().notNull().default(false),
   readAt: timestamp({ withTimezone: true }),
   starredAt: timestamp({ withTimezone: true }),
+  sharedAt: timestamp({ withTimezone: true }),
+  shareNote: text(),
 }, (t) => [
   primaryKey({ columns: [t.userId, t.articleId] }),
   index('article_states_starred_idx').on(t.userId, t.starred),
+  // Backs the public share page / feeds and the Shared sidebar node.
+  index('article_states_shared_idx')
+    .on(t.userId, t.sharedAt)
+    .where(sql`${t.shared} = true`),
 ]);
+
+// --- Public sharing profile (SPEC-019) ------------------------------------
+
+// One row per user, created lazily the first time they configure sharing.
+// visibility: 'off' (private), 'instance' (other signed-in users see shares
+// in the Community view), 'public' (Community + the /u/<slug> page and its
+// feeds). SPEC-020 adds blogroll columns here.
+export const profiles = pgTable('profiles', {
+  userId: uuid()
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  // Lowercase, url-safe handle for /u/<slug>. Unique across the instance.
+  slug: text().notNull(),
+  // Page title; null renders as "<displayName>'s shared items".
+  title: text(),
+  bio: text(),
+  visibility: text().notNull().default('off'),
+  createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+}, (t) => [uniqueIndex('profiles_slug_key').on(t.slug)]);
 
 // --- Relations -----------------------------------------------------------
 

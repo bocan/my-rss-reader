@@ -11,13 +11,16 @@ import {
   Plus,
   RefreshCw,
   Settings,
+  Share2,
   Shield,
   Star,
+  Users,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { AppShell } from '@/components/layout/AppShell';
 import { MobileNav } from '@/components/layout/MobileNav';
+import { CommunityPane } from '@/components/community/CommunityPane';
 import { BrowseSurface } from '@/components/reader/BrowseSurface';
 import { ListColumn } from '@/components/reader/ListColumn';
 import { ViewSwitcher } from '@/components/reader/ViewSwitcher';
@@ -33,11 +36,13 @@ import { useSidebar } from '@/hooks/use-sidebar';
 import { announce } from '@/lib/announce';
 import { useMarkRead, useToggleArticleState, useUnreadCounts } from '@/lib/articles';
 import { useSession } from '@/lib/auth';
+import { useCommunityShares } from '@/lib/community';
 import { orderedVisibleFeedIds, type FeedSort } from '@/lib/feed-order';
 import { useFolders, useRefreshFeeds, useSubscriptions } from '@/lib/folders';
+import { useProfile } from '@/lib/profile';
 import { useExpandedFolders } from '@/lib/sidebar-expanded';
 import { useSettings } from '@/lib/settings';
-import type { ViewMode } from '@rss/shared';
+import type { ArticleDetail, ViewMode } from '@rss/shared';
 import type { ShortcutContextName } from '@/lib/shortcuts/registry';
 import { cn } from '@/lib/utils';
 
@@ -128,6 +133,14 @@ export function ReaderPage() {
 
   const [filters, setFilters] = useState<ArticleFilters>({ sort: 'newest' });
 
+  // Community mode (SPEC-019): swaps the content region to other users'
+  // shares. Not filter-driven; any scope pick returns to the article surface.
+  const [communityOpen, setCommunityOpen] = useState(false);
+  const { data: profile } = useProfile();
+  const community = useCommunityShares();
+  const showCommunity =
+    (community.data?.pages[0]?.items.length ?? 0) > 0 || (profile?.visibility ?? 'off') !== 'off';
+
   // View resolution. Each scope opens at its effective view: the feed's own
   // override (set in feed settings) if it has one, else the user's default view.
   // The user default is their LAST PICK from the switcher - persisted server-side
@@ -144,7 +157,7 @@ export function ReaderPage() {
   const currentSub = filters.feedId ? subs.find((s) => s.feedId === filters.feedId) : undefined;
   const effectiveView: ViewMode = currentSub?.viewMode ?? settings.defaultViewMode;
   const [viewOverride, setViewOverride] = useState<ViewMode | null>(null);
-  const scopeKey = `${filters.feedId ?? ''}|${filters.folderId ?? ''}|${filters.starred ?? ''}`;
+  const scopeKey = `${filters.feedId ?? ''}|${filters.folderId ?? ''}|${filters.starred ?? ''}|${filters.shared ?? ''}`;
   useEffect(() => setViewOverride(null), [scopeKey]);
   const view: ViewMode = viewOverride ?? effectiveView;
   const isBrowse = view === 'cards' || view === 'magazine';
@@ -160,6 +173,10 @@ export function ReaderPage() {
     return () => clearTimeout(timer);
   }, [searchInput]);
   const isSearching = debouncedQ.length > 0;
+  // Searching always searches articles; leave community mode when a query starts.
+  useEffect(() => {
+    if (isSearching) setCommunityOpen(false);
+  }, [isSearching]);
   const effectiveFilters = useMemo(() => {
     let f = filters;
     if (unreadOnly) f = { ...f, unread: true };
@@ -191,7 +208,13 @@ export function ReaderPage() {
   // old article in view while the list underneath changes feeds.
   const pickScope = (apply: () => void) => {
     clearArticle();
+    setCommunityOpen(false);
     apply();
+    goToList();
+  };
+  const openCommunity = () => {
+    clearArticle();
+    setCommunityOpen(true);
     goToList();
   };
 
@@ -209,19 +232,23 @@ export function ReaderPage() {
   const surface = useArticleSurface(effectiveFilters, openInPlace);
 
   // --- Scope chrome + mark all read (top bar) ---------------------------
-  const scopeLabel = filters.starred
-    ? 'Starred'
-    : filters.feedId
-      ? (feedMeta[filters.feedId]?.name ?? 'Feed')
-      : filters.folderId
-        ? (foldersData?.items.find((f) => f.id === filters.folderId)?.name ?? 'Folder')
-        : 'All items';
+  const scopeLabel = communityOpen
+    ? 'Community'
+    : filters.starred
+      ? 'Starred'
+      : filters.shared
+        ? 'Shared'
+        : filters.feedId
+          ? (feedMeta[filters.feedId]?.name ?? 'Feed')
+          : filters.folderId
+            ? (foldersData?.items.find((f) => f.id === filters.folderId)?.name ?? 'Folder')
+            : 'All items';
   const unreadForView = filters.feedId
     ? (countByFeed.get(filters.feedId) ?? 0)
     : filters.folderId
       ? (counts?.folders.find((f) => f.folderId === filters.folderId)?.unreadCount ?? 0)
       : (counts?.total ?? 0);
-  const canMarkAll = !filters.starred;
+  const canMarkAll = !filters.starred && !filters.shared && !communityOpen;
   const markRead = useMarkRead();
   function markAllRead() {
     if (unreadForView > 20 && !window.confirm(`Mark ${unreadForView} articles as read?`)) return;
@@ -279,6 +306,15 @@ export function ReaderPage() {
     },
     markUnread: () => targetId && toggle.mutate({ read: false }),
     toggleStar: () => targetId && toggle.mutate({ starred: !surface.getFocused()?.starred }),
+    toggleShared: () => {
+      if (!targetId) return;
+      // Shared state lives on the detail shape only; an article never opened
+      // this session reads as unshared and S shares it.
+      const detail = queryClient.getQueryData<ArticleDetail>(['article', targetId]);
+      const next = !(detail?.shared ?? false);
+      toggle.mutate({ shared: next });
+      announce(next ? 'Added to shared items' : 'Removed from shared items');
+    },
     markAllRead: () => canMarkAll && unreadForView > 0 && markAllRead(),
     refresh: () => {
       queryClient.invalidateQueries({ queryKey: ['articles'] });
@@ -310,7 +346,9 @@ export function ReaderPage() {
       <ul className="space-y-1 text-sm">
         <li>
           <button
-            className={navItem(!filters.feedId && !filters.starred && !filters.folderId)}
+            className={navItem(
+              !filters.feedId && !filters.starred && !filters.folderId && !filters.shared && !communityOpen,
+            )}
             onClick={() => pickScope(() => setFilters({ sort: 'newest' }))}
           >
             <Inbox className="size-4" />
@@ -320,12 +358,27 @@ export function ReaderPage() {
         </li>
         <li>
           <button
-            className={navItem(Boolean(filters.starred))}
+            className={navItem(Boolean(filters.starred) && !communityOpen)}
             onClick={() => pickScope(() => setFilters({ starred: true, sort: 'newest' }))}
           >
             <Star className="size-4" /> Starred
           </button>
         </li>
+        <li>
+          <button
+            className={navItem(Boolean(filters.shared) && !communityOpen)}
+            onClick={() => pickScope(() => setFilters({ shared: true, sort: 'newest' }))}
+          >
+            <Share2 className="size-4" /> Shared
+          </button>
+        </li>
+        {showCommunity && (
+          <li>
+            <button className={navItem(communityOpen)} onClick={openCommunity}>
+              <Users className="size-4" /> Community
+            </button>
+          </li>
+        )}
       </ul>
 
       <div className="mt-4 flex items-center justify-between px-2">
@@ -363,8 +416,8 @@ export function ReaderPage() {
         <p className="px-2 py-1.5 text-sm text-muted-foreground">No subscriptions yet.</p>
       )}
       <FolderTree
-        activeFeedId={filters.feedId}
-        activeFolderId={filters.folderId}
+        activeFeedId={communityOpen ? undefined : filters.feedId}
+        activeFolderId={communityOpen ? undefined : filters.folderId}
         onSelectFeed={onSelectFeed}
         onSelectFolder={onSelectFolder}
         countByFeed={countByFeed}
@@ -436,7 +489,7 @@ export function ReaderPage() {
         ) : (
           <>
             {scopeLabel}
-            {unreadForView > 0 && (
+            {unreadForView > 0 && !communityOpen && !filters.shared && (
               <span className="ml-2 text-xs font-normal text-muted-foreground">{unreadForView}</span>
             )}
           </>
@@ -544,9 +597,12 @@ export function ReaderPage() {
           </nav>
         )}
 
-        {/* Content region: list-beside-reader, or the full-width browse surface. */}
+        {/* Content region: community shares, list-beside-reader, or the
+            full-width browse surface. */}
         <div className={cn('min-h-0 flex-1', showFeedPicker && 'hidden')}>
-          {isBrowse ? (
+          {communityOpen ? (
+            <CommunityPane />
+          ) : isBrowse ? (
             <BrowseSurface
               surface={surface}
               feeds={feedMeta}

@@ -10,6 +10,7 @@ import { useOnlineStatus } from '@/lib/pwa';
 import { useSettings } from '@/lib/settings';
 import { cn } from '@/lib/utils';
 import { ArticleHtml } from './ArticleHtml';
+import { SharePopover } from './SharePopover';
 
 const VIEW_LABELS: Record<ArticleView, string> = {
   simplified: 'Simplified',
@@ -157,14 +158,17 @@ export function ReadingPane({ articleId }: { articleId: string }) {
               </button>
             ))}
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={article.starred ? 'Unstar' : 'Star'}
-            onClick={() => toggle.mutate({ starred: !article.starred })}
-          >
-            <Star className={cn('size-4', article.starred && 'fill-primary text-primary')} />
-          </Button>
+          <div className="flex items-center gap-1">
+            <SharePopover key={article.id} article={article} />
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={article.starred ? 'Unstar' : 'Star'}
+              onClick={() => toggle.mutate({ starred: !article.starred })}
+            >
+              <Star className={cn('size-4', article.starred && 'fill-primary text-primary')} />
+            </Button>
+          </div>
         </div>
       </div>
 

@@ -69,6 +69,10 @@ export function resolveTheme(setting: ThemeSetting, prefersDark: boolean): Theme
   return THEMES.find((t) => t.id === id) ?? THEMES[0]!;
 }
 
+/** Visibility of a user's shared items (SPEC-019). */
+export const SHARE_VISIBILITIES = ['off', 'instance', 'public'] as const;
+export type ShareVisibility = (typeof SHARE_VISIBILITIES)[number];
+
 /** How new accounts may be created for the instance (SPEC-012). */
 export const REGISTRATION_MODES = ['open', 'invite', 'closed'] as const;
 export type RegistrationMode = (typeof REGISTRATION_MODES)[number];

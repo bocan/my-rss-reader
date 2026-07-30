@@ -82,7 +82,7 @@ each other unless noted.
 
 | #   | Spec                                              | Depends on            | Status |
 | --- | ------------------------------------------------- | --------------------- | ------ |
-| 019 | Sharing, shared items, and the public linkblog    | 005, 011, 017         | Todo   |
+| 019 | Sharing, shared items, and the public linkblog    | 005, 011, 017         | Done   |
 | 020 | Public blogroll (HTML + OPML)                     | 019, 009              | Todo   |
 | 021 | WebSub realtime delivery (subscriber side)        | 002                   | Todo   |
 | 022 | Attention tiers (firehose / normal / precious)    | 005, 007, 018         | Todo   |

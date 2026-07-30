@@ -7,6 +7,7 @@ import {
   feeds,
   folders,
   invites,
+  profiles,
   sessions,
   subscriptions,
   users,
@@ -26,7 +27,7 @@ const rand = (bytes = 4) => randomBytes(bytes).toString('hex');
 /** Truncate every app table. Call in beforeEach for a clean slate per test. */
 export async function resetDb(): Promise<void> {
   await db.execute(
-    sql`truncate users, sessions, folders, feeds, subscriptions, articles, article_states, invites, app_settings restart identity cascade`,
+    sql`truncate users, sessions, folders, feeds, subscriptions, articles, article_states, invites, app_settings, profiles restart identity cascade`,
   );
 }
 
@@ -111,6 +112,20 @@ export async function seedArticleState(
   const [row] = await db
     .insert(articleStates)
     .values({ userId, articleId, ...overrides })
+    .returning();
+  return row!;
+}
+
+type ProfileInsert = typeof profiles.$inferInsert;
+
+/** Seed a sharing profile (SPEC-019); visibility defaults to 'off'. */
+export async function seedProfile(
+  userId: string,
+  overrides: Partial<ProfileInsert> = {},
+) {
+  const [row] = await db
+    .insert(profiles)
+    .values({ userId, slug: `slug-${rand()}`, ...overrides })
     .returning();
   return row!;
 }

@@ -49,6 +49,8 @@ async function loadArticleDetail(userId: string, id: string) {
       feedFaviconUrl: feeds.faviconUrl,
       read: sql<boolean>`coalesce(${articleStates.read}, false)`,
       starred: sql<boolean>`coalesce(${articleStates.starred}, false)`,
+      shared: sql<boolean>`coalesce(${articleStates.shared}, false)`,
+      shareNote: articleStates.shareNote,
     })
     .from(articles)
     .innerJoin(feeds, eq(articles.feedId, feeds.id))
@@ -85,6 +87,8 @@ async function loadArticleDetail(userId: string, id: string) {
     },
     read: r.read,
     starred: r.starred,
+    shared: r.shared,
+    shareNote: r.shareNote,
   };
 }
 
@@ -130,8 +134,9 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
     if (query.feedId) subFilters.push(eq(subscriptions.feedId, query.feedId));
     if (query.folderId) subFilters.push(eq(subscriptions.folderId, query.folderId));
     // Hidden feeds drop out of the All-items firehose only; an explicit feed,
-    // folder, starred, or search scope still includes them (SPEC-018).
-    const isAllItems = !query.feedId && !query.folderId && !query.starred && !isSearch;
+    // folder, starred, shared, or search scope still includes them (SPEC-018).
+    const isAllItems =
+      !query.feedId && !query.folderId && !query.starred && !query.shared && !isSearch;
     if (isAllItems) subFilters.push(eq(subscriptions.hideFromAll, false));
     const subs = await db
       .select({ feedId: subscriptions.feedId })
@@ -152,6 +157,9 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
     }
     if (query.starred) {
       filters.push(sql`coalesce(${articleStates.starred}, false) = true`);
+    }
+    if (query.shared) {
+      filters.push(sql`coalesce(${articleStates.shared}, false) = true`);
     }
     // websearch_to_tsquery understands "exact phrase", -exclude and OR, and
     // never throws on malformed input. An all-stopword query yields an empty
@@ -320,8 +328,11 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
         articleId: id,
         read: input.read ?? false,
         starred: input.starred ?? false,
+        shared: input.shared ?? false,
         readAt: input.read ? now : null,
         starredAt: input.starred ? now : null,
+        sharedAt: input.shared ? now : null,
+        shareNote: input.shareNote ?? null,
       })
       .onConflictDoUpdate({
         target: [articleStates.userId, articleStates.articleId],
@@ -330,6 +341,16 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
           ...(input.starred !== undefined
             ? { starred: input.starred, starredAt: input.starred ? now : null }
             : {}),
+          // Un-sharing clears the note so a re-share starts clean; an explicit
+          // shareNote in the same request still wins (spread order below).
+          ...(input.shared !== undefined
+            ? {
+                shared: input.shared,
+                sharedAt: input.shared ? now : null,
+                ...(input.shared ? {} : { shareNote: null }),
+              }
+            : {}),
+          ...(input.shareNote !== undefined ? { shareNote: input.shareNote } : {}),
         },
       });
 

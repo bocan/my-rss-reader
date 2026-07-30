@@ -1,11 +1,13 @@
 import {
   ARTICLE_VIEWS,
   DENSITIES,
+  SHARE_VISIBILITIES,
   VIEW_MODES,
   type ArticleView,
   type Density,
   type ImportOpmlResult,
   type Settings,
+  type ShareVisibility,
   type ViewMode,
 } from '@rss/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -15,8 +17,10 @@ import { Link } from 'react-router';
 import { AppShell } from '@/components/layout/AppShell';
 import { ThemeTiles } from '@/components/theme/ThemePicker';
 import { Button } from '@/components/ui/button';
+import { announce } from '@/lib/announce';
 import { api, ApiRequestError } from '@/lib/api';
 import { useChangePassword, useSession, useUpdateAccount } from '@/lib/auth';
+import { useProfile, useUpdateProfile } from '@/lib/profile';
 import { useInstallPrompt } from '@/lib/pwa';
 import { useSettings } from '@/lib/settings';
 import { cn } from '@/lib/utils';
@@ -264,6 +268,144 @@ function Toggle({
   );
 }
 
+const VISIBILITY_LABEL: Record<ShareVisibility, string> = {
+  off: 'Off',
+  instance: 'This instance',
+  public: 'Public web',
+};
+
+const VISIBILITY_HINT: Record<ShareVisibility, string> = {
+  off: 'Shared items are a private list only you can see.',
+  instance: 'Other users of this instance see your shares in their Community view.',
+  public: 'Anyone on the web can read your shared items page and subscribe to its feed.',
+};
+
+/** Sharing profile (SPEC-019): visibility, slug, and the public page fields. */
+function SharingSection() {
+  const { data: profile } = useProfile();
+  const update = useUpdateProfile();
+  const [visibility, setVisibility] = useState<ShareVisibility>('off');
+  const [slug, setSlug] = useState('');
+  const [title, setTitle] = useState('');
+  const [bio, setBio] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  // Seed the form once from the loaded profile (or its server suggestion).
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (!profile || seeded.current) return;
+    seeded.current = true;
+    setVisibility(profile.visibility);
+    setSlug(profile.slug);
+    setTitle(profile.title ?? '');
+    setBio(profile.bio ?? '');
+  }, [profile]);
+
+  function onSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    update.mutate(
+      {
+        visibility,
+        slug: slug.trim(),
+        title: title.trim() || null,
+        bio: bio.trim() || null,
+      },
+      {
+        onSuccess: () => announce('Sharing settings saved'),
+        onError: (err) => setError(errorMessage(err, 'Could not save sharing settings')),
+      },
+    );
+  }
+
+  return (
+    <section id="sharing" className="space-y-4 rounded-lg border p-4">
+      <h2 className="font-medium">Sharing</h2>
+      <p className="text-xs text-muted-foreground">
+        Mark articles as shared (the share menu on any article, or{' '}
+        <kbd className="rounded border bg-muted px-1 font-mono">S</kbd>) and choose who can see
+        them.
+      </p>
+      <form onSubmit={onSubmit} className="space-y-4">
+        <div className="space-y-1">
+          <Segmented
+            label="Who can see your shares"
+            value={visibility}
+            options={SHARE_VISIBILITIES}
+            labels={VISIBILITY_LABEL}
+            onChange={setVisibility}
+          />
+          <p className="text-xs text-muted-foreground">{VISIBILITY_HINT[visibility]}</p>
+        </div>
+
+        <label className="block space-y-1">
+          <span className="text-sm">Page address</span>
+          <div className="flex items-center gap-1">
+            <span className="shrink-0 text-sm text-muted-foreground">/u/</span>
+            <input
+              value={slug}
+              onChange={(e) => setSlug(e.target.value)}
+              className={inputClass}
+              aria-label="Public page address"
+              minLength={3}
+              maxLength={32}
+              pattern="[a-z0-9][a-z0-9-]{1,30}[a-z0-9]"
+              title="3-32 lowercase letters, numbers, and dashes"
+            />
+          </div>
+        </label>
+
+        <label className="block space-y-1">
+          <span className="text-sm">Page title</span>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className={inputClass}
+            maxLength={80}
+            placeholder="Defaults to your name's shared items"
+          />
+        </label>
+
+        <label className="block space-y-1">
+          <span className="text-sm">Bio</span>
+          <textarea
+            value={bio}
+            onChange={(e) => setBio(e.target.value)}
+            rows={2}
+            maxLength={500}
+            className={cn(inputClass, 'h-auto resize-y py-2')}
+            placeholder="A line about you or what you share (optional)"
+          />
+        </label>
+
+        {error && <p className="text-sm text-destructive">{error}</p>}
+
+        <div className="flex items-center gap-3">
+          <Button type="submit" disabled={update.isPending}>
+            {update.isPending ? 'Saving…' : 'Save sharing settings'}
+          </Button>
+          {profile?.shareUrl && (
+            <a
+              href={profile.shareUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-primary hover:underline"
+            >
+              Open your page
+            </a>
+          )}
+        </div>
+        {profile?.shareUrl && (
+          <p className="text-xs text-muted-foreground">
+            Your page is also an Atom and JSON feed, so other readers can subscribe to your
+            shares at {profile.shareUrl}/feed.xml
+          </p>
+        )}
+      </form>
+    </section>
+  );
+}
+
 /** Mirrors the server's OPML_MAX_BYTES default so we fail fast client-side. */
 const MAX_BYTES = 5 * 1024 * 1024;
 
@@ -315,6 +457,8 @@ export function SettingsPage() {
         </div>
 
         <AccountSection />
+
+        <SharingSection />
 
         <section className="space-y-4 rounded-lg border p-4">
           <h2 className="font-medium">Preferences</h2>

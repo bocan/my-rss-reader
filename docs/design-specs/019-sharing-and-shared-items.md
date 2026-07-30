@@ -1,6 +1,6 @@
 # SPEC-019: Sharing, shared items, and the public linkblog
 
-- **Status:** Todo
+- **Status:** Done
 - **Phase:** 4
 - **Depends on:** SPEC-005 (Done), SPEC-011 (Done), SPEC-017 (Done)
 - **Estimated size:** L

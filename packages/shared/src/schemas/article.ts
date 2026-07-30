@@ -10,6 +10,8 @@ export const articleQuerySchema = z.object({
   unread: z.stringbool().optional(),
   /** Only starred items. */
   starred: z.stringbool().optional(),
+  /** Only the caller's shared items (SPEC-019). */
+  shared: z.stringbool().optional(),
   /** Full-text search across title + content. */
   q: z.string().min(1).max(200).optional(),
   sort: z.enum(SORT_ORDERS).default('newest'),
@@ -21,6 +23,10 @@ export type ArticleQuery = z.infer<typeof articleQuerySchema>;
 export const updateArticleStateSchema = z.object({
   read: z.boolean().optional(),
   starred: z.boolean().optional(),
+  /** Add to / remove from the caller's shared items (SPEC-019). */
+  shared: z.boolean().optional(),
+  /** Optional note shown with a shared item; null clears it. */
+  shareNote: z.string().max(2000).nullable().optional(),
 });
 export type UpdateArticleStateInput = z.infer<typeof updateArticleStateSchema>;
 
@@ -48,6 +54,8 @@ export const articleDetailSchema = z.object({
   feed: articleFeedSchema,
   read: z.boolean(),
   starred: z.boolean(),
+  shared: z.boolean(),
+  shareNote: z.string().nullable(),
 });
 export type ArticleDetail = z.infer<typeof articleDetailSchema>;
 

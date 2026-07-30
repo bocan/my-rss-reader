@@ -14,6 +14,7 @@ export interface ShortcutActions {
   toggleRead(): void;
   markUnread(): void;
   toggleStar(): void;
+  toggleShared(): void;
   markAllRead(): void;
   refresh(): void;
   focusSearch(): void;
@@ -110,6 +111,14 @@ export const SHORTCUTS: Shortcut[] = [
     group: 'Article',
     label: 'Toggle star',
     run: (a) => a.toggleStar(),
+  },
+  {
+    // Shift+s: event.key is the literal capital.
+    keys: ['S'],
+    contexts: ['global'],
+    group: 'Article',
+    label: 'Toggle shared',
+    run: (a) => a.toggleShared(),
   },
   {
     keys: ['a'],

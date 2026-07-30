@@ -38,7 +38,13 @@ function currentState(qc: QueryClient, articleId: string): { read: boolean; feed
   return undefined;
 }
 
-function patchArticle(qc: QueryClient, articleId: string, patch: Partial<ArticleListItem>) {
+function patchArticle(
+  qc: QueryClient,
+  articleId: string,
+  // shared/shareNote only exist on the detail shape; the extra keys are inert
+  // on list items.
+  patch: Partial<ArticleListItem> & Partial<Pick<ArticleDetail, 'shared' | 'shareNote'>>,
+) {
   qc.setQueriesData<ArticlesData>({ queryKey: ['articles'] }, (data) =>
     data
       ? {
@@ -99,7 +105,14 @@ function reconcile(qc: QueryClient) {
 export const TOGGLE_STATE_KEY = ['toggle-state'] as const;
 export const MARK_READ_KEY = ['mark-read'] as const;
 
-type ToggleVars = { articleId: string; read?: boolean; starred?: boolean };
+type ToggleVars = {
+  articleId: string;
+  read?: boolean;
+  starred?: boolean;
+  shared?: boolean;
+  shareNote?: string | null;
+};
+type TogglePatch = Omit<ToggleVars, 'articleId'>;
 type MarkReadScope = { feedId?: string; folderId?: string; before?: string };
 
 /**
@@ -109,8 +122,11 @@ type MarkReadScope = { feedId?: string; folderId?: string; before?: string };
  */
 export function registerMutationDefaults(qc: QueryClient): void {
   qc.setMutationDefaults(TOGGLE_STATE_KEY, {
-    mutationFn: ({ articleId, read, starred }: ToggleVars) =>
-      api<void>(`/articles/${articleId}/state`, { method: 'PATCH', body: { read, starred } }),
+    mutationFn: ({ articleId, read, starred, shared, shareNote }: ToggleVars) =>
+      api<void>(`/articles/${articleId}/state`, {
+        method: 'PATCH',
+        body: { read, starred, shared, shareNote },
+      }),
     onMutate: async ({ articleId, ...vars }: ToggleVars): Promise<Ctx> => {
       const ctx = await snapshot(qc);
       const state = currentState(qc, articleId);
@@ -187,9 +203,8 @@ export function useToggleArticleState(articleId: string) {
   const m = useMutation<void, Error, ToggleVars, Ctx>({ mutationKey: TOGGLE_STATE_KEY });
   return {
     isPending: m.isPending,
-    mutate: (vars: { read?: boolean; starred?: boolean }) => m.mutate({ articleId, ...vars }),
-    mutateAsync: (vars: { read?: boolean; starred?: boolean }) =>
-      m.mutateAsync({ articleId, ...vars }),
+    mutate: (vars: TogglePatch) => m.mutate({ articleId, ...vars }),
+    mutateAsync: (vars: TogglePatch) => m.mutateAsync({ articleId, ...vars }),
   };
 }
 

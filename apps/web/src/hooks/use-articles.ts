@@ -20,6 +20,8 @@ export interface ArticleFilters {
   folderId?: string;
   unread?: boolean;
   starred?: boolean;
+  /** Only the caller's shared items (SPEC-019). */
+  shared?: boolean;
   /** Full-text query. When set the API orders by relevance and ignores sort. */
   q?: string;
   sort: 'newest' | 'oldest';
@@ -31,6 +33,7 @@ function buildQuery(filters: ArticleFilters, cursor: string | null): string {
   if (filters.folderId) params.set('folderId', filters.folderId);
   if (filters.unread !== undefined) params.set('unread', String(filters.unread));
   if (filters.starred) params.set('starred', 'true');
+  if (filters.shared) params.set('shared', 'true');
   if (filters.q) params.set('q', filters.q);
   params.set('sort', filters.sort);
   if (cursor) params.set('cursor', cursor);

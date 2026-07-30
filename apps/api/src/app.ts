@@ -11,6 +11,7 @@ import { ZodError, z } from 'zod';
 import { env, isProd, isTest } from './env.js';
 import { registerAuth } from './plugins/auth.js';
 import { registerRoutes } from './routes/index.js';
+import { publicRoutes } from './routes/public.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -71,6 +72,10 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
 
   await app.register(registerRoutes, { prefix: '/api' });
+
+  // Unauthenticated public share pages/feeds (SPEC-019) live at the root
+  // scope: explicit /u/:slug routes take precedence over the SPA fallback.
+  await app.register(publicRoutes);
 
   // In production the built SPA is served from the same origin; client-side
   // routes fall back to index.html. API misses always get a structured 404.
