@@ -14,6 +14,8 @@ export const updateProfileSchema = z.object({
   title: z.string().min(1).max(80).nullable().optional(),
   bio: z.string().max(500).nullable().optional(),
   visibility: z.enum(SHARE_VISIBILITIES).optional(),
+  /** Publish the blogroll page + OPML at /u/<slug>/blogroll (SPEC-020). */
+  blogrollEnabled: z.boolean().optional(),
 });
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 
@@ -25,6 +27,9 @@ export const profileSchema = z.object({
   visibility: z.enum(SHARE_VISIBILITIES),
   /** Absolute URL of the public page; null unless visibility is 'public'. */
   shareUrl: z.string().nullable(),
+  blogrollEnabled: z.boolean(),
+  /** Absolute URL of the blogroll page; null unless blogrollEnabled. */
+  blogrollUrl: z.string().nullable(),
 });
 export type ProfileDto = z.infer<typeof profileSchema>;
 

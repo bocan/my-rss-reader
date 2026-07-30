@@ -11,6 +11,7 @@ import {
   useUpdateSubscription,
   type SubscriptionRow,
 } from '@/lib/folders';
+import { useProfile } from '@/lib/profile';
 import { cn } from '@/lib/utils';
 
 const inputClass =
@@ -47,6 +48,7 @@ export function FeedSettingsDialog({
 }) {
   const { data: foldersData } = useFolders();
   const folders = foldersData?.items ?? [];
+  const { data: profile } = useProfile();
   const update = useUpdateSubscription();
   const changeUrl = useChangeFeedUrl();
 
@@ -57,6 +59,7 @@ export function FeedSettingsDialog({
   const [viewMode, setViewMode] = useState<string>(sub.viewMode ?? '');
   const [articleView, setArticleView] = useState<string>(sub.articleView ?? '');
   const [hideFromAll, setHideFromAll] = useState(sub.hideFromAll);
+  const [inBlogroll, setInBlogroll] = useState(sub.inBlogroll);
   const [intervalMin, setIntervalMin] = useState<string>(
     sub.fetchIntervalSec != null ? String(Math.round(sub.fetchIntervalSec / 60)) : '',
   );
@@ -73,6 +76,7 @@ export function FeedSettingsDialog({
         viewMode: (viewMode || null) as ViewMode | null,
         articleView: (articleView || null) as ArticleView | null,
         hideFromAll,
+        inBlogroll,
         fetchIntervalSec: min == null ? null : min * 60,
       },
       {
@@ -230,6 +234,23 @@ export function FeedSettingsDialog({
               className="size-4 shrink-0 accent-primary"
             />
           </label>
+
+          {profile?.blogrollEnabled && (
+            <label className="flex items-center justify-between gap-4">
+              <span>
+                <span className="block text-sm">Include in public blogroll</span>
+                <span className="block text-xs text-muted-foreground">
+                  Untick to keep this feed off your blogroll page.
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                checked={inBlogroll}
+                onChange={(e) => setInBlogroll(e.target.checked)}
+                className="size-4 shrink-0 accent-primary"
+              />
+            </label>
+          )}
 
           {sub.lastError ? (
             <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">

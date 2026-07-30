@@ -78,6 +78,8 @@ export interface OpmlFeedNode {
   title: string;
   xmlUrl: string;
   htmlUrl?: string | null;
+  /** Carried for the blogroll HTML page (SPEC-020); ignored by buildOpml. */
+  faviconUrl?: string | null;
 }
 export interface OpmlFolderNode {
   title: string;

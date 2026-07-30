@@ -1,17 +1,12 @@
 import { importOpmlSchema, type ImportOpmlResult } from '@rss/shared';
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { db } from '../db/index.js';
 import { feeds, folders, subscriptions } from '../db/schema.js';
 import { env } from '../env.js';
 import { fetchAndStoreFeed, normalizeFeedUrl } from '../lib/feed-fetch.js';
-import {
-  buildOpml,
-  OpmlParseError,
-  parseOpml,
-  type OpmlFolderNode,
-  type OpmlOutline,
-} from '../lib/opml.js';
+import { buildOpml, OpmlParseError, parseOpml, type OpmlOutline } from '../lib/opml.js';
+import { buildUserFeedTree } from '../lib/opml-tree.js';
 import { renormalizeFolderScope, renormalizeSubscriptionScope } from '../lib/ordering.js';
 
 /** Bounded parallelism so a few hundred feeds do not open hundreds of sockets. */
@@ -230,51 +225,7 @@ export async function opmlRoutes(app: FastifyInstance): Promise<void> {
   );
 
   app.get('/opml/export', auth, async (request, reply) => {
-    const userId = request.user!.id;
-
-    const folderRows = await db
-      .select()
-      .from(folders)
-      .where(eq(folders.userId, userId))
-      .orderBy(asc(folders.position), asc(folders.createdAt));
-
-    const subRows = await db
-      .select({
-        folderId: subscriptions.folderId,
-        customTitle: subscriptions.customTitle,
-        title: feeds.title,
-        feedUrl: feeds.feedUrl,
-        siteUrl: feeds.siteUrl,
-      })
-      .from(subscriptions)
-      .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
-      .where(eq(subscriptions.userId, userId))
-      .orderBy(asc(subscriptions.position), asc(subscriptions.createdAt));
-
-    const feedsFor = (folderId: string | null) =>
-      subRows
-        .filter((s) => s.folderId === folderId)
-        .map((s) => ({
-          title: s.customTitle ?? s.title ?? s.feedUrl,
-          xmlUrl: s.feedUrl,
-          htmlUrl: s.siteUrl,
-        }));
-
-    const buildFolder = (id: string, name: string): OpmlFolderNode => ({
-      title: name,
-      folders: folderRows
-        .filter((f) => f.parentId === id)
-        .map((child) => buildFolder(child.id, child.name)),
-      feeds: feedsFor(id),
-    });
-
-    const xml = buildOpml({
-      folders: folderRows
-        .filter((f) => f.parentId === null)
-        .map((f) => buildFolder(f.id, f.name)),
-      feeds: feedsFor(null),
-    });
-
+    const xml = buildOpml(await buildUserFeedTree(request.user!.id));
     return reply
       .header('content-type', 'text/x-opml; charset=utf-8')
       .header('content-disposition', 'attachment; filename="reader-subscriptions.opml"')

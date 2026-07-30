@@ -170,6 +170,9 @@ export const subscriptions = pgTable('subscriptions', {
   articleView: text(),
   // Exclude this feed from the All-items list and its unread total (SPEC-018).
   hideFromAll: boolean().notNull().default(false),
+  // Include this subscription in the owner's public blogroll (SPEC-020).
+  // Only meaningful once profiles.blogrollEnabled is on.
+  inBlogroll: boolean().notNull().default(true),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   uniqueIndex('subscriptions_user_feed_key').on(t.userId, t.feedId),
@@ -270,6 +273,9 @@ export const profiles = pgTable('profiles', {
   title: text(),
   bio: text(),
   visibility: text().notNull().default('off'),
+  // Public blogroll toggle (SPEC-020). Independent of shares visibility: a
+  // user may publish a blogroll without a shared-items page and vice versa.
+  blogrollEnabled: boolean().notNull().default(false),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 }, (t) => [uniqueIndex('profiles_slug_key').on(t.slug)]);

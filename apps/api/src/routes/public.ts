@@ -2,6 +2,8 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { db } from '../db/index.js';
 import { articles, articleStates, feeds, profiles, users } from '../db/schema.js';
+import { buildOpml, type OpmlFeedNode, type OpmlFolderNode } from '../lib/opml.js';
+import { buildUserFeedTree } from '../lib/opml-tree.js';
 import { esc, escMultiline, layout } from '../lib/public-html.js';
 import { buildShareAtom, buildShareJsonFeed, type ShareFeedItem } from '../lib/share-feeds.js';
 import { publicBase } from './profile.js';
@@ -16,24 +18,41 @@ interface PublicProfile {
   slug: string;
   title: string | null;
   bio: string | null;
+  visibility: string;
+  blogrollEnabled: boolean;
   displayName: string;
 }
 
-/** The profile behind /u/:slug, only when it is public and its user active. */
-async function loadPublicProfile(slug: string): Promise<PublicProfile | null> {
+/** The profile behind /u/:slug for an active user, regardless of what it
+ *  exposes; each route checks the gate it cares about (shares vs blogroll). */
+async function loadProfileForSlug(slug: string): Promise<PublicProfile | null> {
   const [row] = await db
     .select({
       userId: profiles.userId,
       slug: profiles.slug,
       title: profiles.title,
       bio: profiles.bio,
+      visibility: profiles.visibility,
+      blogrollEnabled: profiles.blogrollEnabled,
       displayName: users.displayName,
     })
     .from(profiles)
     .innerJoin(users, and(eq(users.id, profiles.userId), isNull(users.disabledAt)))
-    .where(and(eq(profiles.slug, slug), eq(profiles.visibility, 'public')))
+    .where(eq(profiles.slug, slug))
     .limit(1);
   return row ?? null;
+}
+
+/** The profile behind /u/:slug, only when shares are public. */
+async function loadPublicProfile(slug: string): Promise<PublicProfile | null> {
+  const row = await loadProfileForSlug(slug);
+  return row && row.visibility === 'public' ? row : null;
+}
+
+/** The profile behind /u/:slug/blogroll, only when the blogroll is on. */
+async function loadBlogrollProfile(slug: string): Promise<PublicProfile | null> {
+  const row = await loadProfileForSlug(slug);
+  return row && row.blogrollEnabled ? row : null;
 }
 
 async function loadSharedItems(userId: string): Promise<ShareFeedItem[]> {
@@ -102,7 +121,7 @@ ${item.note ? `  <p class="note p-content">${escMultiline(item.note)}</p>\n` : '
 ${profile.bio ? `  <p>${escMultiline(profile.bio)}</p>\n` : ''}</header>
 ${entries || '<p class="meta">Nothing shared yet.</p>'}
 <footer>
-  <p>Subscribe: <a href="${esc(pageUrl)}/feed.xml">Atom</a> · <a href="${esc(pageUrl)}/feed.json">JSON Feed</a> · powered by Reader</p>
+  <p>Subscribe: <a href="${esc(pageUrl)}/feed.xml">Atom</a> · <a href="${esc(pageUrl)}/feed.json">JSON Feed</a>${profile.blogrollEnabled ? ` · <a href="${esc(pageUrl)}/blogroll">Blogroll</a>` : ''} · powered by Reader</p>
 </footer>
 </div>`;
 
@@ -112,6 +131,61 @@ ${entries || '<p class="meta">Nothing shared yet.</p>'}
     return cache(reply)
       .type('text/html; charset=utf-8')
       .send(layout({ title: pageTitle(profile), head, body }));
+  });
+
+  // --- Blogroll (SPEC-020) ------------------------------------------------
+  // Gated by profiles.blogrollEnabled, independent of shares visibility.
+
+  app.get<{ Params: { slug: string } }>('/u/:slug/blogroll', async (request, reply) => {
+    const profile = await loadBlogrollProfile(request.params.slug);
+    if (!profile) return reply.code(404).send(notFound);
+    const tree = await buildUserFeedTree(profile.userId, { blogrollOnly: true });
+    const base = publicBase(request);
+    const pageUrl = `${base}/u/${profile.slug}`;
+    const rollTitle = `${profile.title ?? profile.displayName}'s blogroll`;
+
+    const feedItem = (feed: OpmlFeedNode): string => `<li>
+  ${feed.faviconUrl ? `<img src="${esc(feed.faviconUrl)}" alt="" width="16" height="16" loading="lazy" referrerpolicy="no-referrer"> ` : ''}<a href="${esc(feed.htmlUrl ?? feed.xmlUrl)}" rel="noopener noreferrer">${esc(feed.title)}</a>
+  <a class="feedlink" href="${esc(feed.xmlUrl)}">feed</a>
+</li>`;
+
+    const folderSection = (folder: OpmlFolderNode, level: number): string => {
+      const h = level === 0 ? 'h2' : 'h3';
+      return `<section>
+<${h}>${esc(folder.title)}</${h}>
+${folder.folders.map((f) => folderSection(f, level + 1)).join('\n')}
+${folder.feeds.length > 0 ? `<ul>\n${folder.feeds.map(feedItem).join('\n')}\n</ul>` : ''}
+</section>`;
+    };
+
+    const body = `<header>
+  <h1>${esc(rollTitle)}</h1>
+  <p>The feeds ${esc(profile.displayName)} reads.</p>
+${profile.bio ? `  <p>${escMultiline(profile.bio)}</p>\n` : ''}</header>
+${tree.folders.map((f) => folderSection(f, 0)).join('\n')}
+${tree.feeds.length > 0 ? `<ul>\n${tree.feeds.map(feedItem).join('\n')}\n</ul>` : ''}
+${tree.folders.length === 0 && tree.feeds.length === 0 ? '<p>Nothing here yet.</p>' : ''}
+<footer>
+  <p><a href="${esc(pageUrl)}/blogroll.opml">Download OPML</a> (import it into any feed reader)${profile.visibility === 'public' ? ` · <a href="${esc(pageUrl)}">Shared items</a>` : ''} · powered by Reader</p>
+</footer>`;
+
+    const head = `<link rel="blogroll" type="text/x-opml" title="${esc(rollTitle)}" href="${esc(pageUrl)}/blogroll.opml">
+<style>li{margin:0.3rem 0}li img{vertical-align:-2px;border-radius:3px}.feedlink{font-family:ui-monospace,monospace;font-size:0.75rem;margin-left:0.35rem}</style>`;
+
+    return cache(reply)
+      .type('text/html; charset=utf-8')
+      .send(layout({ title: rollTitle, head, body }));
+  });
+
+  app.get<{ Params: { slug: string } }>('/u/:slug/blogroll.opml', async (request, reply) => {
+    const profile = await loadBlogrollProfile(request.params.slug);
+    if (!profile) return reply.code(404).send(notFound);
+    const tree = await buildUserFeedTree(profile.userId, { blogrollOnly: true });
+    const rollTitle = `${profile.title ?? profile.displayName}'s blogroll`;
+    return cache(reply)
+      .header('content-type', 'text/x-opml; charset=utf-8')
+      .header('content-disposition', 'inline')
+      .send(buildOpml(tree, rollTitle));
   });
 
   app.get<{ Params: { slug: string } }>('/u/:slug/feed.xml', async (request, reply) => {

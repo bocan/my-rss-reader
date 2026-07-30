@@ -19,6 +19,8 @@ export const updateSubscriptionSchema = z.object({
   articleView: z.enum(ARTICLE_VIEWS).nullable().optional(),
   /** Exclude this feed from the All-items list and its unread total (SPEC-018). */
   hideFromAll: z.boolean().optional(),
+  /** Include this subscription in the owner's public blogroll (SPEC-020). */
+  inBlogroll: z.boolean().optional(),
   /**
    * Poll interval for the shared feed, in seconds (SPEC-018). null inherits the
    * app default. This targets the global feed, so it affects all subscribers.

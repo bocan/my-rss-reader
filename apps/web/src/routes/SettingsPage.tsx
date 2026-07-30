@@ -288,6 +288,7 @@ function SharingSection() {
   const [slug, setSlug] = useState('');
   const [title, setTitle] = useState('');
   const [bio, setBio] = useState('');
+  const [blogrollEnabled, setBlogrollEnabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Seed the form once from the loaded profile (or its server suggestion).
@@ -299,6 +300,7 @@ function SharingSection() {
     setSlug(profile.slug);
     setTitle(profile.title ?? '');
     setBio(profile.bio ?? '');
+    setBlogrollEnabled(profile.blogrollEnabled);
   }, [profile]);
 
   function onSubmit(e: FormEvent<HTMLFormElement>) {
@@ -310,6 +312,7 @@ function SharingSection() {
         slug: slug.trim(),
         title: title.trim() || null,
         bio: bio.trim() || null,
+        blogrollEnabled,
       },
       {
         onSuccess: () => announce('Sharing settings saved'),
@@ -377,6 +380,26 @@ function SharingSection() {
             placeholder="A line about you or what you share (optional)"
           />
         </label>
+
+        <Toggle
+          label="Public blogroll"
+          hint="Publishes the feeds you follow (and your folder names) as a page + OPML. Exclude individual feeds from each feed's settings."
+          checked={blogrollEnabled}
+          onChange={setBlogrollEnabled}
+        />
+        {profile?.blogrollUrl && (
+          <p className="text-xs text-muted-foreground">
+            Your blogroll:{' '}
+            <a
+              href={profile.blogrollUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary hover:underline"
+            >
+              {profile.blogrollUrl.replace(/^https?:\/\//, '')}
+            </a>
+          </p>
+        )}
 
         {error && <p className="text-sm text-destructive">{error}</p>}
 

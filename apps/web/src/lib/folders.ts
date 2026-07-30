@@ -24,6 +24,7 @@ export interface SubscriptionRow {
   viewMode: ViewMode | null;
   articleView: ArticleView | null;
   hideFromAll: boolean;
+  inBlogroll: boolean;
   /** The shared feed's poll interval; null = inherit the app default. */
   fetchIntervalSec: number | null;
   lastFetchedAt: string | null;
@@ -142,6 +143,7 @@ export function useUpdateSubscription() {
       viewMode?: ViewMode | null;
       articleView?: ArticleView | null;
       hideFromAll?: boolean;
+      inBlogroll?: boolean;
       fetchIntervalSec?: number | null;
     }) => api<SubscriptionRow>(`/feeds/${id}`, { method: 'PATCH', body }),
     onMutate: async ({ id, ...patch }): Promise<TreeCtx> => {
@@ -159,6 +161,7 @@ export function useUpdateSubscription() {
                       ...(patch.viewMode !== undefined ? { viewMode: patch.viewMode } : {}),
                       ...(patch.articleView !== undefined ? { articleView: patch.articleView } : {}),
                       ...(patch.hideFromAll !== undefined ? { hideFromAll: patch.hideFromAll } : {}),
+                      ...(patch.inBlogroll !== undefined ? { inBlogroll: patch.inBlogroll } : {}),
                       ...(patch.fetchIntervalSec !== undefined
                         ? { fetchIntervalSec: patch.fetchIntervalSec }
                         : {}),

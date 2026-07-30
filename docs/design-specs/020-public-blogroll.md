@@ -1,6 +1,6 @@
 # SPEC-020: Public blogroll (HTML + OPML)
 
-- **Status:** Todo
+- **Status:** Done
 - **Phase:** 4
 - **Depends on:** SPEC-019 (profiles table, public route scope, HTML layout helpers), SPEC-009 (Done)
 - **Estimated size:** M
