@@ -69,6 +69,10 @@ export function resolveTheme(setting: ThemeSetting, prefersDark: boolean): Theme
   return THEMES.find((t) => t.id === id) ?? THEMES[0]!;
 }
 
+/** WebSub subscriber states for a feed (SPEC-021). */
+export const WEBSUB_STATES = ['inactive', 'pending', 'active', 'denied'] as const;
+export type WebSubState = (typeof WEBSUB_STATES)[number];
+
 /** Visibility of a user's shared items (SPEC-019). */
 export const SHARE_VISIBILITIES = ['off', 'instance', 'public'] as const;
 export type ShareVisibility = (typeof SHARE_VISIBILITIES)[number];

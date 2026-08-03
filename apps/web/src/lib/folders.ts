@@ -1,4 +1,4 @@
-import type { ArticleView, ViewMode } from '@rss/shared';
+import type { ArticleView, ViewMode, WebSubState } from '@rss/shared';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { api } from './api';
 
@@ -25,6 +25,9 @@ export interface SubscriptionRow {
   articleView: ArticleView | null;
   hideFromAll: boolean;
   inBlogroll: boolean;
+  /** WebSub delivery state for the shared feed (SPEC-021), read-only. */
+  websubState: WebSubState;
+  websubLeaseExpiresAt: string | null;
   /** The shared feed's poll interval; null = inherit the app default. */
   fetchIntervalSec: number | null;
   lastFetchedAt: string | null;

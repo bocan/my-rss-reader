@@ -252,6 +252,28 @@ export function FeedSettingsDialog({
             </label>
           )}
 
+          <p className="text-xs text-muted-foreground">
+            Delivery:{' '}
+            {sub.websubState === 'active' ? (
+              <>
+                <span
+                  className="mr-1 inline-block size-2 rounded-full bg-primary align-baseline"
+                  aria-hidden="true"
+                />
+                Realtime via WebSub
+                {sub.websubLeaseExpiresAt
+                  ? ` (lease renews ${new Date(sub.websubLeaseExpiresAt).toLocaleDateString()})`
+                  : ''}
+              </>
+            ) : sub.websubState === 'pending' ? (
+              'Realtime subscription pending'
+            ) : sub.websubState === 'denied' ? (
+              'Realtime refused by hub; polling instead'
+            ) : (
+              'Polled (this feed does not offer realtime delivery)'
+            )}
+          </p>
+
           {sub.lastError ? (
             <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
               <span className="font-medium">This feed failed to update</span> (last tried{' '}

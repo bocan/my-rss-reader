@@ -1,6 +1,6 @@
 # SPEC-021: WebSub realtime delivery (subscriber side)
 
-- **Status:** Todo
+- **Status:** Done
 - **Phase:** 4
 - **Depends on:** none (SPEC-002 is Done; shares the `PUBLIC_URL` env var introduced by SPEC-019, see Implementation notes)
 - **Estimated size:** L

@@ -7,6 +7,7 @@ import { Agent, interceptors, request } from 'undici';
 import { db } from '../db/index.js';
 import { articles, feeds } from '../db/schema.js';
 import { extractText, SANITIZER_VERSION, sanitizeArticleHtml } from './sanitize.js';
+import { discoverWebSubLinks, unsubscribeFromHub } from './websub.js';
 
 export type FeedRow = typeof feeds.$inferSelect;
 type NewArticleInsert = typeof articles.$inferInsert;
@@ -73,7 +74,21 @@ async function httpGet(
 
 export type FetchFeedResult =
   | { status: 'not-modified' }
-  | { status: 'ok'; parsed: ParsedFeed; etag?: string; lastModified?: string };
+  | {
+      status: 'ok';
+      parsed: ParsedFeed;
+      etag?: string;
+      lastModified?: string;
+      /** WebSub discovery (SPEC-021): advertised hub + canonical topic. */
+      hubUrl: string | null;
+      topicUrl: string;
+    };
+
+/** Parse a feed document with the shared rss-parser instance (SPEC-021:
+ *  pushed WebSub content goes through the exact same parser as polls). */
+export async function parseFeedString(xml: string): Promise<ParsedFeed> {
+  return parser.parseString(xml);
+}
 
 /**
  * Conditional GET + parse of a feed URL. No database access. Throws on HTTP
@@ -98,6 +113,7 @@ export async function fetchAndParseFeed(
     parsed,
     etag: firstHeader(res.headers['etag']),
     lastModified: firstHeader(res.headers['last-modified']),
+    ...discoverWebSubLinks(res.headers['link'], res.body, feedUrl),
   };
 }
 
@@ -394,6 +410,32 @@ export async function discoverFeedCandidates(url: string): Promise<FeedCandidate
 }
 
 /**
+ * The single article-insert path, shared by polling and WebSub pushes
+ * (SPEC-021). Known articles are left alone, with one exception: an
+ * enclosure is backfilled onto rows ingested before enclosure support
+ * existed, as long as the item is still in the feed. The setWhere keeps this
+ * a no-op write on every ordinary poll.
+ */
+export async function storeNewArticles(
+  // The feed id seam exists for SPEC-025's per-user filter rules hook.
+  _feedId: string,
+  rows: NewArticleInsert[],
+): Promise<void> {
+  if (rows.length === 0) return;
+  await db
+    .insert(articles)
+    .values(rows)
+    .onConflictDoUpdate({
+      target: [articles.feedId, articles.guid],
+      set: {
+        enclosureUrl: sql`excluded.enclosure_url`,
+        enclosureType: sql`excluded.enclosure_type`,
+      },
+      setWhere: sql`${articles.enclosureUrl} is null and excluded.enclosure_url is not null`,
+    });
+}
+
+/**
  * Fetch a feed and persist its metadata, favicon, and articles. Errors are
  * recorded on the row (lastError / failureCount), never thrown, so a feed that
  * is momentarily down still yields a usable row.
@@ -426,6 +468,21 @@ export async function fetchAndStoreFeed(feed: FeedRow): Promise<void> {
       faviconUrl = resolveFavicon(siteUrl, html);
     }
 
+    // WebSub bookkeeping (SPEC-021): persist the discovered hub/topic. Any
+    // change resets the state machine (which also un-sticks 'denied'); a feed
+    // that stops advertising a hub gets a best-effort unsubscribe. The worker
+    // sends the subscribe request (see pollFeed), keeping interactive
+    // subscribes fast.
+    const websubChanges: Partial<typeof feeds.$inferInsert> = {};
+    const topicUrl = result.hubUrl ? result.topicUrl : null;
+    if (result.hubUrl !== feed.websubHubUrl || topicUrl !== feed.websubTopicUrl) {
+      if (!result.hubUrl && feed.websubHubUrl) void unsubscribeFromHub(feed);
+      websubChanges.websubHubUrl = result.hubUrl;
+      websubChanges.websubTopicUrl = topicUrl;
+      websubChanges.websubState = 'inactive';
+      websubChanges.websubLeaseExpiresAt = null;
+    }
+
     await db
       .update(feeds)
       .set({
@@ -439,27 +496,11 @@ export async function fetchAndStoreFeed(feed: FeedRow): Promise<void> {
         failureCount: 0,
         updatedAt: new Date(),
         ...(faviconUrl !== undefined ? { faviconUrl } : {}),
+        ...websubChanges,
       })
       .where(eq(feeds.id, feed.id));
 
-    const rows = feedArticleRows(feed.id, parsed);
-    if (rows.length > 0) {
-      // Known articles are left alone, with one exception: an enclosure is
-      // backfilled onto rows ingested before enclosure support existed, as
-      // long as the item is still in the feed. The setWhere keeps this a
-      // no-op write on every ordinary poll.
-      await db
-        .insert(articles)
-        .values(rows)
-        .onConflictDoUpdate({
-          target: [articles.feedId, articles.guid],
-          set: {
-            enclosureUrl: sql`excluded.enclosure_url`,
-            enclosureType: sql`excluded.enclosure_type`,
-          },
-          setWhere: sql`${articles.enclosureUrl} is null and excluded.enclosure_url is not null`,
-        });
-    }
+    await storeNewArticles(feed.id, feedArticleRows(feed.id, parsed));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await db

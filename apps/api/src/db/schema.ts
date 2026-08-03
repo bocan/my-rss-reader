@@ -149,9 +149,23 @@ export const feeds = pgTable('feeds', {
   // Poll interval override for this global feed (SPEC-018). null = inherit the
   // app-wide default (app_settings.defaultPollIntervalSec).
   fetchIntervalSec: integer(),
+  // WebSub subscriber state (SPEC-021). hubUrl/topicUrl come from feed
+  // discovery (Link headers or atom:link). State machine: inactive ->
+  // pending (subscribe sent) -> active (hub verified), back to inactive when
+  // the advertised hub/topic changes; 'denied' is terminal until it does.
+  websubHubUrl: text(),
+  websubTopicUrl: text(),
+  websubSecret: text(),
+  websubCallbackToken: text(),
+  websubLeaseExpiresAt: timestamp({ withTimezone: true }),
+  websubState: text().notNull().default('inactive'),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
-}, (t) => [uniqueIndex('feeds_feed_url_key').on(t.feedUrl)]);
+}, (t) => [
+  uniqueIndex('feeds_feed_url_key').on(t.feedUrl),
+  // The callback routes resolve feeds by token (multiple NULLs are fine).
+  uniqueIndex('feeds_websub_callback_token_key').on(t.websubCallbackToken),
+]);
 
 export const subscriptions = pgTable('subscriptions', {
   id: uuid().primaryKey().defaultRandom(),

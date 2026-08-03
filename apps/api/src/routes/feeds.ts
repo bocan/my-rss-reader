@@ -40,6 +40,8 @@ async function subscriptionRow(subscriptionId: string, userId: string) {
       hideFromAll: subscriptions.hideFromAll,
       inBlogroll: subscriptions.inBlogroll,
       fetchIntervalSec: feeds.fetchIntervalSec,
+      websubState: feeds.websubState,
+      websubLeaseExpiresAt: feeds.websubLeaseExpiresAt,
       lastFetchedAt: feeds.lastFetchedAt,
       lastError: feeds.lastError,
     })
@@ -74,6 +76,8 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
         hideFromAll: subscriptions.hideFromAll,
         inBlogroll: subscriptions.inBlogroll,
         fetchIntervalSec: feeds.fetchIntervalSec,
+        websubState: feeds.websubState,
+        websubLeaseExpiresAt: feeds.websubLeaseExpiresAt,
         lastFetchedAt: feeds.lastFetchedAt,
         lastError: feeds.lastError,
       })

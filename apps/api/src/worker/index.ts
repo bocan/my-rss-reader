@@ -1,6 +1,6 @@
 import { client } from '../db/index.js';
 import { env } from '../env.js';
-import { pollDueFeeds } from './poll.js';
+import { pollDueFeeds, renewDueWebSubLeases } from './poll.js';
 
 /**
  * The feed poller runs as its own process (`start:worker`) so feed refresh is
@@ -18,6 +18,10 @@ async function tick(): Promise<void> {
     const count = await pollDueFeeds();
     if (count > 0) {
       console.log(`[worker] polled ${count} feed(s) in ${Date.now() - startedAt}ms`);
+    }
+    const renewed = await renewDueWebSubLeases();
+    if (renewed > 0) {
+      console.log(`[worker] renewed ${renewed} WebSub lease(s)`);
     }
   } catch (err) {
     console.error('[worker] tick failed', err);
