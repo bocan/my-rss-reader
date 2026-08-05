@@ -592,8 +592,22 @@ function FeedNode({
         <InlineInput defaultValue={label} onSubmit={onSubmitEdit} onCancel={onCancelEdit} />
       ) : (
         <>
-          <button onClick={onSelect} className="min-w-0 flex-1 truncate text-left">
-            {label}
+          <button
+            onClick={onSelect}
+            className={cn(
+              'flex min-w-0 flex-1 items-center gap-1.5 truncate text-left',
+              // Firehose feeds (SPEC-022) sit back; precious ones lean in.
+              sub.attention === 'firehose' && 'text-muted-foreground',
+            )}
+          >
+            {sub.attention === 'precious' && (
+              <span
+                className="size-1.5 shrink-0 rounded-full bg-primary"
+                aria-hidden="true"
+                title="Precious feed"
+              />
+            )}
+            <span className="truncate">{label}</span>
           </button>
           {sub.lastError && (
             <span
@@ -604,8 +618,15 @@ function FeedNode({
               <AlertTriangle className="size-3.5" />
             </span>
           )}
-          {unread > 0 && (
-            <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
+          {unread > 0 && sub.attention !== 'firehose' && (
+            <span
+              className={cn(
+                'shrink-0 rounded-full px-1.5 py-0.5 text-xs tabular-nums',
+                sub.attention === 'precious'
+                  ? 'bg-primary/15 font-medium text-primary'
+                  : 'bg-muted text-muted-foreground',
+              )}
+            >
               {unread}
             </span>
           )}

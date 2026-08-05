@@ -22,6 +22,8 @@ export interface ArticleFilters {
   starred?: boolean;
   /** Only the caller's shared items (SPEC-019). */
   shared?: boolean;
+  /** Restrict to subscriptions of one attention tier (SPEC-022). */
+  attention?: 'firehose' | 'normal' | 'precious';
   /** Full-text query. When set the API orders by relevance and ignores sort. */
   q?: string;
   sort: 'newest' | 'oldest';
@@ -34,6 +36,7 @@ function buildQuery(filters: ArticleFilters, cursor: string | null): string {
   if (filters.unread !== undefined) params.set('unread', String(filters.unread));
   if (filters.starred) params.set('starred', 'true');
   if (filters.shared) params.set('shared', 'true');
+  if (filters.attention) params.set('attention', filters.attention);
   if (filters.q) params.set('q', filters.q);
   params.set('sort', filters.sort);
   if (cursor) params.set('cursor', cursor);

@@ -19,6 +19,7 @@ import {
 } from '../lib/cursor.js';
 import { resolveSubscribedFeedIds } from '../lib/feed-scope.js';
 import { extractReadableHtml } from '../lib/readability.js';
+import { FIREHOSE_EXPIRY_DAYS } from '../lib/unread-counts.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -129,20 +130,39 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
     }
 
     // Resolve the caller's feed ids, always scoped by userId, optionally
-    // narrowed by feedId and/or folderId.
+    // narrowed by feedId, folderId, and/or attention tier (SPEC-022).
     const subFilters = [eq(subscriptions.userId, userId)];
     if (query.feedId) subFilters.push(eq(subscriptions.feedId, query.feedId));
     if (query.folderId) subFilters.push(eq(subscriptions.folderId, query.folderId));
+    if (query.attention) subFilters.push(eq(subscriptions.attention, query.attention));
     // Hidden feeds drop out of the All-items firehose only; an explicit feed,
-    // folder, starred, shared, or search scope still includes them (SPEC-018).
+    // folder, starred, shared, tier, or search scope still includes them
+    // (SPEC-018).
     const isAllItems =
-      !query.feedId && !query.folderId && !query.starred && !query.shared && !isSearch;
+      !query.feedId &&
+      !query.folderId &&
+      !query.starred &&
+      !query.shared &&
+      !query.attention &&
+      !isSearch;
     if (isAllItems) subFilters.push(eq(subscriptions.hideFromAll, false));
     const subs = await db
-      .select({ feedId: subscriptions.feedId })
+      .select({ feedId: subscriptions.feedId, attention: subscriptions.attention })
       .from(subscriptions)
       .where(and(...subFilters));
     const feedIds = subs.map((s) => s.feedId);
+
+    // Firehose expiry (SPEC-022): items older than the window are treated as
+    // read at query time (no state writes). Bound as a single Postgres array
+    // literal of DB-sourced uuids, same trick as mark-read.
+    const firehoseIds = subs.filter((s) => s.attention === 'firehose').map((s) => s.feedId);
+    const fhArray = `{${firehoseIds.join(',')}}`;
+    const fhExpired =
+      firehoseIds.length > 0
+        ? sql`(${articles.feedId} = any(${fhArray}::uuid[])
+            and coalesce(${articles.publishedAt}, ${articles.fetchedAt})
+                < now() - make_interval(days => ${FIREHOSE_EXPIRY_DAYS}))`
+        : null;
 
     if (feedIds.length === 0) {
       return { items: [], nextCursor: null } satisfies Paginated<never>;
@@ -154,6 +174,8 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
     if (query.unread !== undefined) {
       // No state row means unread; treat missing rows as read=false.
       filters.push(sql`coalesce(${articleStates.read}, false) = ${!query.unread}`);
+      // Expired firehose items are no longer owed: keep them out of unread.
+      if (query.unread && fhExpired) filters.push(sql`not ${fhExpired}`);
     }
     if (query.starred) {
       filters.push(sql`coalesce(${articleStates.starred}, false) = true`);
@@ -196,7 +218,10 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
         summary: articles.summary,
         imageUrl: articles.imageUrl,
         publishedAt: articles.publishedAt,
-        read: sql<boolean>`coalesce(${articleStates.read}, false)`,
+        // Expired firehose items render as read so rows agree with counts.
+        read: fhExpired
+          ? sql<boolean>`coalesce(${articleStates.read}, false) or ${fhExpired}`
+          : sql<boolean>`coalesce(${articleStates.read}, false)`,
         starred: sql<boolean>`coalesce(${articleStates.starred}, false)`,
         // ::text preserves the exact timestamp (microseconds) for the cursor.
         sortTs: sql<string>`coalesce(${articles.publishedAt}, ${articles.fetchedAt})::text`,

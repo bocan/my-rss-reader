@@ -8,6 +8,8 @@ interface FeedItem {
   feedId: string;
   folderId: string | null;
   unreadCount: number;
+  hideFromAll: boolean;
+  attention: string;
 }
 type FeedsData = { items: FeedItem[] };
 
@@ -60,19 +62,26 @@ function patchArticle(
 }
 
 function adjustCounts(qc: QueryClient, feedId: string, delta: number) {
-  const folderId = folderForFeed(qc, feedId);
+  const meta = qc.getQueryData<FeedsData>(['feeds'])?.items.find((f) => f.feedId === feedId);
+  const folderId = meta?.folderId ?? null;
+  // Mirror the server's rollup rules so optimistic writes cannot drift:
+  // hidden feeds (SPEC-018) and firehose feeds (SPEC-022) never contribute to
+  // total; firehose feeds never contribute to their folder badge either.
+  const firehose = meta?.attention === 'firehose';
+  const inTotal = !meta?.hideFromAll && !firehose;
   qc.setQueryData<UnreadCounts>(['counts'], (c) =>
     c
       ? {
           feeds: c.feeds.map((f) =>
             f.feedId === feedId ? { ...f, unreadCount: clamp(f.unreadCount + delta) } : f,
           ),
-          folders: folderId
-            ? c.folders.map((f) =>
-                f.folderId === folderId ? { ...f, unreadCount: clamp(f.unreadCount + delta) } : f,
-              )
-            : c.folders,
-          total: clamp(c.total + delta),
+          folders:
+            folderId && !firehose
+              ? c.folders.map((f) =>
+                  f.folderId === folderId ? { ...f, unreadCount: clamp(f.unreadCount + delta) } : f,
+                )
+              : c.folders,
+          total: inTotal ? clamp(c.total + delta) : c.total,
         }
       : c,
   );

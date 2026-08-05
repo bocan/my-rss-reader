@@ -69,6 +69,10 @@ export function resolveTheme(setting: ThemeSetting, prefersDark: boolean): Theme
   return THEMES.find((t) => t.id === id) ?? THEMES[0]!;
 }
 
+/** Per-subscription attention contract (SPEC-022). */
+export const ATTENTION_TIERS = ['firehose', 'normal', 'precious'] as const;
+export type AttentionTier = (typeof ATTENTION_TIERS)[number];
+
 /** WebSub subscriber states for a feed (SPEC-021). */
 export const WEBSUB_STATES = ['inactive', 'pending', 'active', 'denied'] as const;
 export type WebSubState = (typeof WEBSUB_STATES)[number];

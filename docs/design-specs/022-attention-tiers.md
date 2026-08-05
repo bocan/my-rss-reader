@@ -1,6 +1,6 @@
 # SPEC-022: Attention tiers (firehose / normal / precious)
 
-- **Status:** Todo
+- **Status:** Done
 - **Phase:** 4
 - **Depends on:** SPEC-005 (Done), SPEC-007 (Done), SPEC-018 (Done)
 - **Estimated size:** M

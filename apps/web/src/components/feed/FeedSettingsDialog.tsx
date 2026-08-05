@@ -1,4 +1,11 @@
-import { ARTICLE_VIEWS, VIEW_MODES, type ArticleView, type ViewMode } from '@rss/shared';
+import {
+  ARTICLE_VIEWS,
+  ATTENTION_TIERS,
+  VIEW_MODES,
+  type ArticleView,
+  type AttentionTier,
+  type ViewMode,
+} from '@rss/shared';
 import { Check, Copy } from 'lucide-react';
 import { useState, type FormEvent, type RefObject } from 'react';
 import { Button } from '@/components/ui/button';
@@ -22,6 +29,18 @@ const ARTICLE_LABEL: Record<ArticleView, string> = {
   simplified: 'Simplified',
   readable: 'Readable',
   web: 'Web',
+};
+
+const ATTENTION_LABEL: Record<AttentionTier, string> = {
+  firehose: 'Firehose',
+  normal: 'Normal',
+  precious: 'Precious',
+};
+
+const ATTENTION_HINT: Record<AttentionTier, string> = {
+  firehose: 'No unread pressure: no badges, and items quietly expire after 14 days.',
+  normal: 'Counts and badges as usual.',
+  precious: 'Never miss a post: highlighted and pinned to the Precious shelf.',
 };
 
 function relativeTime(iso: string | null): string {
@@ -60,6 +79,7 @@ export function FeedSettingsDialog({
   const [articleView, setArticleView] = useState<string>(sub.articleView ?? '');
   const [hideFromAll, setHideFromAll] = useState(sub.hideFromAll);
   const [inBlogroll, setInBlogroll] = useState(sub.inBlogroll);
+  const [attention, setAttention] = useState<AttentionTier>(sub.attention);
   const [intervalMin, setIntervalMin] = useState<string>(
     sub.fetchIntervalSec != null ? String(Math.round(sub.fetchIntervalSec / 60)) : '',
   );
@@ -77,6 +97,7 @@ export function FeedSettingsDialog({
         articleView: (articleView || null) as ArticleView | null,
         hideFromAll,
         inBlogroll,
+        attention,
         fetchIntervalSec: min == null ? null : min * 60,
       },
       {
@@ -219,6 +240,25 @@ export function FeedSettingsDialog({
               />
             </label>
           </div>
+
+          <label className="block space-y-1">
+            <span className="text-sm">Attention</span>
+            <select
+              className={inputClass}
+              value={attention}
+              onChange={(e) => setAttention(e.target.value as AttentionTier)}
+              title="How much unread pressure this feed may generate"
+            >
+              {ATTENTION_TIERS.map((tier) => (
+                <option key={tier} value={tier}>
+                  {ATTENTION_LABEL[tier]}
+                </option>
+              ))}
+            </select>
+            <span className="block text-xs text-muted-foreground">
+              {ATTENTION_HINT[attention]}
+            </span>
+          </label>
 
           <label className="flex items-center justify-between gap-4">
             <span>

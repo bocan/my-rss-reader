@@ -39,6 +39,7 @@ async function subscriptionRow(subscriptionId: string, userId: string) {
       articleView: subscriptions.articleView,
       hideFromAll: subscriptions.hideFromAll,
       inBlogroll: subscriptions.inBlogroll,
+      attention: subscriptions.attention,
       fetchIntervalSec: feeds.fetchIntervalSec,
       websubState: feeds.websubState,
       websubLeaseExpiresAt: feeds.websubLeaseExpiresAt,
@@ -75,6 +76,7 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
         articleView: subscriptions.articleView,
         hideFromAll: subscriptions.hideFromAll,
         inBlogroll: subscriptions.inBlogroll,
+        attention: subscriptions.attention,
         fetchIntervalSec: feeds.fetchIntervalSec,
         websubState: feeds.websubState,
         websubLeaseExpiresAt: feeds.websubLeaseExpiresAt,
@@ -231,6 +233,7 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
       if (input.articleView !== undefined) changes.articleView = input.articleView;
       if (input.hideFromAll !== undefined) changes.hideFromAll = input.hideFromAll;
       if (input.inBlogroll !== undefined) changes.inBlogroll = input.inBlogroll;
+      if (input.attention !== undefined) changes.attention = input.attention;
       if (Object.keys(changes).length > 0) {
         await tx.update(subscriptions).set(changes).where(eq(subscriptions.id, id));
       }

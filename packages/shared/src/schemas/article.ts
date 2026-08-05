@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SORT_ORDERS } from '../types.js';
+import { ATTENTION_TIERS, SORT_ORDERS } from '../types.js';
 
 export const articleQuerySchema = z.object({
   /** Restrict to a single feed subscription. */
@@ -12,6 +12,8 @@ export const articleQuerySchema = z.object({
   starred: z.stringbool().optional(),
   /** Only the caller's shared items (SPEC-019). */
   shared: z.stringbool().optional(),
+  /** Restrict to subscriptions of one attention tier (SPEC-022). */
+  attention: z.enum(ATTENTION_TIERS).optional(),
   /** Full-text search across title + content. */
   q: z.string().min(1).max(200).optional(),
   sort: z.enum(SORT_ORDERS).default('newest'),

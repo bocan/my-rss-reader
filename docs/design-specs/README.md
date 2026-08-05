@@ -85,7 +85,7 @@ each other unless noted.
 | 019 | Sharing, shared items, and the public linkblog    | 005, 011, 017         | Done   |
 | 020 | Public blogroll (HTML + OPML)                     | 019, 009              | Done   |
 | 021 | WebSub realtime delivery (subscriber side)        | 002                   | Done   |
-| 022 | Attention tiers (firehose / normal / precious)    | 005, 007, 018         | Todo   |
+| 022 | Attention tiers (firehose / normal / precious)    | 005, 007, 018         | Done   |
 | 023 | Subscribe to social-web profiles                  | 002                   | Todo   |
 | 024 | Link-rot armor (archives, retention, Wayback)     | 004, 005              | Todo   |
 | 025 | Saved searches (virtual feeds) + filter rules     | 006, 015              | Todo   |

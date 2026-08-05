@@ -187,6 +187,10 @@ export const subscriptions = pgTable('subscriptions', {
   // Include this subscription in the owner's public blogroll (SPEC-020).
   // Only meaningful once profiles.blogrollEnabled is on.
   inBlogroll: boolean().notNull().default(true),
+  // Attention tier (SPEC-022): 'firehose' | 'normal' | 'precious'. Firehose
+  // feeds generate no unread pressure (no badges/rollups, query-time expiry);
+  // precious feeds get the Precious shelf and accent treatment.
+  attention: text().notNull().default('normal'),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   uniqueIndex('subscriptions_user_feed_key').on(t.userId, t.feedId),

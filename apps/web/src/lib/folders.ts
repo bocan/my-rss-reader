@@ -1,4 +1,4 @@
-import type { ArticleView, ViewMode, WebSubState } from '@rss/shared';
+import type { ArticleView, AttentionTier, ViewMode, WebSubState } from '@rss/shared';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { api } from './api';
 
@@ -25,6 +25,7 @@ export interface SubscriptionRow {
   articleView: ArticleView | null;
   hideFromAll: boolean;
   inBlogroll: boolean;
+  attention: AttentionTier;
   /** WebSub delivery state for the shared feed (SPEC-021), read-only. */
   websubState: WebSubState;
   websubLeaseExpiresAt: string | null;
@@ -147,6 +148,7 @@ export function useUpdateSubscription() {
       articleView?: ArticleView | null;
       hideFromAll?: boolean;
       inBlogroll?: boolean;
+      attention?: AttentionTier;
       fetchIntervalSec?: number | null;
     }) => api<SubscriptionRow>(`/feeds/${id}`, { method: 'PATCH', body }),
     onMutate: async ({ id, ...patch }): Promise<TreeCtx> => {
@@ -165,6 +167,7 @@ export function useUpdateSubscription() {
                       ...(patch.articleView !== undefined ? { articleView: patch.articleView } : {}),
                       ...(patch.hideFromAll !== undefined ? { hideFromAll: patch.hideFromAll } : {}),
                       ...(patch.inBlogroll !== undefined ? { inBlogroll: patch.inBlogroll } : {}),
+                      ...(patch.attention !== undefined ? { attention: patch.attention } : {}),
                       ...(patch.fetchIntervalSec !== undefined
                         ? { fetchIntervalSec: patch.fetchIntervalSec }
                         : {}),
@@ -179,8 +182,8 @@ export function useUpdateSubscription() {
     onError: (_e, _v, ctx) => restoreTree(qc, ctx),
     onSettled: (_d, _e, variables) => {
       reconcileTree(qc);
-      // Hiding/showing a feed changes the All-items list and its unread total.
-      if (variables.hideFromAll !== undefined) {
+      // Hiding/showing a feed or re-tiering it changes counts and lists.
+      if (variables.hideFromAll !== undefined || variables.attention !== undefined) {
         qc.invalidateQueries({ queryKey: ['counts'] });
         qc.invalidateQueries({ queryKey: ['articles'] });
       }

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ARTICLE_VIEWS, VIEW_MODES } from '../types.js';
+import { ARTICLE_VIEWS, ATTENTION_TIERS, VIEW_MODES } from '../types.js';
 
 export const subscribeSchema = z.object({
   url: z.url(),
@@ -21,6 +21,8 @@ export const updateSubscriptionSchema = z.object({
   hideFromAll: z.boolean().optional(),
   /** Include this subscription in the owner's public blogroll (SPEC-020). */
   inBlogroll: z.boolean().optional(),
+  /** Attention tier (SPEC-022). */
+  attention: z.enum(ATTENTION_TIERS).optional(),
   /**
    * Poll interval for the shared feed, in seconds (SPEC-018). null inherits the
    * app default. This targets the global feed, so it affects all subscribers.

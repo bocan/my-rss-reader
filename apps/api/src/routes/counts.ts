@@ -26,18 +26,23 @@ export async function countsRoutes(app: FastifyInstance): Promise<void> {
     const folderByFeed = new Map(subs.map((s) => [s.feedId, s.folderId]));
     const hiddenFromAll = new Set(subs.filter((s) => s.hideFromAll).map((s) => s.feedId));
 
-    // `total` backs the All-items badge, so it excludes hidden feeds; per-folder
-    // and per-feed counts still include them (SPEC-018).
+    // `total` backs the All-items badge, so it excludes hidden feeds (SPEC-018)
+    // and firehose-tier feeds (SPEC-022); firehose feeds are excluded from
+    // folder badges too. Their per-feed count (already expiry-adjusted) still
+    // ships so the feed's own header shows an honest number when opened.
     const folderTotals = new Map<string, number>();
     let total = 0;
-    for (const { feedId, unreadCount } of feedCounts) {
-      if (!hiddenFromAll.has(feedId)) total += unreadCount;
+    for (const { feedId, attention, unreadCount } of feedCounts) {
+      const firehose = attention === 'firehose';
+      if (!hiddenFromAll.has(feedId) && !firehose) total += unreadCount;
       const folderId = folderByFeed.get(feedId);
-      if (folderId) folderTotals.set(folderId, (folderTotals.get(folderId) ?? 0) + unreadCount);
+      if (folderId && !firehose) {
+        folderTotals.set(folderId, (folderTotals.get(folderId) ?? 0) + unreadCount);
+      }
     }
 
     return {
-      feeds: feedCounts,
+      feeds: feedCounts.map(({ feedId, unreadCount }) => ({ feedId, unreadCount })),
       folders: [...folderTotals].map(([folderId, unreadCount]) => ({ folderId, unreadCount })),
       total,
     } satisfies UnreadCounts;
