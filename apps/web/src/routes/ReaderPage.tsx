@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   Circle,
   CircleDot,
+  Gem,
   Inbox,
   Keyboard,
   PanelLeft,
@@ -131,6 +132,13 @@ export function ReaderPage() {
     [subs],
   );
 
+  // Precious shelf (SPEC-022): shown only once a precious subscription exists.
+  const preciousFeedIds = useMemo(
+    () => subs.filter((s) => s.attention === 'precious').map((s) => s.feedId),
+    [subs],
+  );
+  const preciousUnread = preciousFeedIds.reduce((n, id) => n + (countByFeed.get(id) ?? 0), 0);
+
   const [filters, setFilters] = useState<ArticleFilters>({ sort: 'newest' });
 
   // Community mode (SPEC-019): swaps the content region to other users'
@@ -157,7 +165,7 @@ export function ReaderPage() {
   const currentSub = filters.feedId ? subs.find((s) => s.feedId === filters.feedId) : undefined;
   const effectiveView: ViewMode = currentSub?.viewMode ?? settings.defaultViewMode;
   const [viewOverride, setViewOverride] = useState<ViewMode | null>(null);
-  const scopeKey = `${filters.feedId ?? ''}|${filters.folderId ?? ''}|${filters.starred ?? ''}|${filters.shared ?? ''}`;
+  const scopeKey = `${filters.feedId ?? ''}|${filters.folderId ?? ''}|${filters.starred ?? ''}|${filters.shared ?? ''}|${filters.attention ?? ''}`;
   useEffect(() => setViewOverride(null), [scopeKey]);
   const view: ViewMode = viewOverride ?? effectiveView;
   const isBrowse = view === 'cards' || view === 'magazine';
@@ -238,7 +246,9 @@ export function ReaderPage() {
       ? 'Starred'
       : filters.shared
         ? 'Shared'
-        : filters.feedId
+        : filters.attention === 'precious'
+          ? 'Precious'
+          : filters.feedId
           ? (feedMeta[filters.feedId]?.name ?? 'Feed')
           : filters.folderId
             ? (foldersData?.items.find((f) => f.id === filters.folderId)?.name ?? 'Folder')
@@ -248,7 +258,7 @@ export function ReaderPage() {
     : filters.folderId
       ? (counts?.folders.find((f) => f.folderId === filters.folderId)?.unreadCount ?? 0)
       : (counts?.total ?? 0);
-  const canMarkAll = !filters.starred && !filters.shared && !communityOpen;
+  const canMarkAll = !filters.starred && !filters.shared && !filters.attention && !communityOpen;
   const markRead = useMarkRead();
   function markAllRead() {
     if (unreadForView > 20 && !window.confirm(`Mark ${unreadForView} articles as read?`)) return;
@@ -347,7 +357,12 @@ export function ReaderPage() {
         <li>
           <button
             className={navItem(
-              !filters.feedId && !filters.starred && !filters.folderId && !filters.shared && !communityOpen,
+              !filters.feedId &&
+                !filters.starred &&
+                !filters.folderId &&
+                !filters.shared &&
+                !filters.attention &&
+                !communityOpen,
             )}
             onClick={() => pickScope(() => setFilters({ sort: 'newest' }))}
           >
@@ -372,6 +387,24 @@ export function ReaderPage() {
             <Share2 className="size-4" /> Shared
           </button>
         </li>
+        {preciousFeedIds.length > 0 && (
+          <li>
+            <button
+              className={navItem(filters.attention === 'precious' && !communityOpen)}
+              onClick={() =>
+                pickScope(() => setFilters({ attention: 'precious', sort: 'newest' }))
+              }
+            >
+              <Gem className="size-4 text-primary" />
+              <span className="flex-1">Precious</span>
+              {preciousUnread > 0 && (
+                <span className="shrink-0 rounded-full bg-primary/15 px-1.5 py-0.5 text-xs font-medium tabular-nums text-primary">
+                  {preciousUnread}
+                </span>
+              )}
+            </button>
+          </li>
+        )}
         {showCommunity && (
           <li>
             <button className={navItem(communityOpen)} onClick={openCommunity}>
@@ -570,7 +603,11 @@ export function ReaderPage() {
       }
       bar={topBar}
     >
-      <SubscribeDialog open={addOpen} onOpenChange={setAddOpen} />
+      <SubscribeDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        onSubscribed={(feedId) => pickScope(() => setFilters({ feedId, sort: 'newest' }))}
+      />
       <ShortcutsOverlay open={overlayOpen} onOpenChange={setOverlayOpen} />
 
       <div

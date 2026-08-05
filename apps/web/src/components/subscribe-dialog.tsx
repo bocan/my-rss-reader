@@ -11,6 +11,9 @@ import { cn } from '@/lib/utils';
 interface SubscribeDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Called with the (possibly pre-existing) feed id after a successful add,
+   *  so the reader can navigate straight to it. */
+  onSubscribed?: (feedId: string) => void;
 }
 
 /** Sentinel select value for "create a folder from the name typed below". */
@@ -21,7 +24,7 @@ const inputClass = cn(
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
 );
 
-export function SubscribeDialog({ open, onOpenChange }: SubscribeDialogProps) {
+export function SubscribeDialog({ open, onOpenChange, onSubscribed }: SubscribeDialogProps) {
   const [url, setUrl] = useState('');
   const [candidates, setCandidates] = useState<FeedCandidate[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -69,9 +72,11 @@ export function SubscribeDialog({ open, onOpenChange }: SubscribeDialogProps) {
     setError(null);
     try {
       const folderId = await resolveFolderId();
-      await subscribe.mutateAsync({ url: targetUrl, folderId });
+      const result = await subscribe.mutateAsync({ url: targetUrl, folderId });
       announce('Subscription added');
       onOpenChange(false);
+      // Jump to the new feed: unmissable confirmation that the add worked.
+      onSubscribed?.(result.feed.id);
     } catch (err) {
       if (err instanceof ApiRequestError && err.status === 409) {
         const body = err.body as AmbiguousFeedError | null;
