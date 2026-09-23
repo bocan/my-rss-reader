@@ -447,8 +447,13 @@ export async function fetchAndStoreFeed(feed: FeedRow): Promise<void> {
       lastModified: feed.lastModified,
     });
 
+    // A 304 is a successful fetch: it must clear a stale error too, or one
+    // transient failure (e.g. DNS on wake) sticks until the feed next changes.
     if (result.status === 'not-modified') {
-      await db.update(feeds).set({ lastFetchedAt: new Date() }).where(eq(feeds.id, feed.id));
+      await db
+        .update(feeds)
+        .set({ lastFetchedAt: new Date(), lastError: null, failureCount: 0 })
+        .where(eq(feeds.id, feed.id));
       return;
     }
 
