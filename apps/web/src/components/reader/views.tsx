@@ -135,22 +135,26 @@ function Card({
           ENTER,
         )}
       >
-        {/* The sliding stack. On hover/focus it translates up by the image
-            height so the image leaves and the meta rises into view. */}
+        {/* The sliding stack: the image (16/10 of a square card = 62.5% of its
+            height) over a text panel exactly one card tall. On hover/focus it
+            translates up by the image height (62.5 / 162.5 of the stack), so
+            the text panel then fills the whole card. */}
         <span
           className={cn(
             'absolute inset-x-0 top-0 flex flex-col',
             'transition-transform duration-300 ease-out motion-reduce:transition-none',
-            showImage && 'group-hover:-translate-y-[58%] group-focus-visible:-translate-y-[58%]',
+            showImage
+              ? 'h-[162.5%] group-hover:-translate-y-[38.4615%] group-focus-visible:-translate-y-[38.4615%]'
+              : 'h-full',
           )}
         >
           {showImage && row.imageUrl && (
             <ArticleThumbnail
               imageUrl={row.imageUrl}
-              className="aspect-[16/10] w-full rounded-none"
+              className="aspect-[16/10] w-full shrink-0 rounded-none"
             />
           )}
-          <span className="block bg-background p-3">
+          <span className="flex min-h-0 flex-1 flex-col bg-background p-3">
             <span className="flex items-center gap-2 text-xs text-muted-foreground">
               <span className="truncate">{row.feedName}</span>
               <span className="shrink-0">{row.when}</span>
@@ -169,7 +173,10 @@ function Card({
             {row.excerpt && (
               <span
                 className={cn(
-                  'mt-2 line-clamp-4 text-xs text-muted-foreground',
+                  // Fill whatever height is left, fading out at the bottom
+                  // rather than stopping after a fixed number of lines.
+                  'mt-2 min-h-0 flex-1 overflow-hidden text-xs text-muted-foreground',
+                  '[mask-image:linear-gradient(to_bottom,black_75%,transparent)]',
                   // Below the fold at rest when there is an image; revealed as
                   // the stack rises. Always visible when there is no image.
                   showImage &&
