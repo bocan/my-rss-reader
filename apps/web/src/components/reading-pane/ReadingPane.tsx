@@ -2,6 +2,7 @@ import { ARTICLE_VIEWS, type ArticleDetail, type ArticleView } from '@rss/shared
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Download, ExternalLink, Rss, Star } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { ARTICLE_VIEW_LABELS, resolveAutoView } from '@/lib/article-view';
 import { Button } from '@/components/ui/button';
 import { api, ApiRequestError } from '@/lib/api';
 import { useToggleArticleState } from '@/lib/articles';
@@ -12,13 +13,13 @@ import { cn } from '@/lib/utils';
 import { ArticleHtml } from './ArticleHtml';
 import { SharePopover } from './SharePopover';
 
-const VIEW_LABELS: Record<ArticleView, string> = {
-  simplified: 'Simplified',
-  readable: 'Readable',
-  web: 'Web',
+const VIEW_TITLES: Record<ArticleView, string> = {
+  readable: 'Feed view: the content the feed itself provides',
+  simplified: 'Extracted view: a clean copy pulled from the original page',
+  web: 'Web view: the original page',
 };
 
-const dateFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+const dateFmt =new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
 function formatDate(iso: string | null): string {
   if (!iso) return '';
@@ -31,7 +32,6 @@ export function ReadingPane({ articleId }: { articleId: string }) {
   const { settings } = useSettings();
   const { data: feedsData } = useSubscriptions();
   const online = useOnlineStatus();
-  const [view, setView] = useState<ArticleView>(() => settings.defaultArticleView);
 
   const articleQuery = useQuery({
     queryKey: ['article', articleId],
@@ -39,28 +39,21 @@ export function ReadingPane({ articleId }: { articleId: string }) {
   });
   const article = articleQuery.data;
 
-  // Seed the view per article: the feed's article-view override (SPEC-018) if
-  // set, else the user default. `switchedRef` guards a manual in-session switch
-  // from being clobbered; it resets on each new article. The seed waits for the
-  // article so the feed id (and its override) is known.
-  const switchedRef = useRef(false);
-  useEffect(() => {
-    switchedRef.current = false;
-  }, [articleId]);
-  const feedId = article?.feed.id;
-  useEffect(() => {
-    if (!feedId || switchedRef.current) return;
-    const override = feedsData?.items.find((s) => s.feedId === feedId)?.articleView ?? null;
-    setView(override ?? settings.defaultArticleView);
-    // subs/settings intentionally excluded: only re-seed on a new article/feed.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [feedId, articleId]);
-  const chooseView = (v: ArticleView) => {
-    switchedRef.current = true;
-    setView(v);
-  };
+  // The view, in priority order: a manual pick on this article, the feed's
+  // override (SPEC-018), the user default. A default of 'auto' resolves per
+  // article from what the feed carries. The manual pick is keyed by article id,
+  // so it lapses on its own when another article opens.
+  const [picked, setPicked] = useState<{ articleId: string; view: ArticleView } | null>(null);
+  const manual = picked?.articleId === articleId ? picked.view : null;
+  const override =
+    feedsData?.items.find((s) => s.feedId === article?.feed.id)?.articleView ?? null;
+  const fallback = settings.defaultArticleView;
+  const isAuto = !manual && !override && fallback === 'auto';
+  const view: ArticleView =
+    manual ?? override ?? (fallback !== 'auto' ? fallback : article ? resolveAutoView(article) : 'readable');
+  const chooseView = (v: ArticleView) => setPicked({ articleId, view: v });
 
-  // Simplified view: lazily extract once, only when never attempted before.
+  // Extracted view: lazily extract once, only when never attempted before.
   const needsReadable = view === 'simplified' && !!article && article.readableFetchedAt === null;
   const readableQuery = useQuery({
     queryKey: ['article', articleId, 'readable'],
@@ -140,23 +133,33 @@ export function ReadingPane({ articleId }: { articleId: string }) {
         </div>
 
         <div className="mt-3 flex items-center justify-between gap-2">
-          <div className="inline-flex rounded-md border p-0.5">
-            {ARTICLE_VIEWS.map((v) => (
-              <button
-                key={v}
-                onClick={() => chooseView(v)}
-                aria-pressed={view === v}
-                title={`${VIEW_LABELS[v]} view`}
-                className={cn(
-                  'rounded px-3 py-1 text-sm',
-                  view === v
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:text-foreground',
-                )}
+          <div className="flex items-center gap-2">
+            <div className="inline-flex rounded-md border p-0.5">
+              {ARTICLE_VIEWS.map((v) => (
+                <button
+                  key={v}
+                  onClick={() => chooseView(v)}
+                  aria-pressed={view === v}
+                  title={VIEW_TITLES[v]}
+                  className={cn(
+                    'rounded px-3 py-1 text-sm',
+                    view === v
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {ARTICLE_VIEW_LABELS[v]}
+                </button>
+              ))}
+            </div>
+            {isAuto && (
+              <span
+                className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+                title="Your default view is Automatic: the reader chose this view for this article. Pick another view to override it."
               >
-                {VIEW_LABELS[v]}
-              </button>
-            ))}
+                Auto
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1">
             <SharePopover key={article.id} article={article} />
@@ -175,9 +178,9 @@ export function ReadingPane({ articleId }: { articleId: string }) {
       {article.enclosureUrl && <EnclosurePlayer article={article} />}
 
       <div className={cn('min-h-0 flex-1', view === 'web' ? '' : 'overflow-y-auto p-4 md:p-6')}>
-        {view === 'readable' && <ReadableView article={article} />}
+        {view === 'readable' && <FeedView article={article} />}
         {view === 'simplified' && (
-          <SimplifiedView
+          <ExtractedView
             article={article}
             online={online}
             loading={readableQuery.isFetching}
@@ -228,13 +231,13 @@ function EnclosurePlayer({ article }: { article: ArticleDetail }) {
   );
 }
 
-function ReadableView({ article }: { article: ArticleDetail }) {
+function FeedView({ article }: { article: ArticleDetail }) {
   if (article.contentHtml) return <ArticleHtml html={article.contentHtml} />;
   if (article.summary) return <Note>{article.summary}</Note>;
   return <Note>No content in this item. Try the Web view.</Note>;
 }
 
-function SimplifiedView({
+function ExtractedView({
   article,
   online,
   loading,
@@ -297,7 +300,7 @@ function WebView({ article, online }: { article: ArticleDetail; online: boolean 
   if (!online) {
     return (
       <div className="p-4 text-sm text-muted-foreground">
-        The web page is not available offline. Try the Simplified or Readable view.
+        The web page is not available offline. Try the Feed or Extracted view.
       </div>
     );
   }

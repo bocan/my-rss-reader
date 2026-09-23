@@ -18,6 +18,7 @@ import {
   useUpdateSubscription,
   type SubscriptionRow,
 } from '@/lib/folders';
+import { ARTICLE_VIEW_LABELS } from '@/lib/article-view';
 import { useProfile } from '@/lib/profile';
 import { cn } from '@/lib/utils';
 
@@ -25,12 +26,6 @@ const inputClass =
   'h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
 const VIEW_LABEL: Record<ViewMode, string> = { list: 'List', cards: 'Cards', magazine: 'Magazine' };
-const ARTICLE_LABEL: Record<ArticleView, string> = {
-  simplified: 'Simplified',
-  readable: 'Readable',
-  web: 'Web',
-};
-
 const ATTENTION_LABEL: Record<AttentionTier, string> = {
   firehose: 'Firehose',
   normal: 'Normal',
@@ -222,7 +217,7 @@ export function FeedSettingsDialog({
                 <option value="">Default</option>
                 {ARTICLE_VIEWS.map((v) => (
                   <option key={v} value={v}>
-                    {ARTICLE_LABEL[v]}
+                    {ARTICLE_VIEW_LABELS[v]}
                   </option>
                 ))}
               </select>

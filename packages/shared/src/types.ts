@@ -11,9 +11,20 @@ export type ViewMode = (typeof VIEW_MODES)[number];
 export const DENSITIES = ['comfortable', 'compact'] as const;
 export type Density = (typeof DENSITIES)[number];
 
-/** How a single article's body is presented. */
-export const ARTICLE_VIEWS = ['simplified', 'readable', 'web'] as const;
+/**
+ * How a single article's body is presented, in switcher order: the feed's own
+ * content ('readable', shown as "Feed"), a server-side extraction of the linked
+ * page ('simplified', shown as "Extracted"), or the live page ('web').
+ */
+export const ARTICLE_VIEWS = ['readable', 'simplified', 'web'] as const;
 export type ArticleView = (typeof ARTICLE_VIEWS)[number];
+
+/**
+ * The user-level default may also be 'auto': pick Feed or Extracted per article
+ * from what the feed actually carries. Per-feed overrides stay concrete views.
+ */
+export const DEFAULT_ARTICLE_VIEWS = ['auto', ...ARTICLE_VIEWS] as const;
+export type DefaultArticleView = (typeof DEFAULT_ARTICLE_VIEWS)[number];
 
 /** Sort order for an article list. */
 export const SORT_ORDERS = ['newest', 'oldest'] as const;

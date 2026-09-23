@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'vitest';
-import { ARTICLE_VIEWS, DENSITIES, THEME_SETTINGS, THEMES, VIEW_MODES } from '../types.js';
+import {
+  ARTICLE_VIEWS,
+  DEFAULT_ARTICLE_VIEWS,
+  DENSITIES,
+  THEME_SETTINGS,
+  THEMES,
+  VIEW_MODES,
+} from '../types.js';
 import { DEFAULT_SETTINGS, settingsSchema, updateSettingsSchema } from './settings.js';
 
 describe('settingsSchema', () => {
@@ -9,6 +16,7 @@ describe('settingsSchema', () => {
 
   test('partial accepts single-field updates', () => {
     expect(updateSettingsSchema.safeParse({ theme: 'auto' }).success).toBe(true);
+    expect(updateSettingsSchema.safeParse({ defaultArticleView: 'auto' }).success).toBe(true);
     expect(updateSettingsSchema.safeParse({ theme: 'ember' }).success).toBe(true);
     expect(updateSettingsSchema.safeParse({}).success).toBe(true);
   });
@@ -30,7 +38,9 @@ test('preference vocab is the single source of truth', () => {
   // These arrays back the DB pgEnums; a drift here means a migration mismatch.
   expect([...VIEW_MODES]).toEqual(['cards', 'list', 'magazine']);
   expect([...DENSITIES]).toEqual(['comfortable', 'compact']);
-  expect([...ARTICLE_VIEWS]).toEqual(['simplified', 'readable', 'web']);
+  // Switcher order: Feed, Extracted, Web. The default may also be 'auto'.
+  expect([...ARTICLE_VIEWS]).toEqual(['readable', 'simplified', 'web']);
+  expect([...DEFAULT_ARTICLE_VIEWS]).toEqual(['auto', 'readable', 'simplified', 'web']);
   // theme is now a free-form text column of a named theme or 'auto' (SPEC-016).
   expect([...THEME_SETTINGS]).toEqual([
     'auto',

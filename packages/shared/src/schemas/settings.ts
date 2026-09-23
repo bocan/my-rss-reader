@@ -1,11 +1,11 @@
 import { z } from 'zod';
-import { ARTICLE_VIEWS, DENSITIES, THEME_SETTINGS, VIEW_MODES } from '../types.js';
+import { DEFAULT_ARTICLE_VIEWS, DENSITIES, THEME_SETTINGS, VIEW_MODES } from '../types.js';
 
 export const settingsSchema = z.object({
   theme: z.enum(THEME_SETTINGS),
   density: z.enum(DENSITIES),
   defaultViewMode: z.enum(VIEW_MODES),
-  defaultArticleView: z.enum(ARTICLE_VIEWS),
+  defaultArticleView: z.enum(DEFAULT_ARTICLE_VIEWS),
   markReadOnScroll: z.boolean(),
   showUnreadOnly: z.boolean(),
 });
@@ -23,7 +23,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'auto',
   density: 'comfortable',
   defaultViewMode: 'cards',
-  defaultArticleView: 'simplified',
+  defaultArticleView: 'auto',
   markReadOnScroll: false,
   showUnreadOnly: false,
 };

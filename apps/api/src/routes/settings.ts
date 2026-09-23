@@ -13,12 +13,12 @@ async function loadSettings(userId: string): Promise<Settings> {
     .limit(1);
   if (!row) return DEFAULT_SETTINGS;
   return {
-    // theme/density/defaultViewMode are text columns; values are written only
-    // through the Zod schema, so the cast is safe.
+    // theme/density/defaultViewMode/defaultArticleView are text columns;
+    // values are written only through the Zod schema, so the cast is safe.
     theme: row.theme as Settings['theme'],
     density: row.density as Settings['density'],
     defaultViewMode: row.defaultViewMode as Settings['defaultViewMode'],
-    defaultArticleView: row.defaultArticleView,
+    defaultArticleView: row.defaultArticleView as Settings['defaultArticleView'],
     markReadOnScroll: row.markReadOnScroll,
     showUnreadOnly: row.showUnreadOnly,
   };

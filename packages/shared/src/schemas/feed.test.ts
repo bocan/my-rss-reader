@@ -22,6 +22,9 @@ describe('updateSubscriptionSchema (SPEC-018)', () => {
     expect(updateSubscriptionSchema.safeParse({ fetchIntervalSec: 10 }).success).toBe(false); // < 60s
     expect(updateSubscriptionSchema.safeParse({ fetchIntervalSec: 999999 }).success).toBe(false);
     expect(updateSubscriptionSchema.safeParse({ articleView: 'pdf' }).success).toBe(false);
+    // An override is a concrete view; "auto" is reached by clearing it (null)
+    // when the user default is auto.
+    expect(updateSubscriptionSchema.safeParse({ articleView: 'auto' }).success).toBe(false);
   });
 });
 

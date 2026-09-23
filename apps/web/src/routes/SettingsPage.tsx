@@ -1,9 +1,8 @@
 import {
-  ARTICLE_VIEWS,
+  DEFAULT_ARTICLE_VIEWS,
   DENSITIES,
   SHARE_VISIBILITIES,
   VIEW_MODES,
-  type ArticleView,
   type Density,
   type ImportOpmlResult,
   type Settings,
@@ -19,6 +18,7 @@ import { ThemeTiles } from '@/components/theme/ThemePicker';
 import { Button } from '@/components/ui/button';
 import { announce } from '@/lib/announce';
 import { api, ApiRequestError } from '@/lib/api';
+import { ARTICLE_VIEW_LABELS } from '@/lib/article-view';
 import { useChangePassword, useSession, useUpdateAccount } from '@/lib/auth';
 import { useProfile, useUpdateProfile } from '@/lib/profile';
 import { useInstallPrompt } from '@/lib/pwa';
@@ -195,11 +195,6 @@ const VIEW_LABEL: Record<ViewMode, string> = {
 const DENSITY_LABEL: Record<Density, string> = {
   comfortable: 'Comfortable',
   compact: 'Compact',
-};
-const ARTICLE_VIEW_LABEL: Record<ArticleView, string> = {
-  simplified: 'Simplified',
-  readable: 'Readable',
-  web: 'Web',
 };
 
 /** A labeled segmented control for an enum setting. */
@@ -506,8 +501,8 @@ export function SettingsPage() {
           <Segmented
             label="Default article view"
             value={settings.defaultArticleView}
-            options={ARTICLE_VIEWS}
-            labels={ARTICLE_VIEW_LABEL}
+            options={DEFAULT_ARTICLE_VIEWS}
+            labels={ARTICLE_VIEW_LABELS}
             onChange={(v) => set('defaultArticleView', v)}
           />
           <Toggle

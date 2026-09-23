@@ -35,10 +35,9 @@ export const userRole = pgEnum('user_role', ['admin', 'user']);
 // @rss/shared's REGISTRATION_MODES.
 export const registrationMode = pgEnum('registration_mode', ['open', 'invite', 'closed']);
 
-// Preference enums (SPEC-011). articleView stays a pgEnum (a stable set); a unit
-// test asserts it matches @rss/shared. `theme`, `density`, and the view-mode
-// columns are free-form text (SPEC-016) since their vocabularies changed.
-export const articleViewEnum = pgEnum('article_view', ['simplified', 'readable', 'web']);
+// Preference columns (`theme`, `density`, the view-mode and article-view
+// columns) are free-form text validated by @rss/shared's Zod schemas; their
+// vocabularies change too often for pgEnums (SPEC-016; 'auto' article view).
 
 // --- Identity ------------------------------------------------------------
 
@@ -79,7 +78,7 @@ export const userSettings = pgTable('user_settings', {
   theme: text().notNull().default('auto'),
   density: text().notNull().default('comfortable'),
   defaultViewMode: text().notNull().default('cards'),
-  defaultArticleView: articleViewEnum().notNull().default('simplified'),
+  defaultArticleView: text().notNull().default('auto'),
   markReadOnScroll: boolean().notNull().default(false),
   showUnreadOnly: boolean().notNull().default(false),
   updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
