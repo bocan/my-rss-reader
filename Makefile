@@ -127,6 +127,7 @@ docker-build: ## Build the production image
 
 .PHONY: up
 up: ## Start the full stack (Postgres + api + worker) in the background
+	export DOCKER_BUILDKIT_PROGRESS=plain
 	$(COMPOSE_PROD_CMD) up -d --build
 
 .PHONY: down
