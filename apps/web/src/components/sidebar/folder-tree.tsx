@@ -660,7 +660,13 @@ function RowMenu({ label, children }: { label: string; children: React.ReactNode
           <MoreHorizontal className="size-3.5" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">{children}</DropdownMenuContent>
+      {/* The menu is portalled, but React still bubbles its pointerdown up to
+          the row's drag listeners. A few px of travel during the click then
+          starts a drag, and dnd-kit swallows the click, so the item never
+          fires. Keep menu presses out of the drag sensor. */}
+      <DropdownMenuContent align="end" onPointerDown={(e) => e.stopPropagation()}>
+        {children}
+      </DropdownMenuContent>
     </DropdownMenu>
   );
 }
