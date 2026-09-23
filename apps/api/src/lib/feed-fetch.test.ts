@@ -142,6 +142,35 @@ describe('feedArticleRows text coercion', () => {
       }
     }
   });
+
+  // An Atom <summary type="html"> with no <content> (simonwillison.net) comes
+  // back from rss-parser as raw markup and no contentSnippet.
+  test('stores an HTML Atom summary as plain, decoded text', () => {
+    const parsed = {
+      link: 'https://ex.com',
+      items: [
+        {
+          id: 'g1',
+          link: 'https://ex.com/1',
+          title: 't',
+          summary:
+            '<p><a href="https://x.example">Tom &amp; Jerry</a> said hi.</p><h4>Next</h4>' +
+            '<pre><span class="pl-k">from</span> x</pre><script>bad()</script>',
+        },
+      ],
+    } as unknown as Parameters<typeof feedArticleRows>[1];
+
+    expect(feedArticleRows('feed-1', parsed)[0]!.summary).toBe('Tom & Jerry said hi. Next from x');
+  });
+
+  test('keeps a plain-text contentSnippet as is, even with a stray "<"', () => {
+    const parsed = {
+      link: 'https://ex.com',
+      items: [{ id: 'g1', link: 'https://ex.com/1', title: 't', contentSnippet: 'use <div> when 5 < 6' }],
+    } as unknown as Parameters<typeof feedArticleRows>[1];
+
+    expect(feedArticleRows('feed-1', parsed)[0]!.summary).toBe('use <div> when 5 < 6');
+  });
 });
 
 describe('normalizeFeedUrl', () => {

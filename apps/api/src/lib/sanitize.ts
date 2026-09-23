@@ -1,11 +1,15 @@
+import { parse } from 'node-html-parser';
 import sanitizeHtml from 'sanitize-html';
 
 /**
  * Bump this whenever the policy below changes in a way that should force a
  * re-sanitize of already-stored rows. After bumping, run the backfill:
  *   pnpm --filter @rss/api exec tsx src/scripts/resanitize.ts
+ *
+ * v2: summaries are stored as plain text (Atom `<summary type="html">` used to
+ * land as raw markup and render as tags on cards).
  */
-export const SANITIZER_VERSION = 1;
+export const SANITIZER_VERSION = 2;
 
 /** Allow known third-party video embeds (YouTube / Vimeo). */
 const ALLOW_EMBEDS = true;
@@ -47,6 +51,19 @@ function hardenRel(existing: string | undefined): string {
 export function extractText(html: string): string {
   const text = sanitizeHtml(html, { allowedTags: [], allowedAttributes: {} });
   return text.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Display text from an HTML fragment: tags dropped, entities decoded (so
+ * `&amp;` shows as `&`), block boundaries kept as spaces, whitespace
+ * collapsed. For values React renders as text, such as the card excerpt.
+ */
+export function htmlToText(html: string): string {
+  // By default node-html-parser keeps <pre> contents as raw text, so tags in a
+  // highlighted code block would survive. Parse <pre> normally and drop
+  // script/style bodies outright.
+  const root = parse(html, { blockTextElements: { script: false, noscript: false, style: false } });
+  return root.structuredText.replace(/\s+/g, ' ').trim();
 }
 
 /**

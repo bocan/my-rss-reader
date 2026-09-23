@@ -6,7 +6,7 @@ import Parser from 'rss-parser';
 import { Agent, interceptors, request } from 'undici';
 import { db } from '../db/index.js';
 import { articles, feeds } from '../db/schema.js';
-import { extractText, SANITIZER_VERSION, sanitizeArticleHtml } from './sanitize.js';
+import { extractText, htmlToText, SANITIZER_VERSION, sanitizeArticleHtml } from './sanitize.js';
 import { discoverWebSubLinks, unsubscribeFromHub } from './websub.js';
 
 export type FeedRow = typeof feeds.$inferSelect;
@@ -267,7 +267,11 @@ export function feedArticleRows(feedId: string, parsed: ParsedFeed): NewArticleI
       const cleanHtml = raw ? sanitizeArticleHtml(raw, baseUrl) : null;
       // Search text: prefer the body, fall back to the summary so summary-only
       // feeds stay searchable (SPEC-006). searchVector regenerates on write.
-      const summaryText = asText(item.contentSnippet ?? item.summary);
+      // contentSnippet is already plain text; an Atom summary may be HTML
+      // (type="html"), so strip it to text before it reaches a card.
+      const rawSummary = asText(item.summary);
+      const summaryText =
+        asText(item.contentSnippet) ?? (rawSummary ? htmlToText(rawSummary) || null : null);
       const contentText = cleanHtml
         ? extractText(cleanHtml)
         : summaryText

@@ -5,13 +5,25 @@
  *
  *   pnpm --filter @rss/api exec tsx src/scripts/resanitize.ts
  *
- * It re-sanitizes the HTML already in articles.contentHtml (no network fetch),
- * which is why the policy must also run at ingestion in poll.ts.
+ * In the production container (no tsx there):
+ *
+ *   docker exec rss-reader-api-1 node dist/resanitize.js
+ *
+ * It re-sanitizes the HTML already in articles.contentHtml and strips markup
+ * left in articles.summary (no network fetch), which is why the policy must
+ * also run at ingestion in feed-fetch.ts.
  */
-import { and, asc, eq, gt, isNotNull, isNull, lt, or } from 'drizzle-orm';
+import { and, asc, eq, gt, isNull, lt, or } from 'drizzle-orm';
 import { client, db } from '../db/index.js';
 import { articles, feeds } from '../db/schema.js';
-import { SANITIZER_VERSION, sanitizeArticleHtml } from '../lib/sanitize.js';
+import { htmlToText, SANITIZER_VERSION, sanitizeArticleHtml } from '../lib/sanitize.js';
+
+/**
+ * A stored summary that is really HTML: it opens with a tag and has a closing
+ * tag. Plain-text snippets can mention markup mid-sentence ("put it in a
+ * </div>"), and re-parsing real text as HTML would eat it.
+ */
+const looksLikeHtml = (s: string) => /^\s*<[a-z]/i.test(s) && /<\/[a-z][a-z0-9]*\s*>/i.test(s);
 
 const BATCH = 500;
 
@@ -26,6 +38,7 @@ async function main(): Promise<void> {
       .select({
         id: articles.id,
         contentHtml: articles.contentHtml,
+        summary: articles.summary,
         url: articles.url,
         siteUrl: feeds.siteUrl,
       })
@@ -33,7 +46,6 @@ async function main(): Promise<void> {
       .innerJoin(feeds, eq(articles.feedId, feeds.id))
       .where(
         and(
-          isNotNull(articles.contentHtml),
           or(
             isNull(articles.sanitizerVersion),
             lt(articles.sanitizerVersion, SANITIZER_VERSION),
@@ -51,11 +63,13 @@ async function main(): Promise<void> {
       processed++;
       try {
         const base = row.url ?? row.siteUrl ?? null;
-        const clean = sanitizeArticleHtml(row.contentHtml as string, base);
+        const summary =
+          row.summary && looksLikeHtml(row.summary) ? htmlToText(row.summary) || null : row.summary;
         await db
           .update(articles)
           .set({
-            contentHtml: clean,
+            contentHtml: row.contentHtml ? sanitizeArticleHtml(row.contentHtml, base) : null,
+            summary,
             sanitizedAt: new Date(),
             sanitizerVersion: SANITIZER_VERSION,
           })

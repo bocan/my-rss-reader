@@ -5,6 +5,8 @@ export default defineConfig({
     server: 'src/server.ts',
     worker: 'src/worker/index.ts',
     migrate: 'src/db/migrate.ts',
+    // One-off backfill, run by hand in the container after a SANITIZER_VERSION bump.
+    resanitize: 'src/scripts/resanitize.ts',
   },
   format: ['esm'],
   target: 'node22',
