@@ -10,8 +10,10 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      // We drive our own update prompt (see lib/pwa.ts); the SW waits to activate.
-      registerType: 'prompt',
+      // A new build activates at once and reloads open tabs, so a deployed fix
+      // is live on the next load. (Prompt mode kept a stale SW running until
+      // the user clicked through; autoUpdate forces skipWaiting + clientsClaim.)
+      registerType: 'autoUpdate',
       strategies: 'generateSW',
       includeAssets: ['favicon.svg'],
       manifest: {
@@ -46,9 +48,6 @@ export default defineConfig({
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//],
         cleanupOutdatedCaches: true,
-        // Prompt-driven activation: never take over without the user's reload.
-        skipWaiting: false,
-        clientsClaim: false,
         runtimeCaching: [
           {
             // Same-origin API GETs: network first, the cached copy only when the

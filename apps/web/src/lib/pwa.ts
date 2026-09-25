@@ -66,23 +66,14 @@ export function useInstallPrompt(): { canInstall: boolean; promptInstall: () => 
 }
 
 /**
- * Wraps the plugin's registerSW. `needRefresh` means a new build is waiting;
- * `update()` activates it and reloads. `offlineReady` fires once on first cache.
+ * Registers the service worker. New builds activate and reload on their own
+ * (registerType 'autoUpdate'), so the only state left to show is
+ * `offlineReady`, which fires once on first cache.
  */
 export function useServiceWorkerUpdate() {
   const {
-    needRefresh: [needRefresh, setNeedRefresh],
     offlineReady: [offlineReady, setOfflineReady],
-    updateServiceWorker,
   } = useRegisterSW();
 
-  return {
-    needRefresh,
-    offlineReady,
-    update: () => updateServiceWorker(true),
-    dismiss: () => {
-      setNeedRefresh(false);
-      setOfflineReady(false);
-    },
-  };
+  return { offlineReady, dismiss: () => setOfflineReady(false) };
 }
