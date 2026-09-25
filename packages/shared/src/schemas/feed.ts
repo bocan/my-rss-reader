@@ -48,6 +48,8 @@ export const updateFolderSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   parentId: z.uuid().nullable().optional(),
   position: z.number().int().nonnegative().optional(),
+  /** List layout for the folder view. null clears it (use the user default). */
+  viewMode: z.enum(VIEW_MODES).nullable().optional(),
 });
 export type UpdateFolderInput = z.infer<typeof updateFolderSchema>;
 

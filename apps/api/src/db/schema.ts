@@ -127,6 +127,9 @@ export const folders = pgTable('folders', {
   name: text().notNull(),
   parentId: uuid().references((): AnyPgColumn => folders.id, { onDelete: 'cascade' }),
   position: integer().notNull().default(0),
+  // List layout saved from the switcher while viewing this folder; null uses the
+  // user default. Applies to the folder view only, not to its feeds.
+  viewMode: text(),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index('folders_user_id_idx').on(t.userId)]);
 

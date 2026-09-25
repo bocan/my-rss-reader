@@ -20,6 +20,7 @@ import { announce } from '@/lib/announce';
 import { api, ApiRequestError } from '@/lib/api';
 import { ARTICLE_VIEW_LABELS } from '@/lib/article-view';
 import { useChangePassword, useSession, useUpdateAccount } from '@/lib/auth';
+import { useResetViews } from '@/lib/folders';
 import { useProfile, useUpdateProfile } from '@/lib/profile';
 import { useInstallPrompt } from '@/lib/pwa';
 import { useSettings } from '@/lib/settings';
@@ -263,6 +264,31 @@ function Toggle({
   );
 }
 
+/**
+ * The view switcher saves a layout per feed and per folder (and the default on
+ * All items), so saved layouts pile up. This puts them all back on the default.
+ */
+function ResetViewsRow() {
+  const reset = useResetViews();
+  const onReset = () => {
+    if (!confirm('Reset every feed and folder to the default list view?')) return;
+    reset.mutate(undefined, {
+      onSuccess: () => announce('All feeds and folders now use the default list view.'),
+    });
+  };
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="block text-xs text-muted-foreground">
+        The view switcher saves a view for the feed or folder you are on. On All items, it changes
+        this default.
+      </span>
+      <Button size="sm" variant="outline" onClick={onReset} disabled={reset.isPending}>
+        {reset.isPending ? 'Resetting…' : 'Reset feed and folder views'}
+      </Button>
+    </div>
+  );
+}
+
 const VISIBILITY_LABEL: Record<ShareVisibility, string> = {
   off: 'Off',
   instance: 'This instance',
@@ -491,6 +517,7 @@ export function SettingsPage() {
             labels={VIEW_LABEL}
             onChange={(v) => set('defaultViewMode', v)}
           />
+          <ResetViewsRow />
           <Segmented
             label="Density"
             value={settings.density}

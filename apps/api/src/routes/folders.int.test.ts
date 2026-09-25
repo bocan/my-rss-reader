@@ -60,13 +60,29 @@ test('renames a folder', async () => {
   expect(res.json().name).toBe('New');
 });
 
-test('a rename does not move the folder', async () => {
+test('saves and clears a folder view, and rejects an unknown one', async () => {
+  const user = await seedUser();
+  const folder = await seedFolder(user.id);
+  const cookie = await loginAs(user);
+
+  const set = await patchFolder(cookie, folder.id, { viewMode: 'list' });
+  expect(set.statusCode).toBe(200);
+  expect(set.json().viewMode).toBe('list');
+
+  const cleared = await patchFolder(cookie, folder.id, { viewMode: null });
+  expect(cleared.json().viewMode).toBeNull();
+
+  expect((await patchFolder(cookie, folder.id, { viewMode: 'grid' })).statusCode).toBe(400);
+});
+
+test('a rename or view change does not move the folder', async () => {
   const user = await seedUser();
   const a = await seedFolder(user.id, { name: 'A', position: 0 });
   const b = await seedFolder(user.id, { name: 'B', position: 1 });
   const c = await seedFolder(user.id, { name: 'C', position: 2 });
   const cookie = await loginAs(user);
 
+  await patchFolder(cookie, a.id, { viewMode: 'magazine' });
   await patchFolder(cookie, b.id, { name: 'B2' });
 
   expect((await folderScope(user.id, null)).map((f) => f.id)).toEqual([a.id, b.id, c.id]);

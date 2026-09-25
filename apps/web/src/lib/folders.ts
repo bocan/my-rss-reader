@@ -8,6 +8,8 @@ export interface FolderRow {
   name: string;
   parentId: string | null;
   position: number;
+  /** Saved list layout for the folder view; null uses the user default. */
+  viewMode: ViewMode | null;
   createdAt: string;
 }
 
@@ -90,6 +92,7 @@ export function useUpdateFolder() {
       name?: string;
       parentId?: string | null;
       position?: number;
+      viewMode?: ViewMode | null;
     }) => api<FolderRow>(`/folders/${id}`, { method: 'PATCH', body }),
     onMutate: async ({ id, ...patch }): Promise<TreeCtx> => {
       const ctx = await snapshotTree(qc);
@@ -187,6 +190,23 @@ export function useUpdateSubscription() {
         qc.invalidateQueries({ queryKey: ['counts'] });
         qc.invalidateQueries({ queryKey: ['articles'] });
       }
+    },
+  });
+}
+
+/** Clear every saved feed and folder list layout, so all follow the default. */
+export function useResetViews() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<void>('/settings/reset-views', { method: 'POST' }),
+    onSuccess: () => {
+      qc.setQueryData<FeedsData>(['feeds'], (d) =>
+        d ? { items: d.items.map((s) => ({ ...s, viewMode: null })) } : d,
+      );
+      qc.setQueryData<FoldersData>(['folders'], (d) =>
+        d ? { items: d.items.map((f) => ({ ...f, viewMode: null })) } : d,
+      );
+      reconcileTree(qc);
     },
   });
 }

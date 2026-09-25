@@ -120,6 +120,13 @@
       "when": 1790204024752,
       "tag": "0016_boring_mephisto",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790298693951,
+      "tag": "0017_light_sharon_carter",
+      "breakpoints": true
     }
   ]
 }

@@ -2,7 +2,7 @@ import { DEFAULT_SETTINGS, updateSettingsSchema, type Settings } from '@rss/shar
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { db } from '../db/index.js';
-import { userSettings } from '../db/schema.js';
+import { folders, subscriptions, userSettings } from '../db/schema.js';
 
 /** Shape the caller's settings row, falling back to defaults when none exists. */
 async function loadSettings(userId: string): Promise<Settings> {
@@ -50,5 +50,16 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     }
 
     return loadSettings(userId);
+  });
+
+  // Clear every saved list layout (per feed and per folder), so all of them
+  // follow the user default again. Only the caller's own rows.
+  app.post('/settings/reset-views', auth, async (request, reply) => {
+    const userId = request.user!.id;
+    await db.transaction(async (tx) => {
+      await tx.update(subscriptions).set({ viewMode: null }).where(eq(subscriptions.userId, userId));
+      await tx.update(folders).set({ viewMode: null }).where(eq(folders.userId, userId));
+    });
+    return reply.code(204).send();
   });
 }

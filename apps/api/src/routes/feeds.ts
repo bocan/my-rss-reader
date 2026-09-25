@@ -415,6 +415,7 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
       const changes: Partial<typeof folders.$inferInsert> = {};
       if (input.name !== undefined) changes.name = input.name;
       if (input.parentId !== undefined) changes.parentId = input.parentId;
+      if (input.viewMode !== undefined) changes.viewMode = input.viewMode;
       if (Object.keys(changes).length > 0) {
         await tx.update(folders).set(changes).where(eq(folders.id, id));
       }
@@ -422,7 +423,7 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
         await renormalizeFolderScope(tx, userId, oldParentId);
       }
       // Re-place only on a move. With no position, placeFolder appends, so a
-      // rename would otherwise send the folder to the end.
+      // rename or a view change would otherwise send the folder to the end.
       if (input.parentId !== undefined || input.position !== undefined) {
         await placeFolder(tx, userId, id, newParentId, input.position);
       }

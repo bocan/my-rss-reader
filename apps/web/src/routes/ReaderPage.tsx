@@ -32,6 +32,7 @@ import { SubscribeDialog } from '@/components/subscribe-dialog';
 import { Button } from '@/components/ui/button';
 import { useArticleSurface } from '@/hooks/use-article-surface';
 import type { ArticleFilters, ArticleListItem } from '@/hooks/use-articles';
+import { useListView, type ViewScope } from '@/hooks/use-list-view';
 import { useShortcuts } from '@/hooks/use-shortcuts';
 import { useSidebar } from '@/hooks/use-sidebar';
 import { announce } from '@/lib/announce';
@@ -39,11 +40,17 @@ import { useMarkRead, useToggleArticleState, useUnreadCounts } from '@/lib/artic
 import { useSession } from '@/lib/auth';
 import { useCommunityShares } from '@/lib/community';
 import { orderedVisibleFeedIds, type FeedSort } from '@/lib/feed-order';
-import { useFolders, useRefreshFeeds, useSubscriptions } from '@/lib/folders';
+import {
+  useFolders,
+  useRefreshFeeds,
+  useSubscriptions,
+  useUpdateFolder,
+  useUpdateSubscription,
+} from '@/lib/folders';
 import { useProfile } from '@/lib/profile';
 import { useExpandedFolders } from '@/lib/sidebar-expanded';
 import { useSettings } from '@/lib/settings';
-import type { ArticleDetail, ViewMode } from '@rss/shared';
+import type { ArticleDetail } from '@rss/shared';
 import type { ShortcutContextName } from '@/lib/shortcuts/registry';
 import { cn } from '@/lib/utils';
 
@@ -149,30 +156,32 @@ export function ReaderPage() {
   const showCommunity =
     (community.data?.pages[0]?.items.length ?? 0) > 0 || (profile?.visibility ?? 'off') !== 'off';
 
-  // View resolution. Each scope opens at its effective view: the feed's own
-  // override (set in feed settings) if it has one, else the user's default view.
-  // The user default is their LAST PICK from the switcher - persisted server-side
-  // (settings.defaultViewMode), so it survives login and is only 'cards' until the
-  // user has ever clicked the switcher.
-  //
-  // The switcher does two things: shows the pick immediately for the current scope
-  // (viewOverride, so it responds even on a feed that has its own override), and
-  // records it as the user default. It never writes a feed's override - that lives
-  // only in feed settings, so an overridden feed keeps its view on the next visit.
-  // The session override clears on scope change, so navigating to a feed always
-  // lands on its effective view.
+  // List layout (the Inoreader model, see useListView): a feed or folder shows
+  // its saved layout, else the user default. The switcher saves where you are
+  // only; on All items it sets the default. Feed settings edits the same field.
   const refreshFeeds = useRefreshFeeds();
+  const updateSub = useUpdateSubscription();
+  const updateFolder = useUpdateFolder();
   const currentSub = filters.feedId ? subs.find((s) => s.feedId === filters.feedId) : undefined;
-  const effectiveView: ViewMode = currentSub?.viewMode ?? settings.defaultViewMode;
-  const [viewOverride, setViewOverride] = useState<ViewMode | null>(null);
+  const currentFolder = filters.folderId
+    ? foldersData?.items.find((f) => f.id === filters.folderId)
+    : undefined;
   const scopeKey = `${filters.feedId ?? ''}|${filters.folderId ?? ''}|${filters.starred ?? ''}|${filters.shared ?? ''}|${filters.attention ?? ''}`;
-  useEffect(() => setViewOverride(null), [scopeKey]);
-  const view: ViewMode = viewOverride ?? effectiveView;
+  const isAllItems =
+    !filters.feedId && !filters.folderId && !filters.starred && !filters.shared && !filters.attention;
+  const viewScope: ViewScope = currentSub
+    ? { kind: 'feed', subscriptionId: currentSub.subscriptionId, saved: currentSub.viewMode }
+    : currentFolder
+      ? { kind: 'folder', folderId: currentFolder.id, saved: currentFolder.viewMode ?? null }
+      : isAllItems
+        ? { kind: 'all' }
+        : { kind: 'other' };
+  const [view, setView] = useListView(viewScope, scopeKey, settings.defaultViewMode, {
+    feed: (id, viewMode) => updateSub.mutate({ id, viewMode }),
+    folder: (id, viewMode) => updateFolder.mutate({ id, viewMode }),
+    default: (defaultViewMode) => updateSettings({ defaultViewMode }),
+  });
   const isBrowse = view === 'cards' || view === 'magazine';
-  const setView = (mode: ViewMode) => {
-    setViewOverride(mode);
-    if (mode !== settings.defaultViewMode) updateSettings({ defaultViewMode: mode });
-  };
 
   const [searchInput, setSearchInput] = useState('');
   const [debouncedQ, setDebouncedQ] = useState('');

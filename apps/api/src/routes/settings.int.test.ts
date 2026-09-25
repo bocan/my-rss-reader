@@ -4,8 +4,15 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, expect, test } from 'vitest';
 import { buildApp } from '../app.js';
 import { db } from '../db/index.js';
-import { subscriptions, userSettings } from '../db/schema.js';
-import { loginAs, resetDb, seedFeed, seedSubscription, seedUser } from '../../test/helpers.js';
+import { folders, subscriptions, userSettings } from '../db/schema.js';
+import {
+  loginAs,
+  resetDb,
+  seedFeed,
+  seedFolder,
+  seedSubscription,
+  seedUser,
+} from '../../test/helpers.js';
 
 let app: FastifyInstance;
 
@@ -122,4 +129,25 @@ test('PATCH /feeds rejects an out-of-enum viewMode', async () => {
     payload: { viewMode: 'grid' },
   });
   expect(res.statusCode).toBe(400);
+});
+
+test('POST /settings/reset-views clears the caller\'s feed and folder views only', async () => {
+  const me = await seedUser();
+  const other = await seedUser();
+  const feed = await seedFeed();
+  const mySub = await seedSubscription(me.id, feed.id, { viewMode: 'list' });
+  const otherSub = await seedSubscription(other.id, feed.id, { viewMode: 'list' });
+  const myFolder = await seedFolder(me.id, { viewMode: 'magazine' });
+  const otherFolder = await seedFolder(other.id, { viewMode: 'magazine' });
+  const cookie = await loginAs(me);
+
+  const res = await app.inject({ method: 'POST', url: '/api/settings/reset-views', headers: { cookie } });
+  expect(res.statusCode).toBe(204);
+
+  const view = async (table: typeof subscriptions | typeof folders, id: string) =>
+    (await db.select({ v: table.viewMode }).from(table).where(eq(table.id, id)))[0]!.v;
+  expect(await view(subscriptions, mySub.id)).toBeNull();
+  expect(await view(folders, myFolder.id)).toBeNull();
+  expect(await view(subscriptions, otherSub.id)).toBe('list');
+  expect(await view(folders, otherFolder.id)).toBe('magazine');
 });
