@@ -51,10 +51,13 @@ export default defineConfig({
         clientsClaim: false,
         runtimeCaching: [
           {
-            // Same-origin API GETs: serve cached, revalidate in the background.
+            // Same-origin API GETs: network first, the cached copy only when the
+            // network fails (offline). Not StaleWhileRevalidate: that answered
+            // every refetch after a mutation with the previous response, so new
+            // folders, mark-read and saved views only showed after a hard reload.
             urlPattern: ({ url, request }) =>
               url.pathname.startsWith('/api/') && request.method === 'GET',
-            handler: 'StaleWhileRevalidate',
+            handler: 'NetworkFirst',
             options: {
               cacheName: 'api-cache',
               expiration: { maxEntries: 200, maxAgeSeconds: 7 * 24 * 60 * 60 },
