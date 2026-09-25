@@ -421,7 +421,11 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
       if (newParentId !== oldParentId) {
         await renormalizeFolderScope(tx, userId, oldParentId);
       }
-      await placeFolder(tx, userId, id, newParentId, input.position);
+      // Re-place only on a move. With no position, placeFolder appends, so a
+      // rename would otherwise send the folder to the end.
+      if (input.parentId !== undefined || input.position !== undefined) {
+        await placeFolder(tx, userId, id, newParentId, input.position);
+      }
     });
 
     const [updated] = await db.select().from(folders).where(eq(folders.id, id)).limit(1);

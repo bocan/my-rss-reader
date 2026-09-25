@@ -60,6 +60,18 @@ test('renames a folder', async () => {
   expect(res.json().name).toBe('New');
 });
 
+test('a rename does not move the folder', async () => {
+  const user = await seedUser();
+  const a = await seedFolder(user.id, { name: 'A', position: 0 });
+  const b = await seedFolder(user.id, { name: 'B', position: 1 });
+  const c = await seedFolder(user.id, { name: 'C', position: 2 });
+  const cookie = await loginAs(user);
+
+  await patchFolder(cookie, b.id, { name: 'B2' });
+
+  expect((await folderScope(user.id, null)).map((f) => f.id)).toEqual([a.id, b.id, c.id]);
+});
+
 test('reparents a folder under a root folder', async () => {
   const user = await seedUser();
   const parent = await seedFolder(user.id, { name: 'Parent' });
