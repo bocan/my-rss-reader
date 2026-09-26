@@ -8,7 +8,7 @@ import { api, ApiRequestError } from '@/lib/api';
 import { useToggleArticleState } from '@/lib/articles';
 import { useSubscriptions } from '@/lib/folders';
 import { useOnlineStatus } from '@/lib/pwa';
-import { readingColumnClass } from '@/lib/reading-format';
+import { proseSizeClass, readingColumnClass } from '@/lib/reading-format';
 import { useSettings } from '@/lib/settings';
 import { cn } from '@/lib/utils';
 import { ArticleHtml } from './ArticleHtml';
@@ -216,7 +216,13 @@ export function ReadingPane({
           <WebView article={article} online={online} />
         ) : (
           <div className={column} data-testid="reading-column">
-            {view === 'readable' && <FeedView article={article} size={settings.readingSize} />}
+            {view === 'readable' && (
+              <FeedView
+                article={article}
+                size={settings.readingSize}
+                onSwitchExtracted={() => chooseView('simplified')}
+              />
+            )}
             {view === 'simplified' && (
               <ExtractedView
                 article={article}
@@ -271,9 +277,43 @@ function EnclosurePlayer({ article }: { article: ArticleDetail }) {
   );
 }
 
-function FeedView({ article, size }: { article: ArticleDetail; size: ReadingSize }) {
+function FeedView({
+  article,
+  size,
+  onSwitchExtracted,
+}: {
+  article: ArticleDetail;
+  size: ReadingSize;
+  onSwitchExtracted: () => void;
+}) {
   if (article.contentHtml) return <ArticleHtml html={article.contentHtml} size={size} />;
-  if (article.summary) return <Note>{article.summary}</Note>;
+  if (article.summary) {
+    // A summary is the article as the feed sends it, so it reads as body
+    // text, not as a grey notice (#47). Then say where the rest is.
+    return (
+      <div className="space-y-6">
+        <div
+          className={cn('prose prose-neutral max-w-none dark:prose-invert', proseSizeClass(size))}
+          data-testid="feed-summary"
+        >
+          <p>{article.summary}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 border-t pt-4 text-sm text-muted-foreground">
+          <span className="mr-1">This feed sends only a summary.</span>
+          <Button size="sm" variant="outline" onClick={onSwitchExtracted}>
+            Extracted
+          </Button>
+          {article.url && (
+            <Button size="sm" variant="outline" asChild>
+              <a href={article.url} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="size-3.5" /> Open original
+              </a>
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
   return <Note>No content in this item. Try the Web view.</Note>;
 }
 

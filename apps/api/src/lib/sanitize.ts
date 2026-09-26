@@ -58,6 +58,14 @@ export function extractText(html: string): string {
  * `&amp;` shows as `&`), block boundaries kept as spaces, whitespace
  * collapsed. For values React renders as text, such as the card excerpt.
  */
+/**
+ * A summary that is really HTML: it opens with a tag and has a closing tag.
+ * Plain-text snippets can mention markup mid-sentence ("put it in a
+ * </div>"), and re-parsing real text as HTML would eat it.
+ */
+export const looksLikeHtml = (s: string): boolean =>
+  /^\s*<[a-z]/i.test(s) && /<\/[a-z][a-z0-9]*\s*>/i.test(s);
+
 export function htmlToText(html: string): string {
   // By default node-html-parser keeps <pre> contents as raw text, so tags in a
   // highlighted code block would survive. Parse <pre> normally and drop

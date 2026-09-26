@@ -20,8 +20,10 @@ vi.mock('undici', () => ({
 
 const { fetchAndStoreFeed } = await import('./feed-fetch.js');
 const { db } = await import('../db/index.js');
-const { feeds } = await import('../db/schema.js');
-const { loginAs, resetDb, seedFeed, seedSubscription, seedUser } = await import('../../test/helpers.js');
+const { articles, feeds } = await import('../db/schema.js');
+const { loginAs, resetDb, seedArticle, seedFeed, seedSubscription, seedUser } = await import(
+  '../../test/helpers.js'
+);
 const { buildApp } = await import('../app.js');
 
 beforeEach(async () => {
@@ -103,6 +105,30 @@ test('POST /feeds/:id/refresh fetches that one feed and returns its new state', 
   } finally {
     await app.close();
   }
+});
+
+// #47: rows stored before an HTML summary became the body get it on the next
+// fetch, while the entry is still in the feed. A stored body never changes.
+test('a later fetch fills a missing body from an HTML summary, and keeps a stored one', async () => {
+  const feed = await seedFeed();
+  const empty = await seedArticle(feed.id, { guid: 'https://ex.com/1', summary: 'Hello world.' });
+  const kept = await seedArticle(feed.id, { guid: 'https://ex.com/2', contentHtml: '<p>Stored</p>' });
+  const entry = (id: string) =>
+    `<entry><id>${id}</id><title>t</title><link href="${id}"/><updated>2026-01-01T00:00:00Z</updated>` +
+    `<summary type="html">&lt;p&gt;Hello &lt;em&gt;world&lt;/em&gt;.&lt;/p&gt;</summary></entry>`;
+  responses.set(feed.feedUrl, {
+    statusCode: 200,
+    body:
+      '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><title>x</title>' +
+      entry('https://ex.com/1') + entry('https://ex.com/2') + '</feed>',
+  });
+
+  await fetchAndStoreFeed(feed);
+
+  const body = async (id: string) =>
+    (await db.select().from(articles).where(eq(articles.id, id)))[0]!.contentHtml;
+  expect(await body(empty.id)).toBe('<p>Hello <em>world</em>.</p>');
+  expect(await body(kept.id)).toBe('<p>Stored</p>');
 });
 
 test('a lasting failure (404) gets no early retry', async () => {

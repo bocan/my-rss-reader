@@ -6,7 +6,7 @@ import Parser from 'rss-parser';
 import { Agent, interceptors, request } from 'undici';
 import { db } from '../db/index.js';
 import { articles, feeds } from '../db/schema.js';
-import { extractText, htmlToText, SANITIZER_VERSION, sanitizeArticleHtml } from './sanitize.js';
+import { extractText, htmlToText, looksLikeHtml, SANITIZER_VERSION, sanitizeArticleHtml } from './sanitize.js';
 import { discoverWebSubLinks, unsubscribeFromHub } from './websub.js';
 
 export type FeedRow = typeof feeds.$inferSelect;
@@ -264,12 +264,15 @@ export function feedArticleRows(feedId: string, parsed: ParsedFeed): NewArticleI
       const rawContent = item['content:encoded'] ?? item.content ?? null;
       const raw = typeof rawContent === 'string' ? rawContent : asText(rawContent);
       const baseUrl = asId(item.link) ?? parsed.link ?? null;
-      const cleanHtml = raw ? sanitizeArticleHtml(raw, baseUrl) : null;
+      const rawSummary = asText(item.summary);
+      // With no body, an HTML summary is the body (#47): some Atom feeds (e.g.
+      // simonwillison.net) send the whole post in <summary type="html">.
+      const bodyHtml = raw || (rawSummary && looksLikeHtml(rawSummary) ? rawSummary : null);
+      const cleanHtml = bodyHtml ? sanitizeArticleHtml(bodyHtml, baseUrl) : null;
       // Search text: prefer the body, fall back to the summary so summary-only
       // feeds stay searchable (SPEC-006). searchVector regenerates on write.
       // contentSnippet is already plain text; an Atom summary may be HTML
       // (type="html"), so strip it to text before it reaches a card.
-      const rawSummary = asText(item.summary);
       const summaryText =
         asText(item.contentSnippet) ?? (rawSummary ? htmlToText(rawSummary) || null : null);
       const contentText = cleanHtml
@@ -431,11 +434,17 @@ export async function storeNewArticles(
     .values(rows)
     .onConflictDoUpdate({
       target: [articles.feedId, articles.guid],
+      // A stored article never changes, except to fill a gap from a later
+      // fetch: an enclosure, or a body (#47: rows stored before HTML summaries
+      // became the body, which is still in the feed). Each field keeps its
+      // stored value when it has one.
       set: {
-        enclosureUrl: sql`excluded.enclosure_url`,
-        enclosureType: sql`excluded.enclosure_type`,
+        enclosureUrl: sql`coalesce(${articles.enclosureUrl}, excluded.enclosure_url)`,
+        enclosureType: sql`case when ${articles.enclosureUrl} is null then excluded.enclosure_type else ${articles.enclosureType} end`,
+        contentHtml: sql`coalesce(${articles.contentHtml}, excluded.content_html)`,
       },
-      setWhere: sql`${articles.enclosureUrl} is null and excluded.enclosure_url is not null`,
+      setWhere: sql`(${articles.enclosureUrl} is null and excluded.enclosure_url is not null)
+        or (${articles.contentHtml} is null and excluded.content_html is not null)`,
     });
 }
 

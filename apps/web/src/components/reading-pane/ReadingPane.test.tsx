@@ -29,9 +29,13 @@ const changelogItem = {
   shareNote: null,
 } as ArticleDetail;
 
-function renderPane(settings: Partial<Settings> = {}, articleView: string | null = null) {
+function renderPane(
+  settings: Partial<Settings> = {},
+  articleView: string | null = null,
+  article: Partial<ArticleDetail> = {},
+) {
   const qc = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } });
-  qc.setQueryData(['article', 'a1'], changelogItem);
+  qc.setQueryData(['article', 'a1'], { ...changelogItem, ...article });
   qc.setQueryData(['feeds'], { items: [{ feedId: 'f1', articleView }] });
   qc.setQueryData(['settings'], { ...DEFAULT_SETTINGS, ...settings });
   render(
@@ -71,6 +75,29 @@ test('a fixed default or a feed override shows no Auto note', () => {
   renderPane({ defaultArticleView: 'simplified' });
   expect(pressed()).toEqual(['Extracted']);
   expect(screen.queryByText('Auto')).not.toBeInTheDocument();
+});
+
+// #47: a summary is the article as the feed sends it, not a grey notice.
+test('a summary-only item reads as body text, and offers Extracted and the original', () => {
+  renderPane({ defaultArticleView: 'readable' }, null, {
+    contentHtml: null,
+    summary: 'The whole point of the post.',
+    url: 'https://ex.com/post',
+  });
+  const body = screen.getByTestId('feed-summary');
+  expect(body).toHaveClass('prose');
+  expect(body).toHaveTextContent('The whole point of the post.');
+  expect(screen.getByText('This feed sends only a summary.')).toBeInTheDocument();
+  // One in the header, and one under the summary, where the reader ends up.
+  const originals = screen.getAllByRole('link', { name: 'Open original' });
+  expect(originals).toHaveLength(2);
+  expect(originals[1]).toHaveAttribute('href', 'https://ex.com/post');
+  expect(originals[1]).toHaveAttribute('target', '_blank');
+
+  // Two "Extracted" buttons now: the switcher and the one under the summary.
+  const extracted = screen.getAllByRole('button', { name: 'Extracted' });
+  fireEvent.click(extracted[extracted.length - 1]!);
+  expect(pressed()).toEqual(['Extracted']);
 });
 
 test('a feed override beats an auto default', () => {

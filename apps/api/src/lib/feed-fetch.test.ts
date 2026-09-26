@@ -163,6 +163,48 @@ describe('feedArticleRows text coercion', () => {
     expect(feedArticleRows('feed-1', parsed)[0]!.summary).toBe('Tom & Jerry said hi. Next from x');
   });
 
+  // #47: with no body, that HTML summary is the body, sanitized.
+  test('uses an HTML summary as the sanitized body when there is no content', () => {
+    const parsed = {
+      link: 'https://ex.com',
+      items: [
+        {
+          id: 'g1',
+          link: 'https://ex.com/1',
+          title: 't',
+          summary: '<p><a href="/tom">Tom</a> said <em>hi</em>.</p><script>bad()</script>',
+        },
+      ],
+    } as unknown as Parameters<typeof feedArticleRows>[1];
+
+    const row = feedArticleRows('feed-1', parsed)[0]!;
+    expect(row.contentHtml).toContain('<em>hi</em>');
+    expect(row.contentHtml).toContain('href="https://ex.com/tom"');
+    expect(row.contentHtml).not.toContain('script');
+    // The card text stays plain.
+    expect(row.summary).toBe('Tom said hi.');
+  });
+
+  test('a real body wins over an HTML summary', () => {
+    const parsed = {
+      link: 'https://ex.com',
+      items: [{ id: 'g1', link: 'https://ex.com/1', title: 't', content: '<p>Body</p>', summary: '<p>Teaser</p>' }],
+    } as unknown as Parameters<typeof feedArticleRows>[1];
+
+    expect(feedArticleRows('feed-1', parsed)[0]!.contentHtml).toBe('<p>Body</p>');
+  });
+
+  test('a plain-text summary does not become a body', () => {
+    const parsed = {
+      link: 'https://ex.com',
+      items: [{ id: 'g1', link: 'https://ex.com/1', title: 't', contentSnippet: 'Just text.', summary: 'Just text.' }],
+    } as unknown as Parameters<typeof feedArticleRows>[1];
+
+    const row = feedArticleRows('feed-1', parsed)[0]!;
+    expect(row.contentHtml).toBeNull();
+    expect(row.summary).toBe('Just text.');
+  });
+
   test('keeps a plain-text contentSnippet as is, even with a stray "<"', () => {
     const parsed = {
       link: 'https://ex.com',

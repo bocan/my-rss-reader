@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { sanitizeArticleHtml } from './sanitize.js';
+import { looksLikeHtml, sanitizeArticleHtml } from './sanitize.js';
 
 const BASE = 'https://blog.example/post/1';
 
@@ -128,5 +128,18 @@ describe('sanitizeArticleHtml - embeds and benign content', () => {
   test('does not throw on malformed HTML', () => {
     expect(() => sanitizeArticleHtml('<p>unclosed <b>bold <  stray', BASE)).not.toThrow();
     expect(typeof sanitizeArticleHtml('<p>unclosed', BASE)).toBe('string');
+  });
+});
+
+// #47: decides when a summary is the body of an item.
+describe('looksLikeHtml', () => {
+  test('markup that opens with a tag and closes one', () => {
+    expect(looksLikeHtml('<p>Hello <em>world</em>.</p>')).toBe(true);
+    expect(looksLikeHtml('  <div><p>x</p></div>')).toBe(true);
+  });
+  test('text that only mentions markup is not HTML', () => {
+    expect(looksLikeHtml('put it in a </div>')).toBe(false);
+    expect(looksLikeHtml('use <div> when 5 < 6')).toBe(false);
+    expect(looksLikeHtml('Just text.')).toBe(false);
   });
 });
