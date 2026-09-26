@@ -17,7 +17,7 @@ import {
   type CursorPayload,
   type SearchCursorPayload,
 } from '../lib/cursor.js';
-import { resolveSubscribedFeedIds } from '../lib/feed-scope.js';
+import { folderScopeIds, resolveSubscribedFeedIds } from '../lib/feed-scope.js';
 import { extractReadableHtml } from '../lib/readability.js';
 import { FIREHOSE_EXPIRY_DAYS } from '../lib/unread-counts.js';
 
@@ -144,7 +144,10 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
     // narrowed by feedId, folderId, and/or attention tier (SPEC-022).
     const subFilters = [eq(subscriptions.userId, userId)];
     if (query.feedId) subFilters.push(eq(subscriptions.feedId, query.feedId));
-    if (query.folderId) subFilters.push(eq(subscriptions.folderId, query.folderId));
+    // A folder covers its child folders too (#25).
+    if (query.folderId) {
+      subFilters.push(inArray(subscriptions.folderId, await folderScopeIds(userId, query.folderId)));
+    }
     if (query.attention) subFilters.push(eq(subscriptions.attention, query.attention));
     // Hidden feeds drop out of the All-items firehose only; an explicit feed,
     // folder, starred, shared, tier, or search scope still includes them

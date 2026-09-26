@@ -86,6 +86,57 @@ test('a scroll batch (#17) marks only its ids and leaves the list in place', asy
   expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ['articles'] });
 });
 
+// #25: a feed in a child folder counts toward the parent's badge too.
+test('marking a parent folder read clears its child folders, and both badges drop', async () => {
+  qc.setQueryData(['folders'], {
+    items: [
+      { id: 'd0', parentId: null },
+      { id: 'd1', parentId: 'd0' },
+    ],
+  });
+  // d1's 5 (shown 3 + hidden 2) roll up into d0.
+  qc.setQueryData<UnreadCounts>(['counts'], {
+    ...counts(),
+    folders: [
+      { folderId: 'd0', unreadCount: 5 },
+      { folderId: 'd1', unreadCount: 5 },
+    ],
+  });
+  const { result } = renderHook(() => useMarkRead(), { wrapper });
+  act(() => result.current.mutate({ folderId: 'd0' }));
+
+  await waitFor(() => expect(unread('shown')).toBe(0));
+  expect(unread('hidden')).toBe(0);
+  expect(counts().folders).toEqual([
+    { folderId: 'd0', unreadCount: 0 },
+    { folderId: 'd1', unreadCount: 0 },
+  ]);
+});
+
+test('reading one article in a child folder drops the child and the parent badge', async () => {
+  qc.setQueryData(['folders'], {
+    items: [
+      { id: 'd0', parentId: null },
+      { id: 'd1', parentId: 'd0' },
+    ],
+  });
+  qc.setQueryData<UnreadCounts>(['counts'], {
+    ...counts(),
+    folders: [
+      { folderId: 'd0', unreadCount: 5 },
+      { folderId: 'd1', unreadCount: 5 },
+    ],
+  });
+  const { result } = renderHook(() => useMarkRead(), { wrapper });
+  act(() => result.current.mutate({ articleIds: ['a1'] }));
+
+  await waitFor(() => expect(unread('shown')).toBe(2));
+  expect(counts().folders).toEqual([
+    { folderId: 'd0', unreadCount: 4 },
+    { folderId: 'd1', unreadCount: 4 },
+  ]);
+});
+
 test('a folder scope still includes its hidden feeds', async () => {
   const { result } = renderHook(() => useMarkRead(), { wrapper });
   act(() => result.current.mutate({ folderId: 'd1' }));

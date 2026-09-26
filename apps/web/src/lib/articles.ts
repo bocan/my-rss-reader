@@ -17,6 +17,10 @@ interface FeedItem {
   attention: string;
 }
 type FeedsData = { items: FeedItem[] };
+interface FolderItem {
+  id: string;
+  parentId: string | null;
+}
 
 const clamp = (n: number) => Math.max(0, n);
 
@@ -31,9 +35,21 @@ function feedMeta(qc: QueryClient): Map<string, FeedItem> {
 }
 
 /**
+ * The folder badges a feed in `folderId` counts toward: its folder and that
+ * folder's parent (#25; nesting is one level deep), as the server rolls up.
+ */
+function badgeFolders(qc: QueryClient, folderId: string | null | undefined): string[] {
+  if (!folderId) return [];
+  const folders = qc.getQueryData<{ items: FolderItem[] }>(['folders'])?.items ?? [];
+  const parentId = folders.find((f) => f.id === folderId)?.parentId;
+  return parentId ? [folderId, parentId] : [folderId];
+}
+
+/**
  * Which feeds a bulk mark-read covers, mirroring the server: one feed, one
- * folder's direct feeds, or All items, which leaves out hidden feeds. A feed
- * missing from the cache counts as visible (the refetch corrects any drift).
+ * folder with its child folders (#25), or All items, which leaves out hidden
+ * feeds. A feed missing from the cache counts as visible (the refetch
+ * corrects any drift).
  */
 export function markReadScopeTest(
   qc: QueryClient,
@@ -41,7 +57,10 @@ export function markReadScopeTest(
 ): (feedId: string) => boolean {
   const meta = feedMeta(qc);
   if (scope.feedId) return (id) => id === scope.feedId;
-  if (scope.folderId) return (id) => meta.get(id)?.folderId === scope.folderId;
+  if (scope.folderId) {
+    const folderId = scope.folderId;
+    return (id) => badgeFolders(qc, meta.get(id)?.folderId).includes(folderId);
+  }
   return (id) => !meta.get(id)?.hideFromAll;
 }
 
@@ -64,8 +83,10 @@ function zeroCounts(
     const m = meta.get(f.feedId);
     const firehose = m?.attention === 'firehose';
     if (!m?.hideFromAll && !firehose) totalDrop += f.unreadCount;
-    if (m?.folderId && !firehose) {
-      folderDrop.set(m.folderId, (folderDrop.get(m.folderId) ?? 0) + f.unreadCount);
+    if (!firehose) {
+      for (const id of badgeFolders(qc, m?.folderId)) {
+        folderDrop.set(id, (folderDrop.get(id) ?? 0) + f.unreadCount);
+      }
     }
     return { ...f, unreadCount: 0 };
   });
@@ -128,24 +149,22 @@ function patchArticle(
 
 function adjustCounts(qc: QueryClient, feedId: string, delta: number) {
   const meta = qc.getQueryData<FeedsData>(['feeds'])?.items.find((f) => f.feedId === feedId);
-  const folderId = meta?.folderId ?? null;
   // Mirror the server's rollup rules so optimistic writes cannot drift:
   // hidden feeds (SPEC-018) and firehose feeds (SPEC-022) never contribute to
-  // total; firehose feeds never contribute to their folder badge either.
+  // total; firehose feeds never contribute to a folder badge either. A feed
+  // counts toward its folder and that folder's parent (#25).
   const firehose = meta?.attention === 'firehose';
   const inTotal = !meta?.hideFromAll && !firehose;
+  const folderIds = firehose ? [] : badgeFolders(qc, meta?.folderId);
   qc.setQueryData<UnreadCounts>(['counts'], (c) =>
     c
       ? {
           feeds: c.feeds.map((f) =>
             f.feedId === feedId ? { ...f, unreadCount: clamp(f.unreadCount + delta) } : f,
           ),
-          folders:
-            folderId && !firehose
-              ? c.folders.map((f) =>
-                  f.folderId === folderId ? { ...f, unreadCount: clamp(f.unreadCount + delta) } : f,
-                )
-              : c.folders,
+          folders: c.folders.map((f) =>
+            folderIds.includes(f.folderId) ? { ...f, unreadCount: clamp(f.unreadCount + delta) } : f,
+          ),
           total: inTotal ? clamp(c.total + delta) : c.total,
         }
       : c,

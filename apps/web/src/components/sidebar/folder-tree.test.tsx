@@ -66,6 +66,35 @@ test('"Mark all read" fires even when the pointer moves a few px during the clic
   expect(markRead).toHaveBeenCalledWith({ feedId: 'f1' });
 });
 
+// #25: folder badges.
+
+test('folders show their unread count, collapsed or not, and hide a zero', () => {
+  const qc = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
+  const folder = (id: string, name: string, parentId: string | null = null) => ({
+    id, userId: 'u1', name, parentId, position: 0, viewMode: null, createdAt: '',
+  });
+  qc.setQueryData(['folders'], {
+    items: [folder('d1', 'Tech'), folder('d2', 'CSS', 'd1'), folder('d3', 'Quiet')],
+  });
+  qc.setQueryData(['feeds'], { items: [{ ...sub, folderId: 'd2' }] });
+  render(
+    <QueryClientProvider client={qc}>
+      <FolderTree
+        onSelectFeed={vi.fn()}
+        onSelectFolder={vi.fn()}
+        countByFeed={new Map([['f1', 3]])}
+        // The server's rollup: the parent includes its child folder.
+        countByFolder={new Map([['d1', 3], ['d2', 3], ['d3', 0]])}
+        sort="name"
+      />
+    </QueryClientProvider>,
+  );
+  // Tech is collapsed (nothing expanded yet) and still shows its count.
+  expect(screen.getByRole('button', { name: 'Tech' }).parentElement).toHaveTextContent('Tech3');
+  expect(screen.getByLabelText('3 unread')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Quiet' }).parentElement).not.toHaveTextContent(/\d/);
+});
+
 // #21: phones.
 
 const row = () => screen.getByTitle(sub.feedUrl);

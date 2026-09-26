@@ -132,6 +132,10 @@ export function ReaderPage() {
     () => new Map((counts?.feeds ?? []).map((f) => [f.feedId, f.unreadCount])),
     [counts],
   );
+  const countByFolder = useMemo(
+    () => new Map((counts?.folders ?? []).map((f) => [f.folderId, f.unreadCount])),
+    [counts],
+  );
   const feedMeta = useMemo(
     () =>
       Object.fromEntries(
@@ -505,6 +509,7 @@ export function ReaderPage() {
         onSelectFeed={onSelectFeed}
         onSelectFolder={onSelectFolder}
         countByFeed={countByFeed}
+        countByFolder={countByFolder}
         sort={feedSort}
         hideRead={unreadOnly}
       />

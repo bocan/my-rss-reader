@@ -66,10 +66,14 @@ interface FolderTreeProps {
   onSelectFeed: (feedId: string) => void;
   onSelectFolder: (folderId: string) => void;
   countByFeed: Map<string, number>;
+  /** Unread per folder, child folders included (server rollup, #25). */
+  countByFolder?: Map<string, number>;
   sort: FeedSort;
   /** When true, hide feeds (and now-empty folders) that have no unread items. */
   hideRead?: boolean;
 }
+
+const NO_COUNTS = new Map<string, number>();
 
 export function FolderTree({
   activeFeedId,
@@ -77,6 +81,7 @@ export function FolderTree({
   onSelectFeed,
   onSelectFolder,
   countByFeed,
+  countByFolder = NO_COUNTS,
   sort,
   hideRead = false,
 }: FolderTreeProps) {
@@ -226,6 +231,7 @@ export function FolderTree({
               activeFeedId={activeFeedId}
               onSelectFeed={onSelectFeed}
               countByFeed={countByFeed}
+              countByFolder={countByFolder}
               editing={editing}
               setEditing={setEditing}
               submitEdit={submitEdit}
@@ -331,6 +337,7 @@ interface FolderNodeProps {
   activeFeedId?: string;
   onSelectFeed: (feedId: string) => void;
   countByFeed: Map<string, number>;
+  countByFolder: Map<string, number>;
   editing: { kind: 'folder' | 'feed'; id: string } | null;
   setEditing: (e: { kind: 'folder' | 'feed'; id: string } | null) => void;
   submitEdit: (value: string) => void;
@@ -401,6 +408,14 @@ function FolderNode(props: FolderNodeProps) {
           >
             {folder.name}
           </button>
+        )}
+        {!isEditing && (props.countByFolder.get(folder.id) ?? 0) > 0 && (
+          <span
+            className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-xs font-normal tabular-nums text-muted-foreground"
+            aria-label={`${props.countByFolder.get(folder.id)} unread`}
+          >
+            {props.countByFolder.get(folder.id)}
+          </span>
         )}
 
         <RowMenu label={`Folder actions for ${folder.name}`}>
