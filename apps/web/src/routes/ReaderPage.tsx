@@ -31,6 +31,7 @@ import { FolderTree } from '@/components/sidebar/folder-tree';
 import { SubscribeDialog } from '@/components/subscribe-dialog';
 import { Button } from '@/components/ui/button';
 import { useArticleSurface } from '@/hooks/use-article-surface';
+import { useArticleToggles } from '@/hooks/use-article-toggles';
 import type { ArticleFilters, ArticleListItem } from '@/hooks/use-articles';
 import { useLeaveGoneFeed } from '@/hooks/use-leave-gone-feed';
 import { useListView, type ViewScope } from '@/hooks/use-list-view';
@@ -38,7 +39,7 @@ import { useShortcuts } from '@/hooks/use-shortcuts';
 import { useSidebar } from '@/hooks/use-sidebar';
 import { announce } from '@/lib/announce';
 import { notify } from '@/lib/notify';
-import { useMarkRead, useToggleArticleState, useUnreadCounts } from '@/lib/articles';
+import { useMarkRead, useUnreadCounts } from '@/lib/articles';
 import { useSession } from '@/lib/auth';
 import { useCommunityShares } from '@/lib/community';
 import { orderedVisibleFeedIds, type FeedSort } from '@/lib/feed-order';
@@ -53,7 +54,6 @@ import { useProfile } from '@/lib/profile';
 import { useExpandedFolders } from '@/lib/sidebar-expanded';
 import { useSettings } from '@/lib/settings';
 import { useUnreadOnly } from '@/lib/unread-only';
-import type { ArticleDetail } from '@rss/shared';
 import type { ShortcutContextName } from '@/lib/shortcuts/registry';
 import { cn } from '@/lib/utils';
 
@@ -317,8 +317,9 @@ export function ReaderPage() {
     }
   };
 
+  // The open article, else the focused row.
   const targetId = selectedId ?? surface.getFocused()?.id ?? null;
-  const toggle = useToggleArticleState(targetId ?? '');
+  const toggles = useArticleToggles(targetId);
 
   // Only the below-lg full-screen reader in list/compact takes over the
   // context; everywhere else j/k keep working over the visible items.
@@ -332,21 +333,10 @@ export function ReaderPage() {
       if (a) selectArticle(a.id);
     },
     closeReader: () => (overlayOpen ? setOverlayOpen(false) : clearArticle()),
-    toggleRead: () => {
-      if (!targetId) return;
-      toggle.mutate({ read: selectedId ? true : !surface.getFocused()?.read });
-    },
-    markUnread: () => targetId && toggle.mutate({ read: false }),
-    toggleStar: () => targetId && toggle.mutate({ starred: !surface.getFocused()?.starred }),
-    toggleShared: () => {
-      if (!targetId) return;
-      // Shared state lives on the detail shape only; an article never opened
-      // this session reads as unshared and S shares it.
-      const detail = queryClient.getQueryData<ArticleDetail>(['article', targetId]);
-      const next = !(detail?.shared ?? false);
-      toggle.mutate({ shared: next });
-      announce(next ? 'Added to shared items' : 'Removed from shared items');
-    },
+    toggleRead: toggles.toggleRead,
+    markUnread: toggles.markUnread,
+    toggleStar: toggles.toggleStar,
+    toggleShared: toggles.toggleShared,
     markAllRead: () => canMarkAll && unreadForView > 0 && markAllRead(),
     refresh: () => {
       queryClient.invalidateQueries({ queryKey: ['articles'] });

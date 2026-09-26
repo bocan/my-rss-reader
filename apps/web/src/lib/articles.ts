@@ -87,6 +87,24 @@ function currentState(qc: QueryClient, articleId: string): { read: boolean; feed
   return undefined;
 }
 
+/**
+ * An article's read/starred/shared flags as the UI shows them: the detail
+ * cache first (the open article; the only shape with `shared`), else its list
+ * row. Both carry the same optimistic patches.
+ */
+export function articleFlags(
+  qc: QueryClient,
+  articleId: string,
+): { read: boolean; starred: boolean; shared: boolean } | undefined {
+  const detail = qc.getQueryData<ArticleDetail>(['article', articleId]);
+  if (detail) return { read: detail.read, starred: detail.starred, shared: detail.shared };
+  for (const [, data] of qc.getQueriesData<ArticlesData>({ queryKey: ['articles'] })) {
+    const found = data?.pages.flatMap((p) => p.items).find((a) => a.id === articleId);
+    if (found) return { read: found.read, starred: found.starred, shared: false };
+  }
+  return undefined;
+}
+
 function patchArticle(
   qc: QueryClient,
   articleId: string,
