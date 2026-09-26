@@ -3,8 +3,6 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronLeft,
-  Circle,
-  CircleDot,
   Gem,
   Inbox,
   Keyboard,
@@ -29,6 +27,7 @@ import { BrowseSurface } from '@/components/reader/BrowseSurface';
 import { ListColumn } from '@/components/reader/ListColumn';
 import { SearchField, SearchScope } from '@/components/reader/Search';
 import { SortToggle } from '@/components/reader/SortToggle';
+import { UnreadToggle } from '@/components/reader/UnreadToggle';
 import { ViewSwitcher } from '@/components/reader/ViewSwitcher';
 import { ReadingPane } from '@/components/reading-pane/ReadingPane';
 import { ShortcutsOverlay } from '@/components/shortcuts/ShortcutsOverlay';
@@ -132,6 +131,10 @@ export function ReaderPage() {
   // "Unread only": hides read articles from the lists and read-empty feeds from
   // the sidebar. A global toggle (not per-scope), the same value as Settings.
   const [unreadOnly, setUnreadOnly] = useUnreadOnly();
+  const changeUnreadOnly = (on: boolean) => {
+    setUnreadOnly(on);
+    announce(on ? 'Showing unread only' : 'Showing all articles');
+  };
 
   const { data: feedsData, isLoading } = useSubscriptions();
   // Stable identity so downstream useMemos (feedMeta, feedOrder) do not churn.
@@ -635,6 +638,11 @@ export function ReaderPage() {
         {unreadForView > 0 && !communityOpen && !filters.shared && (
           <span className="ml-2 text-xs font-normal text-muted-foreground">{unreadForView}</span>
         )}
+        {/* #34: the filter is always in view, also on phones, where its
+            switch is in the "More actions" menu. */}
+        {unreadOnly && !communityOpen && (
+          <span className="ml-2 text-xs font-normal text-muted-foreground">· unread only</span>
+        )}
       </span>
       <div className={cn('ml-auto flex items-center gap-2', phoneSearchShown && 'flex-1 sm:flex-none')}>
         <Button
@@ -695,24 +703,9 @@ export function ReaderPage() {
             </DropdownMenu>
           </div>
         )}
-        <Button
-          variant={unreadOnly ? 'default' : 'ghost'}
-          size="icon"
-          className="hidden sm:inline-flex"
-          aria-pressed={unreadOnly}
-          aria-label={unreadOnly ? 'Showing unread only' : 'Show unread only'}
-          title={
-            unreadOnly
-              ? 'Showing unread only — click to show all'
-              : 'Show unread only'
-          }
-          onClick={() => {
-            setUnreadOnly(!unreadOnly);
-            announce(unreadOnly ? 'Showing all articles' : 'Showing unread only');
-          }}
-        >
-          {unreadOnly ? <CircleDot /> : <Circle />}
-        </Button>
+        <div className="hidden sm:flex">
+          <UnreadToggle unreadOnly={unreadOnly} onChange={changeUnreadOnly} />
+        </div>
         {!isSearching && (
           <div className="hidden sm:flex">
             <SortToggle sort={sort} onChange={setSort} />
@@ -741,10 +734,7 @@ export function ReaderPage() {
       )}
       <DropdownMenuCheckboxItem
         checked={unreadOnly}
-        onCheckedChange={(on) => {
-          setUnreadOnly(on);
-          announce(on ? 'Showing unread only' : 'Showing all articles');
-        }}
+        onCheckedChange={changeUnreadOnly}
       >
         Unread only
       </DropdownMenuCheckboxItem>
