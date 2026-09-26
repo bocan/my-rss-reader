@@ -1,12 +1,13 @@
 import type { IncomingHttpHeaders } from 'node:http';
 import { transientRetryDelaySec, type FeedCandidate } from '@rss/shared';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { parse } from 'node-html-parser';
 import Parser from 'rss-parser';
 import { Agent, interceptors, request } from 'undici';
 import { db } from '../db/index.js';
 import { articles, feeds } from '../db/schema.js';
 import { extractText, htmlToText, looksLikeHtml, SANITIZER_VERSION, sanitizeArticleHtml } from './sanitize.js';
+import { findRenamedEntries } from './renamed-entries.js';
 import { discoverWebSubLinks, unsubscribeFromHub } from './websub.js';
 
 export type FeedRow = typeof feeds.$inferSelect;
@@ -424,11 +425,12 @@ export async function discoverFeedCandidates(url: string): Promise<FeedCandidate
  * a no-op write on every ordinary poll.
  */
 export async function storeNewArticles(
-  // The feed id seam exists for SPEC-025's per-user filter rules hook.
-  _feedId: string,
+  // Also the seam for SPEC-025's per-user filter rules hook.
+  feedId: string,
   rows: NewArticleInsert[],
 ): Promise<void> {
   if (rows.length === 0) return;
+  await adoptRenamedEntries(feedId, rows);
   await db
     .insert(articles)
     .values(rows)
@@ -446,6 +448,45 @@ export async function storeNewArticles(
       setWhere: sql`(${articles.enclosureUrl} is null and excluded.enclosure_url is not null)
         or (${articles.contentHtml} is null and excluded.content_html is not null)`,
     });
+}
+
+/**
+ * #51: an entry whose guid changed (the author fixed the post URL) is the same
+ * post. Give the stored article the new guid and URL, so the insert that
+ * follows finds it and does not store a second copy. The rule is in
+ * renamed-entries.ts.
+ */
+async function adoptRenamedEntries(feedId: string, rows: NewArticleInsert[]): Promise<void> {
+  const titles = [...new Set(rows.filter((r) => r.title && r.publishedAt).map((r) => r.title!))];
+  if (titles.length === 0) return;
+  const stored = await db
+    .select({
+      id: articles.id,
+      guid: articles.guid,
+      title: articles.title,
+      publishedAt: articles.publishedAt,
+      contentText: articles.contentText,
+    })
+    .from(articles)
+    .where(
+      and(
+        eq(articles.feedId, feedId),
+        or(inArray(articles.guid, rows.map((r) => r.guid)), inArray(articles.title, titles)),
+      ),
+    );
+  const renamed = findRenamedEntries(
+    rows.map((r) => ({
+      guid: r.guid,
+      title: r.title ?? null,
+      publishedAt: r.publishedAt ?? null,
+      contentText: r.contentText ?? null,
+    })),
+    stored,
+  );
+  for (const row of rows) {
+    const id = renamed.get(row.guid);
+    if (id) await db.update(articles).set({ guid: row.guid, url: row.url }).where(eq(articles.id, id));
+  }
 }
 
 /**

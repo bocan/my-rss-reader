@@ -131,6 +131,41 @@ test('a later fetch fills a missing body from an HTML summary, and keeps a store
   expect(await body(kept.id)).toBe('<p>Stored</p>');
 });
 
+// #51: a fixed post URL (the entry id) is the same post, not a second one.
+test('a post whose URL changed updates the stored article; a same-title post on another day is new', async () => {
+  const feed = await seedFeed();
+  const OLD = 'https://hamatti.org/posts/notes-ofmovie-theater/';
+  const NEW = 'https://hamatti.org/posts/notes-of-movie-theater/';
+  const stored = await seedArticle(feed.id, {
+    guid: OLD,
+    url: OLD,
+    title: 'Notes of movie theater',
+    publishedAt: new Date('2026-09-20T10:00:00Z'),
+    contentText: 'I went to the movies.',
+  });
+  const entry = (id: string, date: string) =>
+    `<entry><id>${id}</id><title>Notes of movie theater</title><link href="${id}"/>` +
+    `<published>${date}</published><updated>${date}</updated>` +
+    `<content type="html">&lt;p&gt;I went to the movies.&lt;/p&gt;</content></entry>`;
+  responses.set(feed.feedUrl, {
+    statusCode: 200,
+    body:
+      '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><title>x</title>' +
+      entry(NEW, '2026-09-20T10:00:00Z') +
+      entry('https://hamatti.org/posts/notes-of-movie-theater-2/', '2026-09-27T10:00:00Z') +
+      '</feed>',
+  });
+
+  await fetchAndStoreFeed(feed);
+
+  const rows = await db.select().from(articles).where(eq(articles.feedId, feed.id));
+  expect(rows).toHaveLength(2);
+  const same = rows.find((r) => r.id === stored.id)!;
+  expect(same.guid).toBe(NEW);
+  expect(same.url).toBe(NEW);
+  expect(rows.map((r) => r.guid)).toContain('https://hamatti.org/posts/notes-of-movie-theater-2/');
+});
+
 test('a lasting failure (404) gets no early retry', async () => {
   const feed = await seedFeed();
   responses.set(feed.feedUrl, { statusCode: 404 });
