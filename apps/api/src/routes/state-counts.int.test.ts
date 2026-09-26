@@ -49,7 +49,8 @@ test('mark-read by feed marks only that feed and drops its count to zero', async
   expect(before.total).toBe(5);
 
   const res = await markRead(cookie, { feedId: f1.id });
-  expect(res.statusCode).toBe(204);
+  expect(res.statusCode).toBe(200);
+  expect(res.json().markedIds).toHaveLength(3);
 
   const after = await counts(cookie);
   expect(feedUnread(after, f1.id)).toBe(0);
@@ -162,7 +163,7 @@ test('articleIds marks exactly those articles, hidden feeds included', async () 
   const cookie = await loginAs(user);
 
   const res = await markRead(cookie, { articleIds: [a1.id, h1.id] });
-  expect(res.statusCode).toBe(204);
+  expect(res.json().markedIds.sort()).toEqual([a1.id, h1.id].sort());
   const c = await counts(cookie);
   expect(feedUnread(c, shown.id)).toBe(1);
   expect(feedUnread(c, hidden.id)).toBe(0);
@@ -176,7 +177,7 @@ test('articleIds never reaches a feed the user does not follow', async () => {
   const a = await seedArticle(feed.id, {});
   const cookie = await loginAs(user);
 
-  expect((await markRead(cookie, { articleIds: [a.id] })).statusCode).toBe(204);
+  expect((await markRead(cookie, { articleIds: [a.id] })).json()).toEqual({ markedIds: [] });
   const [row] = await db
     .select()
     .from(articleStates)
@@ -231,13 +232,76 @@ test('mark-read is idempotent and preserves starred/read_at', async () => {
   expect(row2!.readAt?.getTime()).toBe(firstReadAt?.getTime()); // unchanged, idempotent
 });
 
-test('mark-read on an empty scope returns 204 and changes nothing', async () => {
+test('mark-read on an empty scope marks nothing and changes nothing', async () => {
   const user = await seedUser();
   const folder = await seedFolder(user.id);
   const cookie = await loginAs(user);
   const res = await markRead(cookie, { folderId: folder.id }); // folder has no feeds
-  expect(res.statusCode).toBe(204);
+  expect(res.json()).toEqual({ markedIds: [] });
   expect((await counts(cookie)).total).toBe(0);
+});
+
+// #26: Undo.
+
+test('markedIds lists only what this call changed; Undo restores exactly those', async () => {
+  const user = await seedUser();
+  const feed = await seedFeed();
+  await seedSubscription(user.id, feed.id);
+  const fresh1 = await seedArticle(feed.id, {});
+  const fresh2 = await seedArticle(feed.id, {});
+  const alreadyRead = await seedArticle(feed.id, {});
+  await seedArticleState(user.id, alreadyRead.id, { read: true, readAt: new Date() });
+  const cookie = await loginAs(user);
+
+  const res = await markRead(cookie, { feedId: feed.id });
+  expect(res.json().markedIds.sort()).toEqual([fresh1.id, fresh2.id].sort());
+  expect(feedUnread(await counts(cookie), feed.id)).toBe(0);
+
+  const undo = await app.inject({
+    method: 'POST',
+    url: '/api/articles/mark-unread',
+    headers: { cookie },
+    payload: { articleIds: res.json().markedIds },
+  });
+  expect(undo.statusCode).toBe(204);
+  expect(feedUnread(await counts(cookie), feed.id)).toBe(2);
+  // The one read before the call stays read.
+  const [kept] = await db
+    .select()
+    .from(articleStates)
+    .where(and(eq(articleStates.userId, user.id), eq(articleStates.articleId, alreadyRead.id)));
+  expect(kept!.read).toBe(true);
+});
+
+test('before (older than) keeps newer items unread, and markedIds says so', async () => {
+  const user = await seedUser();
+  const feed = await seedFeed();
+  await seedSubscription(user.id, feed.id);
+  const old = await seedArticle(feed.id, { publishedAt: new Date('2026-01-01T00:00:00Z') });
+  await seedArticle(feed.id, { publishedAt: new Date('2026-01-09T00:00:00Z') });
+  const cookie = await loginAs(user);
+
+  const res = await markRead(cookie, { feedId: feed.id, before: '2026-01-05T00:00:00.000Z' });
+  expect(res.json().markedIds).toEqual([old.id]);
+  expect(feedUnread(await counts(cookie), feed.id)).toBe(1);
+});
+
+test("mark-unread touches only the caller's own rows and rejects bad input", async () => {
+  const owner = await seedUser();
+  const other = await seedUser();
+  const feed = await seedFeed();
+  await seedSubscription(owner.id, feed.id);
+  const a = await seedArticle(feed.id, {});
+  await seedArticleState(owner.id, a.id, { read: true, readAt: new Date() });
+  const cookie = await loginAs(other);
+  const unread = (body: Record<string, unknown>) =>
+    app.inject({ method: 'POST', url: '/api/articles/mark-unread', headers: { cookie }, payload: body });
+
+  expect((await unread({ articleIds: [a.id] })).statusCode).toBe(204);
+  const [row] = await db.select().from(articleStates).where(eq(articleStates.articleId, a.id));
+  expect(row!.read).toBe(true);
+  expect((await unread({ articleIds: [] })).statusCode).toBe(400);
+  expect((await unread({ articleIds: ['nope'] })).statusCode).toBe(400);
 });
 
 test('PATCH state toggles one half without touching the other, idempotently', async () => {

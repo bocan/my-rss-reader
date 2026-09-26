@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   ArrowDownAZ,
   ArrowDownWideNarrow,
+  ChevronDown,
   ChevronLeft,
   Circle,
   CircleDot,
@@ -33,12 +34,15 @@ import { FolderTree } from '@/components/sidebar/folder-tree';
 import { SubscribeDialog } from '@/components/subscribe-dialog';
 import { Button } from '@/components/ui/button';
 import {
+  DropdownMenu,
   DropdownMenuCheckboxItem,
+  DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useArticleSurface } from '@/hooks/use-article-surface';
 import { useArticleToggles } from '@/hooks/use-article-toggles';
@@ -49,7 +53,8 @@ import { useShortcuts } from '@/hooks/use-shortcuts';
 import { useSidebar } from '@/hooks/use-sidebar';
 import { announce } from '@/lib/announce';
 import { notify } from '@/lib/notify';
-import { useMarkRead, useUnreadCounts } from '@/lib/articles';
+import { useUnreadCounts } from '@/lib/articles';
+import { OLDER_THAN, olderThan, useMarkAllRead } from '@/lib/mark-all-read';
 import { useSession } from '@/lib/auth';
 import { useCommunityShares } from '@/lib/community';
 import { orderedVisibleFeedIds, type FeedSort } from '@/lib/feed-order';
@@ -310,25 +315,19 @@ export function ReaderPage() {
       ? (counts?.folders.find((f) => f.folderId === filters.folderId)?.unreadCount ?? 0)
       : (counts?.total ?? 0);
   const canMarkAll = !filters.starred && !filters.shared && !filters.attention && !communityOpen;
-  const markRead = useMarkRead();
-  function markAllRead() {
-    if (unreadForView > 20 && !window.confirm(`Mark ${unreadForView} articles as read?`)) return;
+  const markAll = useMarkAllRead();
+  // Undo on the toast replaces the old "more than 20?" confirm (#26).
+  // `olderThanMs` keeps items newer than that unread.
+  function markAllRead(olderThanMs?: number) {
     // Only what this list could have shown: nothing stored after it loaded.
     const fetchedBefore = surface.asOf ?? undefined;
-    const n = unreadForView;
-    const label = scopeLabel;
-    markRead.mutate(
-      filters.feedId
-        ? { feedId: filters.feedId, fetchedBefore }
-        : filters.folderId
-          ? { folderId: filters.folderId, fetchedBefore }
-          : { fetchedBefore },
-      // Confirm only once the server agreed; a failure toasts via the cache.
-      {
-        onSuccess: () =>
-          notify.success(`Marked ${n} ${n === 1 ? 'article' : 'articles'} as read in ${label}.`),
-      },
-    );
+    const before = olderThanMs ? olderThan(olderThanMs) : undefined;
+    const scope = filters.feedId
+      ? { feedId: filters.feedId }
+      : filters.folderId
+        ? { folderId: filters.folderId }
+        : {};
+    markAll({ ...scope, fetchedBefore, before }, scopeLabel);
   }
 
   // --- Keyboard layer (SPEC-008) ---------------------------------------
@@ -635,9 +634,31 @@ export function ReaderPage() {
           )}
         />
         {canMarkAll && !isSearching && unreadForView > 0 && (
-          <Button variant="ghost" size="sm" className="hidden sm:inline-flex" onClick={markAllRead}>
-            Mark all read
-          </Button>
+          <div className="hidden items-center sm:flex">
+            <Button variant="ghost" size="sm" className="rounded-r-none pr-2" onClick={() => markAllRead()}>
+              Mark all read
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="rounded-l-none px-1"
+                  aria-label="Mark older articles read"
+                  title="Mark older articles read"
+                >
+                  <ChevronDown className="size-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {OLDER_THAN.map((o) => (
+                  <DropdownMenuItem key={o.label} onSelect={() => markAllRead(o.ms)}>
+                    {o.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         )}
         <Button
           variant={unreadOnly ? 'default' : 'ghost'}
@@ -669,7 +690,14 @@ export function ReaderPage() {
   const phoneMenu = (
     <>
       {canMarkAll && !isSearching && unreadForView > 0 && (
-        <DropdownMenuItem onSelect={markAllRead}>Mark all read</DropdownMenuItem>
+        <>
+          <DropdownMenuItem onSelect={() => markAllRead()}>Mark all read</DropdownMenuItem>
+          {OLDER_THAN.map((o) => (
+            <DropdownMenuItem key={o.label} onSelect={() => markAllRead(o.ms)}>
+              Mark read: {o.label.toLowerCase()}
+            </DropdownMenuItem>
+          ))}
+        </>
       )}
       <DropdownMenuCheckboxItem
         checked={unreadOnly}

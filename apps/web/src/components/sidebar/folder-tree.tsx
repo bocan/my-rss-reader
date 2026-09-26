@@ -29,7 +29,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useMarkRead } from '@/lib/articles';
+import { useMarkAllRead } from '@/lib/mark-all-read';
 import { byFolderName, makeFeedComparator, type FeedSort } from '@/lib/feed-order';
 import {
   useCreateFolder,
@@ -95,7 +95,12 @@ export function FolderTree({
   const deleteFolder = useDeleteFolder();
   const updateSub = useUpdateSubscription();
   const unsubscribe = useUnsubscribe();
-  const markRead = useMarkRead();
+  // The same Mark all read as the top bar: Undo on a toast (#26).
+  const markAll = useMarkAllRead();
+  const feedName = (feedId: string) => {
+    const s = subs.find((x) => x.feedId === feedId);
+    return s ? (s.customTitle ?? s.title ?? s.feedUrl) : 'this feed';
+  };
 
   const expanded = useExpandedFolders();
   const [editing, setEditing] = useState<{ kind: 'folder' | 'feed'; id: string } | null>(null);
@@ -240,11 +245,11 @@ export function FolderTree({
                   deleteFolder.mutate(folder.id);
                 }
               }}
-              onMarkRead={() => markRead.mutate({ folderId: folder.id })}
+              onMarkRead={() => markAll({ folderId: folder.id }, folder.name)}
               onRenameFeed={(id) => setEditing({ kind: 'feed', id })}
               onEditFeed={openFeedSettings}
               onUnsubscribe={(id) => unsubscribe.mutate(id)}
-              onMarkFeedRead={(feedId) => markRead.mutate({ feedId })}
+              onMarkFeedRead={(feedId) => markAll({ feedId }, feedName(feedId))}
             />
           ))}
         </SortableContext>
@@ -270,7 +275,7 @@ export function FolderTree({
                 onRename={() => setEditing({ kind: 'feed', id: sub.subscriptionId })}
                 onEditSettings={() => openFeedSettings(sub)}
                 onUnsubscribe={() => unsubscribe.mutate(sub.subscriptionId)}
-                onMarkRead={() => markRead.mutate({ feedId: sub.feedId })}
+                onMarkRead={() => markAll({ feedId: sub.feedId }, feedName(sub.feedId))}
               />
             ))}
           </SortableContext>

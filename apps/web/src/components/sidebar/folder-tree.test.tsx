@@ -5,7 +5,7 @@ import type { SubscriptionRow } from '@/lib/folders';
 import { FolderTree } from './folder-tree';
 
 const markRead = vi.hoisted(() => vi.fn());
-vi.mock('@/lib/articles', () => ({ useMarkRead: () => ({ mutate: markRead }) }));
+vi.mock('@/lib/mark-all-read', () => ({ useMarkAllRead: () => markRead }));
 
 const sub: SubscriptionRow = {
   subscriptionId: 's1',
@@ -63,7 +63,8 @@ test('"Mark all read" fires even when the pointer moves a few px during the clic
   fireEvent.mouseUp(document, at(10));
   fireEvent.click(item);
 
-  expect(markRead).toHaveBeenCalledWith({ feedId: 'f1' });
+  // The same Undo-able mark as the top bar (#26), named for the toast.
+  expect(markRead).toHaveBeenCalledWith({ feedId: 'f1' }, 'Dave Rupert');
 });
 
 // #25: folder badges.

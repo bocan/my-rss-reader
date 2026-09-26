@@ -86,3 +86,17 @@ export const markReadSchema = z.object({
   articleIds: z.array(z.uuid()).min(1).max(200).optional(),
 });
 export type MarkReadInput = z.infer<typeof markReadSchema>;
+
+/**
+ * POST /articles/mark-read answer: exactly the articles this call turned from
+ * unread to read (already-read ones are left out), for Undo (#26).
+ */
+export interface MarkReadResult {
+  markedIds: string[];
+}
+
+/** Undo a mark-read (#26): set these articles back to unread. */
+export const markUnreadSchema = z.object({
+  articleIds: z.array(z.uuid()).min(1).max(20_000),
+});
+export type MarkUnreadInput = z.infer<typeof markUnreadSchema>;

@@ -1,8 +1,10 @@
 import {
   articleQuerySchema,
   markReadSchema,
+  markUnreadSchema,
   readableQuerySchema,
   updateArticleStateSchema,
+  type MarkReadResult,
   type Paginated,
 } from '@rss/shared';
 import { and, eq, inArray, isNotNull, or, sql, type SQL } from 'drizzle-orm';
@@ -326,7 +328,7 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
   // Bulk mark-as-read across a feed, a folder's feeds, or All items, optionally
   // only items older than `before` and only items already stored by
   // `fetchedBefore`. One set-based statement.
-  app.post('/articles/mark-read', auth, async (request, reply) => {
+  app.post('/articles/mark-read', auth, async (request) => {
     const input = markReadSchema.parse(request.body);
     const userId = request.user!.id;
 
@@ -338,7 +340,8 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
       folderId: input.folderId,
       excludeHidden: !input.articleIds,
     });
-    if (feedIds.length === 0) return reply.code(204).send(); // empty folder / no subs
+    // Empty folder / no subs: nothing to mark.
+    if (feedIds.length === 0) return { markedIds: [] } satisfies MarkReadResult;
 
     // Bind the feed ids as a single Postgres array literal param. (drizzle's sql
     // template expands a JS array into separate params, which breaks any(...).)
@@ -360,7 +363,9 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
 
     // The conflict guard (read = false) makes this idempotent: already-read
     // articles keep their original read_at, and starred/starred_at survive.
-    await db.execute(sql`
+    // RETURNING covers inserted and updated rows only, never the rows the
+    // guard skipped, so it is exactly what this call changed (for Undo, #26).
+    const rows = await db.execute<{ article_id: string }>(sql`
       insert into article_states (user_id, article_id, read, read_at)
       select ${userId}::uuid, a.id, true, now()
       from articles a
@@ -368,8 +373,25 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
       on conflict (user_id, article_id) do update
         set read = true, read_at = now()
         where article_states.read = false
+      returning article_id
     `);
 
+    return { markedIds: rows.map((r) => r.article_id) } satisfies MarkReadResult;
+  });
+
+  // Undo a mark-read (#26): only the caller's own rows, only ones still read.
+  app.post('/articles/mark-unread', auth, async (request, reply) => {
+    const { articleIds } = markUnreadSchema.parse(request.body);
+    await db
+      .update(articleStates)
+      .set({ read: false, readAt: null })
+      .where(
+        and(
+          eq(articleStates.userId, request.user!.id),
+          inArray(articleStates.articleId, articleIds),
+          eq(articleStates.read, true),
+        ),
+      );
     return reply.code(204).send();
   });
 

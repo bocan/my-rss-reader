@@ -1,7 +1,8 @@
-import type { ArticleDetail, Paginated, UnreadCounts } from '@rss/shared';
+import type { ArticleDetail, MarkReadResult, Paginated, UnreadCounts } from '@rss/shared';
 import {
   useMutation,
   useQuery,
+  useQueryClient,
   type MutateOptions,
   type QueryClient,
 } from '@tanstack/react-query';
@@ -223,7 +224,7 @@ type ToggleVars = {
   shareNote?: string | null;
 };
 type TogglePatch = Omit<ToggleVars, 'articleId'>;
-type MarkReadScope = {
+export type MarkReadScope = {
   feedId?: string;
   folderId?: string;
   before?: string;
@@ -266,7 +267,7 @@ export function registerMutationDefaults(qc: QueryClient): void {
   qc.setMutationDefaults(MARK_READ_KEY, {
     meta: { errorMessage: 'Could not mark the articles as read.' },
     mutationFn: (scope: MarkReadScope) =>
-      api<void>('/articles/mark-read', { method: 'POST', body: scope }),
+      api<MarkReadResult>('/articles/mark-read', { method: 'POST', body: scope }),
     onMutate: async (scope: MarkReadScope): Promise<Ctx> => {
       const ctx = await snapshot(qc);
       if (scope.articleIds) {
@@ -323,5 +324,16 @@ export function useToggleArticleState(articleId: string) {
 
 /** Optimistically mark a whole scope read (feed, folder, or everything). */
 export function useMarkRead() {
-  return useMutation<void, Error, MarkReadScope, Ctx>({ mutationKey: MARK_READ_KEY });
+  return useMutation<MarkReadResult, Error, MarkReadScope, Ctx>({ mutationKey: MARK_READ_KEY });
+}
+
+/** Undo a mark-read (#26): these articles go back to unread, then refetch. */
+export function useMarkUnread() {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: { errorMessage: 'Could not undo. The articles are still read.' },
+    mutationFn: (articleIds: string[]) =>
+      api<void>('/articles/mark-unread', { method: 'POST', body: { articleIds } }),
+    onSettled: () => reconcile(qc),
+  });
 }
