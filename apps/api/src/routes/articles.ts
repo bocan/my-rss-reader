@@ -5,7 +5,7 @@ import {
   updateArticleStateSchema,
   type Paginated,
 } from '@rss/shared';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, or, sql, type SQL } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { db } from '../db/index.js';
 import { articles, articleStates, feeds, subscriptions } from '../db/schema.js';
@@ -24,10 +24,10 @@ import { FIREHOSE_EXPIRY_DAYS } from '../lib/unread-counts.js';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Load one article for a user, scoped to their subscriptions (inner join on
- * subscriptions enforces access). Returns null when the id is malformed, the
- * article does not exist, or the user is not subscribed to its feed - all of
- * which the caller maps to an indistinguishable 404.
+ * Load one article for a user. Access needs a subscription to its feed, or the
+ * user's own star or share on it (those outlive an unsubscribe, #16). Returns
+ * null when the id is malformed, the article does not exist, or neither holds -
+ * all of which the caller maps to an indistinguishable 404.
  */
 async function loadArticleDetail(userId: string, id: string) {
   if (!UUID_RE.test(id)) return null;
@@ -55,7 +55,7 @@ async function loadArticleDetail(userId: string, id: string) {
     })
     .from(articles)
     .innerJoin(feeds, eq(articles.feedId, feeds.id))
-    .innerJoin(
+    .leftJoin(
       subscriptions,
       and(eq(subscriptions.feedId, articles.feedId), eq(subscriptions.userId, userId)),
     )
@@ -63,7 +63,16 @@ async function loadArticleDetail(userId: string, id: string) {
       articleStates,
       and(eq(articleStates.articleId, articles.id), eq(articleStates.userId, userId)),
     )
-    .where(eq(articles.id, id))
+    .where(
+      and(
+        eq(articles.id, id),
+        or(
+          isNotNull(subscriptions.id),
+          eq(articleStates.starred, true),
+          eq(articleStates.shared, true),
+        ),
+      ),
+    )
     .limit(1);
 
   const r = rows[0];
@@ -148,6 +157,14 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
       !query.attention &&
       !isSearch;
     if (isAllItems) subFilters.push(eq(subscriptions.hideFromAll, false));
+    // Starred and Shared are the user's own marks, so they do not need a
+    // subscription: they survive an unsubscribe (#16). A feed, folder, or tier
+    // narrowing still means "within my subscriptions".
+    const isStateScope =
+      Boolean(query.starred || query.shared) &&
+      !query.feedId &&
+      !query.folderId &&
+      !query.attention;
     const subs = await db
       .select({ feedId: subscriptions.feedId, attention: subscriptions.attention })
       .from(subscriptions)
@@ -166,13 +183,13 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
                 < now() - make_interval(days => ${FIREHOSE_EXPIRY_DAYS}))`
         : null;
 
-    if (feedIds.length === 0) {
+    if (feedIds.length === 0 && !isStateScope) {
       return { items: [], nextCursor: null, asOf } satisfies Paginated<never>;
     }
 
     const sortKey = sql`coalesce(${articles.publishedAt}, ${articles.fetchedAt})`;
 
-    const filters = [inArray(articles.feedId, feedIds)];
+    const filters: SQL[] = isStateScope ? [] : [inArray(articles.feedId, feedIds)];
     if (query.unread !== undefined) {
       // No state row means unread; treat missing rows as read=false.
       filters.push(sql`coalesce(${articleStates.read}, false) = ${!query.unread}`);
@@ -272,7 +289,7 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // Read-through cache for the Simplified view. Extraction runs only here, only
-  // on a cache miss (or ?refresh=true), and only for a subscribed article.
+  // on a cache miss (or ?refresh=true), and only for an article the user can open.
   app.get('/articles/:id/readable', auth, async (request, reply) => {
     const { id } = request.params as { id: string };
     const query = readableQuerySchema.parse(request.query);

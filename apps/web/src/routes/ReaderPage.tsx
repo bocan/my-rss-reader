@@ -32,6 +32,7 @@ import { SubscribeDialog } from '@/components/subscribe-dialog';
 import { Button } from '@/components/ui/button';
 import { useArticleSurface } from '@/hooks/use-article-surface';
 import type { ArticleFilters, ArticleListItem } from '@/hooks/use-articles';
+import { useLeaveGoneFeed } from '@/hooks/use-leave-gone-feed';
 import { useListView, type ViewScope } from '@/hooks/use-list-view';
 import { useShortcuts } from '@/hooks/use-shortcuts';
 import { useSidebar } from '@/hooks/use-sidebar';
@@ -230,6 +231,15 @@ export function ReaderPage() {
     apply();
     goToList();
   };
+  // An unsubscribed feed in view falls back to All items (#16).
+  const subscribedFeedIds = useMemo(
+    () => (feedsData ? new Set(feedsData.items.map((s) => s.feedId)) : undefined),
+    [feedsData],
+  );
+  useLeaveGoneFeed(filters.feedId, subscribedFeedIds, () => {
+    clearArticle();
+    setFilters({ sort: 'newest' });
+  });
   const openCommunity = () => {
     clearArticle();
     setCommunityOpen(true);

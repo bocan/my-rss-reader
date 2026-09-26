@@ -1,6 +1,13 @@
-import type { ArticleView, AttentionTier, ViewMode, WebSubState } from '@rss/shared';
+import type {
+  ArticleView,
+  AttentionTier,
+  RestoreSubscriptionInput,
+  ViewMode,
+  WebSubState,
+} from '@rss/shared';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { api } from './api';
+import { notify } from './notify';
 
 export interface FolderRow {
   id: string;
@@ -247,8 +254,44 @@ export function useChangeFeedUrl() {
   });
 }
 
+/** How long the Undo button stays on the unsubscribe toast. */
+export const UNDO_UNSUBSCRIBE_MS = 10_000;
+
+/** The body that re-creates a subscription exactly as it was (#16). */
+export function restoreBody(s: SubscriptionRow): RestoreSubscriptionInput {
+  return {
+    feedId: s.feedId,
+    folderId: s.folderId,
+    title: s.customTitle,
+    position: s.position,
+    viewMode: s.viewMode,
+    articleView: s.articleView,
+    hideFromAll: s.hideFromAll,
+    inBlogroll: s.inBlogroll,
+    attention: s.attention,
+  };
+}
+
+/** Everything an unsubscribe or its undo changes: the tree, counts, lists. */
+function reconcileSubscriptions(qc: QueryClient) {
+  reconcileTree(qc);
+  qc.invalidateQueries({ queryKey: ['counts'] });
+  qc.invalidateQueries({ queryKey: ['articles'] });
+}
+
+/**
+ * Unsubscribe at once, then offer Undo on a toast for a while. Undo subscribes
+ * again with the same folder, title, place, and settings. Read, starred, and
+ * shared marks are per article, so they were never lost.
+ */
 export function useUnsubscribe() {
   const qc = useQueryClient();
+  const undo = useMutation({
+    meta: { errorMessage: 'Could not undo the unsubscribe.' },
+    mutationFn: (body: RestoreSubscriptionInput) =>
+      api<SubscriptionRow>('/feeds/restore', { method: 'POST', body }),
+    onSettled: () => reconcileSubscriptions(qc),
+  });
   return useMutation({
     meta: { errorMessage: 'Could not unsubscribe.' },
     mutationFn: (subscriptionId: string) =>
@@ -261,9 +304,14 @@ export function useUnsubscribe() {
       return ctx;
     },
     onError: (_e, _v, ctx) => restoreTree(qc, ctx),
-    onSettled: () => {
-      reconcileTree(qc);
-      qc.invalidateQueries({ queryKey: ['counts'] });
+    onSuccess: (_d, subscriptionId, ctx) => {
+      const sub = ctx?.feeds?.items.find((s) => s.subscriptionId === subscriptionId);
+      if (!sub) return;
+      notify.success(`Unsubscribed from ${sub.customTitle ?? sub.title ?? sub.feedUrl}.`, {
+        duration: UNDO_UNSUBSCRIBE_MS,
+        action: { label: 'Undo', onClick: () => undo.mutate(restoreBody(sub)) },
+      });
     },
+    onSettled: () => reconcileSubscriptions(qc),
   });
 }

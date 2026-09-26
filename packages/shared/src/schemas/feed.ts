@@ -31,6 +31,23 @@ export const updateSubscriptionSchema = z.object({
 });
 export type UpdateSubscriptionInput = z.infer<typeof updateSubscriptionSchema>;
 
+/**
+ * Undo an unsubscribe (#16): subscribe again to a feed that still exists, with
+ * the folder, title, place, and per-feed settings the old subscription had.
+ */
+export const restoreSubscriptionSchema = z.object({
+  feedId: z.uuid(),
+  folderId: z.uuid().nullable(),
+  title: z.string().min(1).max(200).nullable(),
+  position: z.number().int().nonnegative(),
+  viewMode: z.enum(VIEW_MODES).nullable(),
+  articleView: z.enum(ARTICLE_VIEWS).nullable(),
+  hideFromAll: z.boolean(),
+  inBlogroll: z.boolean(),
+  attention: z.enum(ATTENTION_TIERS),
+});
+export type RestoreSubscriptionInput = z.infer<typeof restoreSubscriptionSchema>;
+
 /** Re-point a subscription at a feed living at a new URL (SPEC-018). */
 export const changeFeedUrlSchema = z.object({
   feedUrl: z.url(),

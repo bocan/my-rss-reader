@@ -2,6 +2,7 @@ import {
   changeFeedUrlSchema,
   createFolderSchema,
   discoverFeedsQuerySchema,
+  restoreSubscriptionSchema,
   subscribeSchema,
   updateFolderSchema,
   updateSubscriptionSchema,
@@ -339,6 +340,62 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
       .delete(subscriptions)
       .where(and(eq(subscriptions.id, id), eq(subscriptions.userId, request.user!.id)));
     return reply.code(204).send();
+  });
+
+  // Undo an unsubscribe (#16). The feed row outlives its subscribers, so this
+  // subscribes again by feed id with the old settings, and puts the feed back
+  // in its place. A folder deleted in the meantime falls back to the root.
+  // Returns the GET /feeds row shape.
+  app.post('/feeds/restore', auth, async (request, reply) => {
+    const input = restoreSubscriptionSchema.parse(request.body);
+    const userId = request.user!.id;
+
+    const [feed] = await db
+      .select({ id: feeds.id })
+      .from(feeds)
+      .where(eq(feeds.id, input.feedId))
+      .limit(1);
+    if (!feed) return reply.code(404).send(notFound);
+
+    let folderId = input.folderId;
+    if (folderId) {
+      const [folder] = await db
+        .select({ id: folders.id })
+        .from(folders)
+        .where(and(eq(folders.id, folderId), eq(folders.userId, userId)))
+        .limit(1);
+      if (!folder) folderId = null;
+    }
+
+    const id = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(subscriptions)
+        .values({
+          userId,
+          feedId: input.feedId,
+          folderId,
+          customTitle: input.title,
+          viewMode: input.viewMode,
+          articleView: input.articleView,
+          hideFromAll: input.hideFromAll,
+          inBlogroll: input.inBlogroll,
+          attention: input.attention,
+        })
+        .onConflictDoNothing({ target: [subscriptions.userId, subscriptions.feedId] })
+        .returning({ id: subscriptions.id });
+      if (!row) return null;
+      await placeSubscription(tx, userId, row.id, folderId, input.position);
+      return row.id;
+    });
+    if (!id) {
+      return reply.code(409).send({
+        error: 'already_subscribed',
+        message: 'You are already subscribed to that feed',
+        statusCode: 409,
+      });
+    }
+
+    return reply.code(201).send((await subscriptionRow(id, userId))!);
   });
 
   // --- Folders ---
