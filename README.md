@@ -19,7 +19,9 @@ each other.
   a view read, `/` to search, `?` for the full shortcut overlay. The mouse is
   optional.
 - **Fast, honest search.** Postgres full-text search across everything you
-  are subscribed to, with phrase and exclusion syntax, ranked sensibly.
+  are subscribed to, with phrase and exclusion syntax, ranked sensibly. Save
+  a search to the sidebar, and let rules mark read or star new articles for
+  you.
 - **It respects your attention.** Unread-only mode, mark-all-read that does
   what it says with Undo, per-feed controls (custom titles, Skim / Must read
   attention levels, hide from All Items), and folders and subfolders that
@@ -167,9 +169,12 @@ spec in [`docs/design-specs`](docs/design-specs).
       starring keeps a readable copy of the page, every article has a
       Wayback Machine link for pages that already died, and admins can set
       how long to keep old articles (starred and shared ones are always kept).
+- [x] **Saved searches and rules** ([SPEC-025](docs/design-specs/025-saved-searches-and-rules.md)):
+      save a search, scope and all, to the sidebar, and set rules that mark
+      read or star new articles as they arrive ("title contains sponsored:
+      mark it read"), with a button to run a rule over older articles too.
 
 ## What's coming
 
-- [ ] **Saved searches and rules** ([SPEC-025](docs/design-specs/025-saved-searches-and-rules.md)):
-      searches pinned to the sidebar as virtual feeds, plus auto-mark-read /
-      auto-star rules applied at ingestion.
+Every spec in [`docs/design-specs`](docs/design-specs) is built. New work
+starts as a new spec there.
