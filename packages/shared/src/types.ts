@@ -141,6 +141,8 @@ export interface InviteDto {
 export interface AppSettingsDto {
   registrationMode: RegistrationMode;
   defaultPollIntervalSec: number;
+  /** Days to keep articles (SPEC-024); null keeps them forever. */
+  articleRetentionDays: number | null;
 }
 
 /** A cursor-paginated response envelope. */

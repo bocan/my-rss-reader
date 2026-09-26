@@ -100,6 +100,9 @@ export const appSettings = pgTable('app_settings', {
   // App-wide default feed poll interval; feeds inherit it unless they override
   // their own fetchIntervalSec (SPEC-018).
   defaultPollIntervalSec: integer().notNull().default(900),
+  // Article retention in days (SPEC-024). null = keep forever (default).
+  // Starred/shared items and each feed's newest items are always exempt.
+  articleRetentionDays: integer(),
   updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 }, (t) => [check('app_settings_singleton', sql`${t.id} = 1`)]);
 

@@ -3,7 +3,7 @@ import type {
   AppSettingsDto,
   CreateInviteInput,
   InviteDto,
-  RegistrationMode,
+  UpdateAppSettingsInput,
   UpdateUserInput,
 } from '@rss/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -70,7 +70,7 @@ export function useUpdateAdminSettings() {
   const qc = useQueryClient();
   return useMutation({
     meta: { errorMessage: 'Could not save the instance settings.' },
-    mutationFn: (patch: { registrationMode?: RegistrationMode; defaultPollIntervalSec?: number }) =>
+    mutationFn: (patch: UpdateAppSettingsInput) =>
       api<AppSettingsDto>('/admin/settings', { method: 'PATCH', body: patch }),
     onSuccess: (data) => qc.setQueryData(SETTINGS_KEY, data),
   });

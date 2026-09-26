@@ -6,7 +6,7 @@ import {
   type UserRole,
 } from '@rss/shared';
 import { Check, ChevronLeft, Copy, Trash2 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
 import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/button';
@@ -52,6 +52,7 @@ export function AdminPage() {
 
         <RegistrationSection />
         <FeedsSection />
+        <RetentionSection />
         <UsersSection />
         <InvitesSection />
       </div>
@@ -102,6 +103,84 @@ function FeedsSection() {
           <span className="text-sm text-muted-foreground">Currently every {current} min</span>
         )}
       </div>
+    </section>
+  );
+}
+
+// --- Article retention (SPEC-024) ------------------------------------------
+
+export function RetentionSection() {
+  const { data } = useAdminSettings();
+  const update = useUpdateAdminSettings();
+  const current = data?.articleRetentionDays ?? null;
+  // Blank means forever. Seeded once from the server value.
+  const [days, setDays] = useState<string | null>(null);
+  const value = days ?? (current != null ? String(current) : '');
+
+  function save(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const next = value.trim() === '' ? null : Math.round(Number(value));
+    if (next === current) return;
+    // A shorter window deletes articles in the next daily clean-up, for good.
+    if (
+      next !== null &&
+      (current === null || next < current) &&
+      !confirm(
+        `Delete articles older than ${next} days in the next daily clean-up? ` +
+          'Starred and shared articles, and each feed\'s newest 100, are kept. This cannot be undone.',
+      )
+    ) {
+      return;
+    }
+    update.mutate({ articleRetentionDays: next }, { onSuccess: () => setDays(null) });
+  }
+
+  return (
+    <section className="space-y-3 rounded-lg border p-4">
+      <div>
+        <h2 className="font-medium">Articles</h2>
+        <p className="text-sm text-muted-foreground">
+          How long to keep articles. Leave it blank to keep them forever.
+        </p>
+      </div>
+      <form onSubmit={save} className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-2 text-sm">
+          <span>Keep articles for</span>
+          <input
+            type="number"
+            min={30}
+            max={3650}
+            step={1}
+            value={value}
+            placeholder="Forever"
+            aria-describedby="retention-note"
+            onChange={(e) => setDays(e.target.value)}
+            className="h-9 w-28 rounded-md border border-input bg-background px-3 text-sm"
+          />
+          <span className="text-muted-foreground">days</span>
+        </label>
+        <Button size="sm" type="submit" disabled={update.isPending}>
+          Save
+        </Button>
+        {current !== null && (
+          <Button
+            size="sm"
+            type="button"
+            variant="ghost"
+            disabled={update.isPending}
+            onClick={() => update.mutate({ articleRetentionDays: null }, { onSuccess: () => setDays(null) })}
+          >
+            Keep forever
+          </Button>
+        )}
+        <span className="text-sm text-muted-foreground">
+          {data ? (current === null ? 'Currently kept forever' : `Currently ${current} days`) : ''}
+        </span>
+      </form>
+      <p id="retention-note" className="text-xs text-muted-foreground">
+        Starred and shared articles, and each feed&apos;s newest 100 items, are always kept. From 30
+        to 3650 days.
+      </p>
     </section>
   );
 }
