@@ -9,6 +9,7 @@ import {
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { api } from './api';
 import { placeAt } from './feed-order';
+import { liveQueryOptions } from './live-refresh';
 import { notify } from './notify';
 
 export interface FolderRow {
@@ -65,7 +66,12 @@ export function useFolders() {
 }
 
 export function useSubscriptions() {
-  return useQuery({ queryKey: ['feeds'], queryFn: () => api<FeedsData>('/feeds') });
+  return useQuery({
+    queryKey: ['feeds'],
+    queryFn: () => api<FeedsData>('/feeds'),
+    // New errors and titles from the worker show up by themselves (#30).
+    ...liveQueryOptions,
+  });
 }
 
 /** Snapshot both trees, so any failed mutation can roll the sidebar back. */

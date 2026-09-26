@@ -1,3 +1,4 @@
+import { ArrowUp } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import type { ArticleSurface } from '@/hooks/use-article-surface';
@@ -23,6 +24,20 @@ export function ArticleScroller({
 
   return (
     <div ref={surface.rootRef} className={cn('min-h-0 flex-1 overflow-y-auto', className)}>
+      {/* #30: new articles wait for a click, so the list never moves under the reader. */}
+      <div role="status" className="pointer-events-none sticky top-0 z-10 flex h-0 justify-center overflow-visible">
+        {surface.newCount > 0 && (
+          <Button
+            size="sm"
+            className="pointer-events-auto mt-2 rounded-full shadow-md"
+            onClick={surface.showNew}
+          >
+            <ArrowUp className="size-3.5" />
+            {surface.newCount === 1 ? '1 new article' : `${surface.newCount} new articles`}
+          </Button>
+        )}
+      </div>
+
       {isLoading && (
         <div className="space-y-2 p-3">
           {Array.from({ length: 8 }).map((_, i) => (

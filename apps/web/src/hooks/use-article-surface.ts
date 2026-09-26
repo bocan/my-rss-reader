@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMarkRead } from '@/lib/articles';
 import { createScrollReadTracker } from '@/lib/scroll-read';
-import { useArticles, type ArticleFilters, type ArticleListItem } from './use-articles';
+import {
+  useArticles,
+  useNewArticleCount,
+  type ArticleFilters,
+  type ArticleListItem,
+} from './use-articles';
 
 /** Start loading the next page when a step lands this close to the end. */
 const PREFETCH_WITHIN = 3;
@@ -24,6 +29,10 @@ export interface ArticleSurface {
   error: unknown;
   /** Refetch the list after a load error. */
   retry: () => void;
+  /** Articles that arrived after the list loaded, not shown yet (#30). */
+  newCount: number;
+  /** Load them: refetch the list and go to its top. */
+  showNew: () => void;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   focusedId: string | null;
@@ -70,6 +79,7 @@ export function useArticleSurface(
   const items = useMemo(() => data?.pages.flatMap((p) => p.items) ?? [], [data]);
   // Server time of the first page: nothing stored after it is on screen.
   const asOf = data?.pages[0]?.asOf ?? null;
+  const newCount = useNewArticleCount(filters, asOf);
   const itemsRef = useRef(items);
   itemsRef.current = items;
 
@@ -215,6 +225,12 @@ export function useArticleSurface(
     isError,
     error,
     retry: () => void refetch(),
+    newCount,
+    showNew: () => {
+      rootRef.current?.scrollTo({ top: 0 });
+      // The refetch brings a new asOf, which starts the count again at 0.
+      void refetch();
+    },
     hasNextPage,
     isFetchingNextPage,
     focusedId,

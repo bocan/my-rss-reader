@@ -11,6 +11,8 @@ export function surfaceStub(over: Partial<ArticleSurface> = {}): ArticleSurface 
     isError: false,
     error: null,
     retry: vi.fn(),
+    newCount: 0,
+    showNew: vi.fn(),
     hasNextPage: false,
     isFetchingNextPage: false,
     focusedId: null,

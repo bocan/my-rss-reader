@@ -22,6 +22,15 @@ export const articleQuerySchema = z.object({
 });
 export type ArticleQuery = z.infer<typeof articleQuerySchema>;
 
+/**
+ * How many articles joined a list scope after `since` (the list's `asOf`), for
+ * the "N new articles" bar (#30). Search has no such bar.
+ */
+export const newArticleCountQuerySchema = articleQuerySchema
+  .pick({ feedId: true, folderId: true, unread: true, starred: true, shared: true, attention: true })
+  .extend({ since: z.iso.datetime({ offset: true }) });
+export type NewArticleCountQuery = z.infer<typeof newArticleCountQuerySchema>;
+
 export const updateArticleStateSchema = z.object({
   read: z.boolean().optional(),
   starred: z.boolean().optional(),

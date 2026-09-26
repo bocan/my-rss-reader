@@ -8,6 +8,7 @@ import {
 } from '@tanstack/react-query';
 import type { ArticleListItem } from '@/hooks/use-articles';
 import { api } from './api';
+import { liveQueryOptions } from './live-refresh';
 
 type ArticlesData = { pages: Paginated<ArticleListItem>[]; pageParams: unknown[] };
 interface FeedItem {
@@ -27,7 +28,12 @@ const clamp = (n: number) => Math.max(0, n);
 
 /** Unread counts for the sidebar. Kept fresh by the optimistic writes below. */
 export function useUnreadCounts() {
-  return useQuery({ queryKey: ['counts'], queryFn: () => api<UnreadCounts>('/counts') });
+  return useQuery({
+    queryKey: ['counts'],
+    queryFn: () => api<UnreadCounts>('/counts'),
+    // Counts keep up with the worker by themselves (#30).
+    ...liveQueryOptions,
+  });
 }
 
 function feedMeta(qc: QueryClient): Map<string, FeedItem> {
