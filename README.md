@@ -21,14 +21,20 @@ each other.
 - **Fast, honest search.** Postgres full-text search across everything you
   are subscribed to, with phrase and exclusion syntax, ranked sensibly.
 - **It respects your attention.** Unread-only mode, mark-all-read that does
-  what it says, per-feed controls (custom titles, poll intervals, hide from
-  All Items), and folders that drag and drop.
+  what it says with Undo, per-feed controls (custom titles, Skim / Must read
+  attention levels, hide from All Items), and folders and subfolders that
+  drag and drop.
 - **It looks after itself.** Feeds are discovered from a plain site URL,
   favicons fetched, HTML sanitized server-side before it ever reaches your
   browser, and articles deduplicated globally no matter how many users
   subscribe.
 - **It works offline.** Installable PWA with cached articles, so the train
   tunnel does not end your morning read.
+- **It is part of the open web.** Share what you read on a public page that
+  is itself a feed, publish your blogroll, get posts in seconds from feeds
+  with a WebSub hub, and follow Mastodon and Bluesky people like any blog.
+  A star keeps a readable copy, so a dead link does not take the article
+  with it.
 - **It is yours.** OPML import and export (leave whenever you like), eight
   named themes from paper-warm to void-black, sessions in your own database,
   and not a single external service in the serving path.
@@ -126,7 +132,8 @@ the worker fetch each feed a single time regardless of how many people subscribe
 - [x] Feed discovery from a site URL + favicon fetching
 - [x] OPML import / export
 - [x] Reading views: cards, list, magazine (+ comfortable/compact density)
-- [x] Article views: simplified (readability), readable, full web
+- [x] Article views: Feed (the feed's own content), Extracted (readability),
+      and Web (the full page)
 - [x] Full-text search (Postgres `tsvector`)
 - [x] Keyboard-driven navigation (j/k, mark read, star)
 - [x] Mark-all-read, filters (unread / starred / by folder)
@@ -136,29 +143,34 @@ the worker fetch each feed a single time regardless of how many people subscribe
 - [x] Per-user settings + themes
 - [x] Admin, invites, and multi-user management
 
-## What's coming: the open-web era
+### The open-web era
 
-The next phase leans into what made the old web good. Each item is fully
-specced in [`docs/design-specs`](docs/design-specs) and waiting to be built:
+The phase that leans into what made the old web good. Each item has its
+spec in [`docs/design-specs`](docs/design-specs).
 
-- [ ] **Sharing and shared items** ([SPEC-019](docs/design-specs/019-sharing-and-shared-items.md)):
-      a proper share button, Google-Reader-style shared items with notes, and
-      an opt-in public linkblog at `/u/you` that is itself an Atom + JSON
-      feed others can subscribe to.
-- [ ] **Public blogrolls** ([SPEC-020](docs/design-specs/020-public-blogroll.md)):
+- [x] **Sharing and shared items** ([SPEC-019](docs/design-specs/019-sharing-and-shared-items.md)):
+      a proper share button, Google-Reader-style shared items with notes, an
+      opt-in public linkblog at `/u/you` that is itself an Atom + JSON feed
+      others can subscribe to, and a Community view of what others on your
+      instance share.
+- [x] **Public blogrolls** ([SPEC-020](docs/design-specs/020-public-blogroll.md)):
       a "who I read" page with an importable OPML twin.
-- [ ] **Realtime delivery via WebSub** ([SPEC-021](docs/design-specs/021-websub-realtime.md)):
+- [x] **Realtime delivery via WebSub** ([SPEC-021](docs/design-specs/021-websub-realtime.md)):
       new posts arrive in seconds when a feed offers a hub; polite polling
       otherwise.
-- [ ] **Attention tiers** ([SPEC-022](docs/design-specs/022-attention-tiers.md)):
-      mark a feed firehose (no unread guilt, ever) or precious (never miss a
+- [x] **Attention levels** ([SPEC-022](docs/design-specs/022-attention-tiers.md)):
+      mark a feed Skim (no unread guilt, ever) or Must read (never miss a
       post).
-- [ ] **Follow the new social web too** ([SPEC-023](docs/design-specs/023-social-web-profiles.md)):
-      paste a Mastodon or Bluesky profile and it just subscribes; their pages
-      were feeds all along.
-- [ ] **Link-rot armor** ([SPEC-024](docs/design-specs/024-link-rot-armor.md)):
-      starring keeps a readable copy forever, with a Wayback Machine escape
-      hatch for pages that already died.
+- [x] **Follow the new social web too** ([SPEC-023](docs/design-specs/023-social-web-profiles.md)):
+      paste a Mastodon, Bluesky or Medium profile, or a `@user@instance`
+      handle, and it just subscribes; their pages were feeds all along.
+- [x] **Link-rot armor** ([SPEC-024](docs/design-specs/024-link-rot-armor.md)):
+      starring keeps a readable copy of the page, every article has a
+      Wayback Machine link for pages that already died, and admins can set
+      how long to keep old articles (starred and shared ones are always kept).
+
+## What's coming
+
 - [ ] **Saved searches and rules** ([SPEC-025](docs/design-specs/025-saved-searches-and-rules.md)):
       searches pinned to the sidebar as virtual feeds, plus auto-mark-read /
       auto-star rules applied at ingestion.
