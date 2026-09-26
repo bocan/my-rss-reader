@@ -1,6 +1,17 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { announce } from '@/lib/announce';
-import { articleFlags, useToggleArticleState } from '@/lib/articles';
+import type { RowToggle } from '@/components/reader/RowActions';
+import { articleFlags, useToggleAnyArticleState, useToggleArticleState } from '@/lib/articles';
+
+/** The list rows' star and read buttons (#32), with the same announcements as the keys. */
+export function useRowToggle(): RowToggle {
+  const toggle = useToggleAnyArticleState();
+  return (article, patch) => {
+    toggle(article.id, patch);
+    if (patch.read !== undefined) announce(patch.read ? 'Marked as read' : 'Marked as unread');
+    if (patch.starred !== undefined) announce(patch.starred ? 'Starred' : 'Unstarred');
+  };
+}
 
 /**
  * The m / s / S shortcut actions for one article: the open article when there

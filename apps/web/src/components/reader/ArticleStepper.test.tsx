@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { expect, test, vi } from 'vitest';
 import { surfaceStub } from '../../../test/surface-stub';
@@ -35,22 +36,25 @@ test.each(['cards', 'magazine'] as const)('the %s reader shows the stepper', (vi
   const openAdjacent = vi.fn();
   const surface = surfaceStub({ openAdjacent });
   render(
-    <BrowseSurface
-      surface={surface}
-      feeds={{}}
-      view={view}
-      selectedId="a1"
-      onSelect={vi.fn()}
-      onBack={vi.fn()}
-      stepper={
-        <ArticleStepper
-          hasPrev
-          hasNext
-          onPrev={() => surface.openAdjacent(-1)}
-          onNext={() => surface.openAdjacent(1)}
-        />
-      }
-    />,
+    // The rows' quick actions (#32) use a mutation, so they need a client.
+    <QueryClientProvider client={new QueryClient()}>
+      <BrowseSurface
+        surface={surface}
+        feeds={{}}
+        view={view}
+        selectedId="a1"
+        onSelect={vi.fn()}
+        onBack={vi.fn()}
+        stepper={
+          <ArticleStepper
+            hasPrev
+            hasNext
+            onPrev={() => surface.openAdjacent(-1)}
+            onNext={() => surface.openAdjacent(1)}
+          />
+        }
+      />
+    </QueryClientProvider>,
   );
   fireEvent.click(screen.getByRole('button', { name: 'Next article' }));
   expect(openAdjacent).toHaveBeenCalledWith(1);

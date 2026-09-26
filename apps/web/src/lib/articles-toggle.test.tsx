@@ -4,7 +4,11 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { useArticles } from '@/hooks/use-articles';
-import { registerMutationDefaults, useToggleArticleState } from './articles';
+import {
+  registerMutationDefaults,
+  useToggleAnyArticleState,
+  useToggleArticleState,
+} from './articles';
 
 // #19: reading one article must not refetch the list on screen.
 
@@ -77,4 +81,17 @@ test('a failed toggle also rolls back the open article', async () => {
   act(() => result.current.mutate({ starred: true }));
   await waitFor(() => expect(result.current.isPending).toBe(false));
   expect(qc.getQueryData<ArticleDetail>(['article', 'a1'])!.starred).toBe(false);
+});
+
+test('the row toggle (#32) patches the article it names and moves the count', async () => {
+  const { result } = renderHook(() => useToggleAnyArticleState(), { wrapper });
+
+  act(() => result.current('a2', { read: true }));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+  expect(String(fetchMock.mock.calls[0]![0])).toContain('/articles/a2/state');
+  expect(listIds()).toEqual([
+    expect.objectContaining({ id: 'a1', read: false }),
+    expect.objectContaining({ id: 'a2', read: true }),
+  ]);
+  expect(qc.getQueryData<{ total: number }>(['counts'])!.total).toBe(1);
 });

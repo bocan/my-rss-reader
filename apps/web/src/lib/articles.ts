@@ -328,6 +328,15 @@ export function useToggleArticleState(articleId: string) {
   };
 }
 
+/**
+ * The same toggle for any article, named per call: the list rows' quick
+ * actions (#32), where one hook serves every row.
+ */
+export function useToggleAnyArticleState() {
+  const m = useMutation<void, Error, ToggleVars, Ctx>({ mutationKey: TOGGLE_STATE_KEY });
+  return (articleId: string, vars: TogglePatch) => m.mutate({ articleId, ...vars });
+}
+
 /** Optimistically mark a whole scope read (feed, folder, or everything). */
 export function useMarkRead() {
   return useMutation<MarkReadResult, Error, MarkReadScope, Ctx>({ mutationKey: MARK_READ_KEY });

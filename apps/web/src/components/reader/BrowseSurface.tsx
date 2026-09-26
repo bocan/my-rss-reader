@@ -1,6 +1,7 @@
 import { ChevronLeft } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { ArticleSurface } from '@/hooks/use-article-surface';
+import { useRowToggle } from '@/hooks/use-article-toggles';
 import type { ArticleListItem } from '@/hooks/use-articles';
 import { ReadingPane } from '@/components/reading-pane/ReadingPane';
 import { Button } from '@/components/ui/button';
@@ -40,6 +41,7 @@ export function BrowseSurface({
 }) {
   const View = view === 'cards' ? CardsView : MagazineView;
   const reading = selectedId !== null;
+  const onToggle = useRowToggle();
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
@@ -57,6 +59,7 @@ export function BrowseSurface({
               onSelect(a);
             }}
             registerRow={surface.registerRow}
+            onToggle={onToggle}
           />
         </div>
       </ArticleScroller>
