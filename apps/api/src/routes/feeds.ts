@@ -12,6 +12,7 @@ import type { FastifyInstance } from 'fastify';
 import { db } from '../db/index.js';
 import { feeds, folders, subscriptions } from '../db/schema.js';
 import { discoverFeedCandidates, fetchAndStoreFeed, normalizeFeedUrl } from '../lib/feed-fetch.js';
+import { applyRulesToNewSubscription } from '../lib/rules.js';
 import {
   placeFolder,
   placeSubscription,
@@ -192,6 +193,9 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
       })
       .onConflictDoNothing({ target: [subscriptions.userId, subscriptions.feedId] })
       .returning();
+    // The feed's articles were stored before this user subscribed, so their
+    // filter rules have not seen them yet (SPEC-025).
+    if (subscription) await applyRulesToNewSubscription(userId, feedRow.id);
 
     return reply.code(201).send({ subscription: subscription ?? null, feed: feedRow });
   });
