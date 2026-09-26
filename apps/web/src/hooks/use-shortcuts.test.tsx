@@ -14,6 +14,7 @@ function makeActions(): ShortcutActions {
     markUnread: vi.fn(),
     toggleStar: vi.fn(),
     toggleShared: vi.fn(),
+    openOriginal: vi.fn(),
     markAllRead: vi.fn(),
     fetchFeeds: vi.fn(),
     focusSearch: vi.fn(),
@@ -93,6 +94,17 @@ describe('useShortcuts dispatch', () => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', bubbles: true }));
     });
     expect(actions.fetchFeeds).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('v opens the original (#49)', () => {
+  test('in the list and in the full-screen reader', () => {
+    const { unmount } = render(<Harness ctx="list" actions={actions} />);
+    press('v');
+    unmount();
+    render(<Harness ctx="reader" actions={actions} />);
+    press('v');
+    expect(actions.openOriginal).toHaveBeenCalledTimes(2);
   });
 });
 

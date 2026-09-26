@@ -102,6 +102,24 @@ test('a summary-only item reads as body text, and offers Extracted and the origi
   expect(pressed()).toEqual(['Extracted']);
 });
 
+// #49: the article takes focus, so Space scrolls it at once.
+test('the article body has focus once it opens, and shows the key hint', () => {
+  renderPane({ defaultArticleView: 'readable' });
+  const column = screen.getByTestId('reading-column');
+  expect(document.activeElement).toBe(column.parentElement);
+  expect(column.parentElement).toHaveAttribute('tabindex', '-1');
+  expect(screen.getByTestId('key-hint')).toHaveTextContent('v open original');
+});
+
+test('the article does not take focus from a field the user is typing in', () => {
+  const field = document.createElement('input');
+  document.body.append(field);
+  field.focus();
+  renderPane();
+  expect(document.activeElement).toBe(field);
+  field.remove();
+});
+
 test('a feed override beats an auto default', () => {
   renderPane({ defaultArticleView: 'auto' }, 'web');
   expect(pressed()).toEqual(['Web']);

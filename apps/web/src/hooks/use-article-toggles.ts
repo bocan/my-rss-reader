@@ -1,7 +1,12 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { announce } from '@/lib/announce';
 import type { RowToggle } from '@/components/reader/RowActions';
-import { articleFlags, useToggleAnyArticleState, useToggleArticleState } from '@/lib/articles';
+import {
+  articleFlags,
+  articleUrl,
+  useToggleAnyArticleState,
+  useToggleArticleState,
+} from '@/lib/articles';
 
 /** The list rows' star and read buttons (#32), with the same announcements as the keys. */
 export function useRowToggle(): RowToggle {
@@ -14,7 +19,7 @@ export function useRowToggle(): RowToggle {
 }
 
 /**
- * The m / s / S shortcut actions for one article: the open article when there
+ * The m / s / S / v shortcut actions for one article: the open article when there
  * is one, else the focused row (#20). Each flips the article's REAL current
  * state, read from the cache, so the keys work both ways.
  */
@@ -47,6 +52,16 @@ export function useArticleToggles(targetId: string | null) {
       const shared = !(flags()?.shared ?? false);
       toggle.mutate({ shared });
       announce(shared ? 'Added to shared items' : 'Removed from shared items');
+    },
+    /** v (#49): the original page in a new tab. */
+    openOriginal: () => {
+      if (!targetId) return;
+      const url = articleUrl(qc, targetId);
+      if (!url) {
+        announce('This article has no original link');
+        return;
+      }
+      window.open(url, '_blank', 'noopener,noreferrer');
     },
   };
 }

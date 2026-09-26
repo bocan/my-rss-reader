@@ -15,6 +15,8 @@ export interface ShortcutActions {
   markUnread(): void;
   toggleStar(): void;
   toggleShared(): void;
+  /** The open article's original page, in a new tab (#49). */
+  openOriginal(): void;
   markAllRead(): void;
   /** The same as the refresh button: ask the server to fetch every feed (#42). */
   fetchFeeds(): void;
@@ -122,6 +124,13 @@ export const SHORTCUTS: Shortcut[] = [
     group: 'Article',
     label: 'Toggle shared',
     run: (a) => a.toggleShared(),
+  },
+  {
+    keys: ['v'],
+    contexts: ['global'],
+    group: 'Article',
+    label: 'Open original in a new tab',
+    run: (a) => a.openOriginal(),
   },
   {
     keys: ['a'],

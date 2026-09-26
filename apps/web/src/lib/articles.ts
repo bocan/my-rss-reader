@@ -133,6 +133,17 @@ export function articleFlags(
   return undefined;
 }
 
+/** The article's original link, from the open article or any loaded list. */
+export function articleUrl(qc: QueryClient, articleId: string): string | null {
+  const detail = qc.getQueryData<ArticleDetail>(['article', articleId]);
+  if (detail) return detail.url;
+  for (const [, data] of qc.getQueriesData<ArticlesData>({ queryKey: ['articles'] })) {
+    const found = data?.pages.flatMap((p) => p.items).find((a) => a.id === articleId);
+    if (found) return found.url;
+  }
+  return null;
+}
+
 function patchArticle(
   qc: QueryClient,
   articleId: string,

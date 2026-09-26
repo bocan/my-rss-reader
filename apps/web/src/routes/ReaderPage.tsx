@@ -477,6 +477,7 @@ export function ReaderPage() {
     markUnread: toggles.markUnread,
     toggleStar: toggles.toggleStar,
     toggleShared: toggles.toggleShared,
+    openOriginal: toggles.openOriginal,
     markAllRead: () => canMarkAll && hasUnread && markAllRead(),
     fetchFeeds,
     focusSearch: () => searchRef.current?.focus(),

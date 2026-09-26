@@ -90,3 +90,29 @@ test('with no target the keys do nothing', () => {
   });
   expect(fetchMock).not.toHaveBeenCalled();
 });
+
+// #49: v opens the original, of the open article or the focused row.
+test('v opens the original in a new tab, from the detail or the list row', () => {
+  const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+  qc.setQueryData(['article', 'open'], { ...detail(), url: 'https://ex.com/open' });
+  qc.setQueryData(['articles', { sort: 'newest' }], {
+    pages: [{ items: [{ id: 'row', feedId: 'f1', url: 'https://ex.com/row' }], nextCursor: null }],
+    pageParams: [null],
+  });
+
+  renderHook(() => useArticleToggles('open'), { wrapper }).result.current.openOriginal();
+  renderHook(() => useArticleToggles('row'), { wrapper }).result.current.openOriginal();
+  expect(open.mock.calls).toEqual([
+    ['https://ex.com/open', '_blank', 'noopener,noreferrer'],
+    ['https://ex.com/row', '_blank', 'noopener,noreferrer'],
+  ]);
+  open.mockRestore();
+});
+
+test('v on an article with no link opens nothing', () => {
+  const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+  qc.setQueryData(['article', 'open'], { ...detail(), url: null });
+  renderHook(() => useArticleToggles('open'), { wrapper }).result.current.openOriginal();
+  expect(open).not.toHaveBeenCalled();
+  open.mockRestore();
+});

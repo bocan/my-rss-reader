@@ -100,6 +100,20 @@ export function ReadingPane({
     toggle.mutate({ read: !article.read });
   };
 
+  // #49: move focus into the article once it shows, so the scroll keys act on
+  // it. The pane is keyed by article, so this runs once per article. Never
+  // take focus from a field the user is typing in.
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const loaded = article !== undefined;
+  useEffect(() => {
+    if (!loaded) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active.matches('input, textarea, select, [contenteditable="true"]')) {
+      return;
+    }
+    bodyRef.current?.focus({ preventScroll: true });
+  }, [loaded]);
+
   if (articleQuery.isLoading) {
     return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
   }
@@ -211,7 +225,14 @@ export function ReadingPane({
 
       {article.enclosureUrl && <EnclosurePlayer article={article} />}
 
-      <div className={cn('min-h-0 flex-1', view === 'web' ? '' : 'overflow-y-auto p-4 md:p-6')}>
+      <div
+        ref={bodyRef}
+        // Focus lands here when the article opens (#49), so Space, Page Down
+        // and the arrows scroll it at once. j/k are page-wide keys and still
+        // work. No ring: the focus is not from the keyboard.
+        tabIndex={-1}
+        className={cn('min-h-0 flex-1 outline-none', view === 'web' ? '' : 'overflow-y-auto p-4 md:p-6')}
+      >
         {view === 'web' ? (
           <WebView article={article} online={online} />
         ) : (
@@ -235,6 +256,7 @@ export function ReadingPane({
                 onSwitchReadable={() => chooseView('readable')}
               />
             )}
+            <KeyHint />
           </div>
         )}
       </div>
@@ -409,6 +431,18 @@ function WebView({ article, online }: { article: ArticleDetail; online: boolean 
         className="h-full w-full border-0"
       />
     </div>
+  );
+}
+
+const kbd = 'rounded border bg-muted px-1 font-mono';
+
+/** Says that keys exist (#49). Hidden on touch screens, which have no keys. */
+function KeyHint() {
+  return (
+    <p className="mt-10 text-xs text-muted-foreground pointer-coarse:hidden" data-testid="key-hint">
+      <kbd className={kbd}>j</kbd> <kbd className={kbd}>k</kbd> next and previous,{' '}
+      <kbd className={kbd}>v</kbd> open original, <kbd className={kbd}>?</kbd> all shortcuts
+    </p>
   );
 }
 
