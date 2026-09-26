@@ -70,6 +70,22 @@ test('All items (#14): hidden feeds keep their unread, counts match the server r
   expect(body).toEqual({ fetchedBefore: '2026-01-01T00:00:00.000Z' });
 });
 
+test('a scroll batch (#17) marks only its ids and leaves the list in place', async () => {
+  const invalidate = vi.spyOn(qc, 'invalidateQueries');
+  const { result } = renderHook(() => useMarkRead(), { wrapper });
+  act(() => result.current.mutate({ articleIds: ['a2'] }));
+
+  await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  expect(itemRead('a2')).toBe(true);
+  expect(itemRead('a1')).toBe(false);
+  expect(unread('hidden')).toBe(1);
+  expect(counts().folders[0]!.unreadCount).toBe(4);
+  expect(counts().total).toBe(3); // hidden feeds never count toward the total
+  // Counts are refreshed; the article list is not refetched.
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ['counts'] });
+  expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ['articles'] });
+});
+
 test('a folder scope still includes its hidden feeds', async () => {
   const { result } = renderHook(() => useMarkRead(), { wrapper });
   act(() => result.current.mutate({ folderId: 'd1' }));

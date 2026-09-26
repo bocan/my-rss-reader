@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useMarkRead } from '@/lib/articles';
+import { createScrollReadTracker } from '@/lib/scroll-read';
 import { useArticles, type ArticleFilters, type ArticleListItem } from './use-articles';
 
 /**
@@ -35,6 +37,7 @@ export interface ArticleSurface {
 export function useArticleSurface(
   filters: ArticleFilters,
   onFocusedChange?: (article: ArticleListItem) => void,
+  { markReadOnScroll = false }: { markReadOnScroll?: boolean } = {},
 ): ArticleSurface {
   const {
     data,
@@ -65,13 +68,57 @@ export function useArticleSurface(
   const onFocusedChangeRef = useRef(onFocusedChange);
   onFocusedChangeRef.current = onFocusedChange;
 
+  // Mark read on scroll (#17): one observer over every row while enabled.
+  const readObserverRef = useRef<IntersectionObserver | null>(null);
+  const rowIds = useRef(new WeakMap<Element, string>());
+
   const registerRow = useCallback(
     (id: string) => (el: HTMLElement | null) => {
-      if (el) rowRefs.current.set(id, el);
-      else rowRefs.current.delete(id);
+      const old = rowRefs.current.get(id);
+      if (old && old !== el) readObserverRef.current?.unobserve(old);
+      if (el) {
+        rowRefs.current.set(id, el);
+        rowIds.current.set(el, id);
+        readObserverRef.current?.observe(el);
+      } else {
+        rowRefs.current.delete(id);
+      }
     },
     [],
   );
+
+  const markRead = useMarkRead();
+  const markReadRef = useRef(markRead.mutate);
+  markReadRef.current = markRead.mutate;
+
+  useEffect(() => {
+    if (!markReadOnScroll) return;
+    const tracker = createScrollReadTracker({
+      isUnread: (id) => itemsRef.current.find((a) => a.id === id)?.read === false,
+      flush: (articleIds) => markReadRef.current({ articleIds }),
+    });
+    // The viewport is the root, so this works for whichever scroller (list
+    // column or browse region) holds the rows; the browser still clips each
+    // row by its scroll container. The top edge is read per callback.
+    const observer = new IntersectionObserver((entries) => {
+      const root = rootRef.current;
+      if (!root) return;
+      const rootTop = root.getBoundingClientRect().top;
+      for (const e of entries) {
+        const id = rowIds.current.get(e.target);
+        if (!id || !root.contains(e.target)) continue;
+        const { bottom, height } = e.boundingClientRect;
+        tracker.update(id, { isIntersecting: e.isIntersecting, bottom, height }, rootTop);
+      }
+    });
+    readObserverRef.current = observer;
+    for (const el of rowRefs.current.values()) observer.observe(el);
+    return () => {
+      observer.disconnect();
+      readObserverRef.current = null;
+      tracker.flushNow();
+    };
+  }, [markReadOnScroll, filterKey]);
 
   const revealRow = useCallback((id: string) => {
     const el = rowRefs.current.get(id);

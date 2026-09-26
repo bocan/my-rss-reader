@@ -149,6 +149,49 @@ test('fetchedBefore (the list asOf) leaves later arrivals unread', async () => {
   expect(feedUnread(await counts(cookie), feed.id)).toBe(1);
 });
 
+// #17: mark read on scroll sends the ids that scrolled past, in one batch.
+test('articleIds marks exactly those articles, hidden feeds included', async () => {
+  const user = await seedUser();
+  const shown = await seedFeed();
+  const hidden = await seedFeed();
+  await seedSubscription(user.id, shown.id);
+  await seedSubscription(user.id, hidden.id, { hideFromAll: true });
+  const a1 = await seedArticle(shown.id, {});
+  await seedArticle(shown.id, {});
+  const h1 = await seedArticle(hidden.id, {});
+  const cookie = await loginAs(user);
+
+  const res = await markRead(cookie, { articleIds: [a1.id, h1.id] });
+  expect(res.statusCode).toBe(204);
+  const c = await counts(cookie);
+  expect(feedUnread(c, shown.id)).toBe(1);
+  expect(feedUnread(c, hidden.id)).toBe(0);
+});
+
+test('articleIds never reaches a feed the user does not follow', async () => {
+  const user = await seedUser();
+  const other = await seedUser();
+  const feed = await seedFeed();
+  await seedSubscription(other.id, feed.id);
+  const a = await seedArticle(feed.id, {});
+  const cookie = await loginAs(user);
+
+  expect((await markRead(cookie, { articleIds: [a.id] })).statusCode).toBe(204);
+  const [row] = await db
+    .select()
+    .from(articleStates)
+    .where(eq(articleStates.articleId, a.id));
+  expect(row).toBeUndefined();
+});
+
+test('articleIds rejects an empty or oversized batch', async () => {
+  const user = await seedUser();
+  const cookie = await loginAs(user);
+  expect((await markRead(cookie, { articleIds: [] })).statusCode).toBe(400);
+  const many = Array.from({ length: 201 }, () => crypto.randomUUID());
+  expect((await markRead(cookie, { articleIds: many })).statusCode).toBe(400);
+});
+
 test('the article list reports the server time it was produced (asOf)', async () => {
   const user = await seedUser();
   const feed = await seedFeed();

@@ -328,11 +328,12 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
     const userId = request.user!.id;
 
     // feedId wins over folderId; neither means All items, which leaves out
-    // hidden feeds exactly as the All-items list does.
+    // hidden feeds exactly as the All-items list does. Explicit articleIds
+    // came from a list that showed them, so hidden feeds count there.
     const feedIds = await resolveSubscribedFeedIds(userId, {
       feedId: input.feedId,
       folderId: input.folderId,
-      excludeHidden: true,
+      excludeHidden: !input.articleIds,
     });
     if (feedIds.length === 0) return reply.code(204).send(); // empty folder / no subs
 
@@ -349,6 +350,10 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
     const fetchedClause = input.fetchedBefore
       ? sql`and a.fetched_at <= ${input.fetchedBefore}::timestamptz`
       : sql``;
+    // Zod checked each id is a uuid, so the array literal is safe (as above).
+    const idsClause = input.articleIds
+      ? sql`and a.id = any(${`{${input.articleIds.join(',')}}`}::uuid[])`
+      : sql``;
 
     // The conflict guard (read = false) makes this idempotent: already-read
     // articles keep their original read_at, and starred/starred_at survive.
@@ -356,7 +361,7 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
       insert into article_states (user_id, article_id, read, read_at)
       select ${userId}::uuid, a.id, true, now()
       from articles a
-      where a.feed_id = any(${feedIdArray}::uuid[]) ${beforeClause} ${fetchedClause}
+      where a.feed_id = any(${feedIdArray}::uuid[]) ${beforeClause} ${fetchedClause} ${idsClause}
       on conflict (user_id, article_id) do update
         set read = true, read_at = now()
         where article_states.read = false

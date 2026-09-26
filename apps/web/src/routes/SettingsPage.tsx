@@ -535,7 +535,7 @@ export function SettingsPage() {
           />
           <Toggle
             label="Mark read on scroll"
-            hint="Mark articles read as you scroll past them."
+            hint="Mark an article read when it scrolls off the top of the list."
             checked={settings.markReadOnScroll}
             onChange={(v) => set('markReadOnScroll', v)}
           />

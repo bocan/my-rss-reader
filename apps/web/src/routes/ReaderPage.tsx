@@ -257,7 +257,9 @@ export function ReaderPage() {
   const openInPlace = (article: ArticleListItem) => {
     if (isWide && !isBrowse) selectArticle(article.id);
   };
-  const surface = useArticleSurface(effectiveFilters, openInPlace);
+  const surface = useArticleSurface(effectiveFilters, openInPlace, {
+    markReadOnScroll: settings.markReadOnScroll,
+  });
 
   // --- Scope chrome + mark all read (top bar) ---------------------------
   const scopeLabel = communityOpen

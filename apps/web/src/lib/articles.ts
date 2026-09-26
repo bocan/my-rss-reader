@@ -169,7 +169,14 @@ type ToggleVars = {
   shareNote?: string | null;
 };
 type TogglePatch = Omit<ToggleVars, 'articleId'>;
-type MarkReadScope = { feedId?: string; folderId?: string; before?: string; fetchedBefore?: string };
+type MarkReadScope = {
+  feedId?: string;
+  folderId?: string;
+  before?: string;
+  fetchedBefore?: string;
+  /** Exactly these articles (mark read on scroll, #17). */
+  articleIds?: string[];
+};
 
 /**
  * Register the read/star and mark-read mutation logic on the client, keyed by
@@ -204,6 +211,15 @@ export function registerMutationDefaults(qc: QueryClient): void {
       api<void>('/articles/mark-read', { method: 'POST', body: scope }),
     onMutate: async (scope: MarkReadScope): Promise<Ctx> => {
       const ctx = await snapshot(qc);
+      if (scope.articleIds) {
+        for (const id of scope.articleIds) {
+          const state = currentState(qc, id);
+          if (!state || state.read) continue;
+          adjustCounts(qc, state.feedId, -1);
+          patchArticle(qc, id, { read: true });
+        }
+        return ctx;
+      }
       // With a `before` cutoff the exact set is unknowable from a partial cache;
       // skip the optimistic write and let onSettled refetch the truth.
       if (scope.before) return ctx;
@@ -225,7 +241,10 @@ export function registerMutationDefaults(qc: QueryClient): void {
       return ctx;
     },
     onError: (_e: unknown, _v: MarkReadScope, ctx: Ctx | undefined) => restore(qc, ctx),
-    onSettled: () => reconcile(qc),
+    // A scroll batch leaves the list as it is: a refetch would drop the items
+    // just marked from an unread-only list and move it under the reader.
+    onSettled: (_d: unknown, _e: unknown, scope: MarkReadScope) =>
+      scope.articleIds ? qc.invalidateQueries({ queryKey: ['counts'] }) : reconcile(qc),
   });
 }
 

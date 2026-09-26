@@ -79,5 +79,10 @@ export const markReadSchema = z.object({
   before: z.iso.datetime().optional(),
   /** Only mark items the server had stored by this time (a list's `asOf`). */
   fetchedBefore: z.iso.datetime().optional(),
+  /**
+   * Only these articles (mark read on scroll, #17). Hidden feeds are not
+   * left out here: the ids came from a list that showed them.
+   */
+  articleIds: z.array(z.uuid()).min(1).max(200).optional(),
 });
 export type MarkReadInput = z.infer<typeof markReadSchema>;
