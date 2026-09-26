@@ -9,6 +9,7 @@ import {
   type Density,
   type Settings,
   type ShareVisibility,
+  type UpdateProfileInput,
   type ViewMode,
 } from '@rss/shared';
 import { ChevronLeft, Download, Smartphone } from 'lucide-react';
@@ -305,10 +306,14 @@ const VISIBILITY_HINT: Record<ShareVisibility, string> = {
   public: 'Anyone on the web can read your shared items page and subscribe to its feed.',
 };
 
-/** Sharing profile (SPEC-019): visibility, slug, and the public page fields. */
-function SharingSection() {
+/** Sharing profile (SPEC-019): visibility, slug, and the public page fields.
+ *  The switches save at once, as in Preferences. The text fields wait for
+ *  their Save button (#44). */
+export function SharingSection() {
   const { data: profile } = useProfile();
   const update = useUpdateProfile();
+  // A second instance, so a switch never makes the Save button say "Saving…".
+  const updateSwitch = useUpdateProfile();
   const [visibility, setVisibility] = useState<ShareVisibility>('off');
   const [slug, setSlug] = useState('');
   const [title, setTitle] = useState('');
@@ -328,19 +333,46 @@ function SharingSection() {
     setBlogrollEnabled(profile.blogrollEnabled);
   }, [profile]);
 
+  // Show the new value at once. If the save fails, go back to the old one.
+  function saveNow(patch: Pick<UpdateProfileInput, 'visibility' | 'blogrollEnabled'>, done: string, revert: () => void) {
+    setError(null);
+    updateSwitch.mutate(patch, {
+      onSuccess: () => notify.success(done),
+      onError: (err) => {
+        revert();
+        setError(errorMessage(err, 'Could not save sharing settings'));
+      },
+    });
+  }
+
+  function onVisibility(next: ShareVisibility) {
+    const before = visibility;
+    setVisibility(next);
+    saveNow({ visibility: next }, `Who can see your shares: ${VISIBILITY_LABEL[next]}.`, () =>
+      setVisibility(before),
+    );
+  }
+
+  function onBlogroll(next: boolean) {
+    setBlogrollEnabled(next);
+    saveNow(
+      { blogrollEnabled: next },
+      next ? 'Public blogroll on.' : 'Public blogroll off.',
+      () => setBlogrollEnabled(!next),
+    );
+  }
+
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     update.mutate(
       {
-        visibility,
         slug: slug.trim(),
         title: title.trim() || null,
         bio: bio.trim() || null,
-        blogrollEnabled,
       },
       {
-        onSuccess: () => notify.success('Sharing settings saved.'),
+        onSuccess: () => notify.success('Page details saved.'),
         onError: (err) => setError(errorMessage(err, 'Could not save sharing settings')),
       },
     );
@@ -361,10 +393,30 @@ function SharingSection() {
             value={visibility}
             options={SHARE_VISIBILITIES}
             labels={VISIBILITY_LABEL}
-            onChange={setVisibility}
+            onChange={onVisibility}
           />
           <p className="text-xs text-muted-foreground">{VISIBILITY_HINT[visibility]}</p>
         </div>
+
+        <Toggle
+          label="Public blogroll"
+          hint="Publishes the feeds you follow (and your folder names) as a page + OPML. Exclude individual feeds from each feed's settings."
+          checked={blogrollEnabled}
+          onChange={onBlogroll}
+        />
+        {profile?.blogrollUrl && (
+          <p className="text-xs text-muted-foreground">
+            Your blogroll:{' '}
+            <a
+              href={profile.blogrollUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary hover:underline"
+            >
+              {profile.blogrollUrl.replace(/^https?:\/\//, '')}
+            </a>
+          </p>
+        )}
 
         <label className="block space-y-1">
           <span className="text-sm">Page address</span>
@@ -406,31 +458,11 @@ function SharingSection() {
           />
         </label>
 
-        <Toggle
-          label="Public blogroll"
-          hint="Publishes the feeds you follow (and your folder names) as a page + OPML. Exclude individual feeds from each feed's settings."
-          checked={blogrollEnabled}
-          onChange={setBlogrollEnabled}
-        />
-        {profile?.blogrollUrl && (
-          <p className="text-xs text-muted-foreground">
-            Your blogroll:{' '}
-            <a
-              href={profile.blogrollUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-primary hover:underline"
-            >
-              {profile.blogrollUrl.replace(/^https?:\/\//, '')}
-            </a>
-          </p>
-        )}
-
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error &&<p className="text-sm text-destructive">{error}</p>}
 
         <div className="flex items-center gap-3">
           <Button type="submit" disabled={update.isPending}>
-            {update.isPending ? 'Saving…' : 'Save sharing settings'}
+            {update.isPending ? 'Saving…' : 'Save page details'}
           </Button>
           {profile?.shareUrl && (
             <a
