@@ -135,6 +135,46 @@ test('GET /feeds/discover returns candidates and writes nothing', async () => {
   expect(list.json().items).toHaveLength(0);
 });
 
+// SPEC-023: a social profile URL subscribes to its feed.
+test('subscribe to a Bluesky profile URL stores its /rss feed', async () => {
+  const profile = 'https://bsky.app/profile/somebody.bsky.social';
+  responses.set(`${profile}/rss`, {
+    headers: { 'content-type': 'application/rss+xml' },
+    body:
+      '<?xml version="1.0"?><rss version="2.0"><channel><title>@somebody.bsky.social - Somebody</title>' +
+      `<link>${profile}</link><description>d</description>` +
+      `<item><link>${profile}/post/3k1</link><guid>at://did:plc:x/app.bsky.feed.post/3k1</guid>` +
+      '<description>Hello from Bluesky</description></item></channel></rss>',
+  });
+  responses.set(profile, { headers: { 'content-type': 'text/html' }, body: '<html></html>' });
+
+  const res = await app.inject({ method: 'POST', url: '/api/feeds', headers: { cookie }, payload: { url: profile } });
+  expect(res.statusCode).toBe(201);
+  expect(res.json().feed).toMatchObject({
+    feedUrl: `${profile}/rss`,
+    title: '@somebody.bsky.social - Somebody',
+  });
+
+  const list = await app.inject({ method: 'GET', url: '/api/feeds', headers: { cookie } });
+  expect(list.json().items).toHaveLength(1);
+  expect(list.json().items[0].unreadCount).toBe(1);
+});
+
+test('GET /feeds/discover on a Mastodon profile offers <profile>.rss', async () => {
+  responses.set('https://hachyderm.io/@someone.rss', {
+    headers: { 'content-type': 'application/rss+xml' },
+    body: RSS('Someone'),
+  });
+  const res = await app.inject({
+    method: 'GET',
+    url: `/api/feeds/discover?url=${encodeURIComponent('https://hachyderm.io/@someone')}`,
+    headers: { cookie },
+  });
+  expect(res.statusCode).toBe(200);
+  expect(res.json().candidates).toEqual([{ feedUrl: 'https://hachyderm.io/@someone.rss', title: 'Someone' }]);
+  expect(requestMock.count).toBe(1); // the probe only, never the profile page
+});
+
 test('unsubscribe removes only the caller subscription', async () => {
   const feedUrl = 'https://site.example/rss.xml';
   responses.set(feedUrl, { headers: { 'content-type': 'application/rss+xml' }, body: RSS('My Feed') });

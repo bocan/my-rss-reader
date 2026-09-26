@@ -353,10 +353,55 @@ async function parsesAsFeed(body: string): Promise<ParsedFeed | null> {
 }
 
 /**
+ * Candidate feed URLs to probe for well-known social profile URLs
+ * (SPEC-023). Pure URL rewriting: every candidate is still verified by
+ * fetching and parsing it before it is offered.
+ *
+ * - Bluesky: `https://bsky.app/profile/<handle or did>` -> `.../rss`.
+ * - Mastodon-style (any host; also Pleroma, Akkoma, GoToSocial):
+ *   `https://instance/@user` -> `https://instance/@user.rss`. A remote
+ *   account shown on another instance (`/@user@other.host`) does not match:
+ *   that instance serves no feed for it.
+ */
+export function socialFeedProbes(url: string): string[] {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return [];
+  }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return [];
+
+  if (u.hostname === 'bsky.app') {
+    const m = u.pathname.match(/^\/profile\/([^/]+)\/?$/);
+    return m ? [`https://bsky.app/profile/${m[1]}/rss`] : [];
+  }
+  if (/^\/@[^/@]+\/?$/.test(u.pathname)) {
+    return [`${u.origin}${u.pathname.replace(/\/$/, '')}.rss`];
+  }
+  return [];
+}
+
+/**
  * Discover feed candidates for a URL that may be a direct feed or an HTML
  * homepage. Never throws: an unreachable host yields an empty array.
  */
 export async function discoverFeedCandidates(url: string): Promise<FeedCandidate[]> {
+  // Social profiles (SPEC-023): try the platform's own feed URL first. A miss
+  // costs one request and falls through to generic discovery, so a site whose
+  // URLs only look like a profile (medium.com/@user) still resolves.
+  for (const probeUrl of socialFeedProbes(url)) {
+    try {
+      const probe = await httpGet(probeUrl);
+      if (probe.statusCode < 400) {
+        const parsed = await parsesAsFeed(probe.body);
+        if (parsed) return [{ feedUrl: probeUrl, title: parsed.title ?? null }];
+      }
+    } catch {
+      // fall through to generic discovery
+    }
+  }
+
   let res: Awaited<ReturnType<typeof httpGet>>;
   try {
     res = await httpGet(url);
