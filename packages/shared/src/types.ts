@@ -30,6 +30,12 @@ export type DefaultArticleView = (typeof DEFAULT_ARTICLE_VIEWS)[number];
 export const SORT_ORDERS = ['newest', 'oldest'] as const;
 export type SortOrder = (typeof SORT_ORDERS)[number];
 
+/** Text size and line width of the article body in the reading pane (#41). */
+export const READING_SIZES = ['small', 'medium', 'large'] as const;
+export type ReadingSize = (typeof READING_SIZES)[number];
+export const READING_WIDTHS = ['narrow', 'normal', 'wide'] as const;
+export type ReadingWidth = (typeof READING_WIDTHS)[number];
+
 export type UserRole = 'admin' | 'user';
 
 /** Named color themes (SPEC-016). Each is inherently light or dark. */

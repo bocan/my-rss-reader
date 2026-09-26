@@ -1,6 +1,8 @@
 import {
   DEFAULT_ARTICLE_VIEWS,
   DENSITIES,
+  READING_SIZES,
+  READING_WIDTHS,
   SHARE_VISIBILITIES,
   SORT_ORDERS,
   VIEW_MODES,
@@ -23,6 +25,7 @@ import { useChangePassword, useSession, useUpdateAccount } from '@/lib/auth';
 import { useResetViews } from '@/lib/folders';
 import { useProfile, useUpdateProfile } from '@/lib/profile';
 import { useInstallPrompt } from '@/lib/pwa';
+import { READING_SIZE_LABELS, READING_WIDTH_LABELS } from '@/lib/reading-format';
 import { useSettings } from '@/lib/settings';
 import { SORT_LABELS } from '@/lib/sort-order';
 import { cn } from '@/lib/utils';
@@ -506,6 +509,20 @@ export function SettingsPage() {
             options={DEFAULT_ARTICLE_VIEWS}
             labels={ARTICLE_VIEW_LABELS}
             onChange={(v) => set('defaultArticleView', v)}
+          />
+          <Segmented
+            label="Article text size"
+            value={settings.readingSize}
+            options={READING_SIZES}
+            labels={READING_SIZE_LABELS}
+            onChange={(v) => set('readingSize', v)}
+          />
+          <Segmented
+            label="Article line width"
+            value={settings.readingWidth}
+            options={READING_WIDTHS}
+            labels={READING_WIDTH_LABELS}
+            onChange={(v) => set('readingWidth', v)}
           />
           <Toggle
             label="Mark read when opened"

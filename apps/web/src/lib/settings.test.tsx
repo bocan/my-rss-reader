@@ -16,6 +16,8 @@ const SERVER: Settings = {
   markReadOnScroll: true,
   markReadOnOpen: true,
   showUnreadOnly: false,
+  readingSize: 'large',
+  readingWidth: 'wide',
 };
 
 function jsonResponse(body: unknown, status = 200): Response {

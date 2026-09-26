@@ -69,6 +69,22 @@ test('markReadOnOpen defaults on and persists when turned off (#24)', async () =
   expect((await putSettings(cookie, { markReadOnOpen: 'no' })).statusCode).toBe(400);
 });
 
+test('reading size and width default to medium and normal, and persist (#41)', async () => {
+  const cookie = await loginAs(await seedUser());
+  expect((await getSettings(cookie)).json()).toMatchObject({
+    readingSize: 'medium',
+    readingWidth: 'normal',
+  });
+
+  await putSettings(cookie, { readingSize: 'large', readingWidth: 'narrow' });
+  expect((await getSettings(cookie)).json()).toMatchObject({
+    readingSize: 'large',
+    readingWidth: 'narrow',
+  });
+  expect((await putSettings(cookie, { readingSize: 'huge' })).statusCode).toBe(400);
+  expect((await putSettings(cookie, { readingWidth: 'full' })).statusCode).toBe(400);
+});
+
 test('an empty PUT body is a no-op that still returns the settings', async () => {
   const cookie = await loginAs(await seedUser());
   await putSettings(cookie, { theme: 'daylight' });

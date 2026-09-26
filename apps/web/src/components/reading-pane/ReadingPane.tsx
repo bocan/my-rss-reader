@@ -1,4 +1,4 @@
-import { ARTICLE_VIEWS, type ArticleDetail, type ArticleView } from '@rss/shared';
+import { ARTICLE_VIEWS, type ArticleDetail, type ArticleView, type ReadingSize } from '@rss/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Download, ExternalLink, Mail, MailOpen, Rss, Star } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -8,6 +8,7 @@ import { api, ApiRequestError } from '@/lib/api';
 import { useToggleArticleState } from '@/lib/articles';
 import { useSubscriptions } from '@/lib/folders';
 import { useOnlineStatus } from '@/lib/pwa';
+import { readingColumnClass } from '@/lib/reading-format';
 import { useSettings } from '@/lib/settings';
 import { cn } from '@/lib/utils';
 import { ArticleHtml } from './ArticleHtml';
@@ -120,84 +121,90 @@ export function ReadingPane({
   }
   if (!article) return null;
 
+  // #41: the header and body share one centered column, so lines stay a
+  // readable length at any window width.
+  const column = readingColumnClass(settings.readingSize, settings.readingWidth);
+
   return (
     <div className="flex h-full flex-col">
       <div className="border-b p-4 md:p-6">
-        <h1 className="font-serif text-[1.7rem] font-semibold leading-tight tracking-tight">
-          {article.title ?? '(untitled)'}
-        </h1>
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-          <span className="flex items-center gap-1.5">
-            {article.feed.faviconUrl ? (
-              <img src={article.feed.faviconUrl} alt="" className="size-4 rounded-sm" />
-            ) : (
-              <Rss className="size-4" />
-            )}
-            {article.feed.title ?? article.feed.siteUrl ?? ''}
-          </span>
-          {article.author && <span>{article.author}</span>}
-          {article.publishedAt && <span>{formatDate(article.publishedAt)}</span>}
-          {article.url && (
-            <a
-              href={article.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-primary hover:underline"
-            >
-              <ExternalLink className="size-3.5" /> Open original
-            </a>
-          )}
-        </div>
-
-        <div className="mt-3 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <div className="inline-flex rounded-md border p-0.5">
-              {ARTICLE_VIEWS.map((v) => (
-                <button
-                  key={v}
-                  onClick={() => chooseView(v)}
-                  aria-pressed={view === v}
-                  title={VIEW_TITLES[v]}
-                  className={cn(
-                    'rounded px-3 py-1 text-sm',
-                    view === v
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  {ARTICLE_VIEW_LABELS[v]}
-                </button>
-              ))}
-            </div>
-            {isAuto && (
-              <span
-                className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-                title="Your default view is Automatic: the reader chose this view for this article. Pick another view to override it."
+        <div className={column}>
+          <h1 className="font-serif text-[1.7rem] font-semibold leading-tight tracking-tight">
+            {article.title ?? '(untitled)'}
+          </h1>
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              {article.feed.faviconUrl ? (
+                <img src={article.feed.faviconUrl} alt="" className="size-4 rounded-sm" />
+              ) : (
+                <Rss className="size-4" />
+              )}
+              {article.feed.title ?? article.feed.siteUrl ?? ''}
+            </span>
+            {article.author && <span>{article.author}</span>}
+            {article.publishedAt && <span>{formatDate(article.publishedAt)}</span>}
+            {article.url && (
+              <a
+                href={article.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-primary hover:underline"
               >
-                Auto
-              </span>
+                <ExternalLink className="size-3.5" /> Open original
+              </a>
             )}
           </div>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={article.read ? 'Mark unread' : 'Mark read'}
-              title={article.read ? 'Read. Mark unread (u)' : 'Unread. Mark read (m)'}
-              onClick={toggleRead}
-            >
-              {article.read ? <MailOpen className="size-4" /> : <Mail className="size-4 text-primary" />}
-            </Button>
-            <SharePopover key={article.id} article={article} />
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={article.starred ? 'Unstar' : 'Star'}
-              onClick={() => toggle.mutate({ starred: !article.starred })}
-            >
-              <Star className={cn('size-4', article.starred && 'fill-primary text-primary')} />
-            </Button>
-            {stepper}
+
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="inline-flex rounded-md border p-0.5">
+                {ARTICLE_VIEWS.map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => chooseView(v)}
+                    aria-pressed={view === v}
+                    title={VIEW_TITLES[v]}
+                    className={cn(
+                      'rounded px-3 py-1 text-sm',
+                      view === v
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {ARTICLE_VIEW_LABELS[v]}
+                  </button>
+                ))}
+              </div>
+              {isAuto && (
+                <span
+                  className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+                  title="Your default view is Automatic: the reader chose this view for this article. Pick another view to override it."
+                >
+                  Auto
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={article.read ? 'Mark unread' : 'Mark read'}
+                title={article.read ? 'Read. Mark unread (u)' : 'Unread. Mark read (m)'}
+                onClick={toggleRead}
+              >
+                {article.read ? <MailOpen className="size-4" /> : <Mail className="size-4 text-primary" />}
+              </Button>
+              <SharePopover key={article.id} article={article} />
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={article.starred ? 'Unstar' : 'Star'}
+                onClick={() => toggle.mutate({ starred: !article.starred })}
+              >
+                <Star className={cn('size-4', article.starred && 'fill-primary text-primary')} />
+              </Button>
+              {stepper}
+            </div>
           </div>
         </div>
       </div>
@@ -205,19 +212,25 @@ export function ReadingPane({
       {article.enclosureUrl && <EnclosurePlayer article={article} />}
 
       <div className={cn('min-h-0 flex-1', view === 'web' ? '' : 'overflow-y-auto p-4 md:p-6')}>
-        {view === 'readable' && <FeedView article={article} />}
-        {view === 'simplified' && (
-          <ExtractedView
-            article={article}
-            online={online}
-            loading={readableQuery.isFetching}
-            failed={readableQuery.isError}
-            retrying={refresh.isPending}
-            onRetry={() => refresh.mutate()}
-            onSwitchReadable={() => chooseView('readable')}
-          />
+        {view === 'web' ? (
+          <WebView article={article} online={online} />
+        ) : (
+          <div className={column} data-testid="reading-column">
+            {view === 'readable' && <FeedView article={article} size={settings.readingSize} />}
+            {view === 'simplified' && (
+              <ExtractedView
+                article={article}
+                size={settings.readingSize}
+                online={online}
+                loading={readableQuery.isFetching}
+                failed={readableQuery.isError}
+                retrying={refresh.isPending}
+                onRetry={() => refresh.mutate()}
+                onSwitchReadable={() => chooseView('readable')}
+              />
+            )}
+          </div>
         )}
-        {view === 'web' && <WebView article={article} online={online} />}
       </div>
     </div>
   );
@@ -258,14 +271,15 @@ function EnclosurePlayer({ article }: { article: ArticleDetail }) {
   );
 }
 
-function FeedView({ article }: { article: ArticleDetail }) {
-  if (article.contentHtml) return <ArticleHtml html={article.contentHtml} />;
+function FeedView({ article, size }: { article: ArticleDetail; size: ReadingSize }) {
+  if (article.contentHtml) return <ArticleHtml html={article.contentHtml} size={size} />;
   if (article.summary) return <Note>{article.summary}</Note>;
   return <Note>No content in this item. Try the Web view.</Note>;
 }
 
 function ExtractedView({
   article,
+  size,
   online,
   loading,
   failed,
@@ -274,6 +288,7 @@ function ExtractedView({
   onSwitchReadable,
 }: {
   article: ArticleDetail;
+  size: ReadingSize;
   online: boolean;
   loading: boolean;
   failed: boolean;
@@ -281,7 +296,7 @@ function ExtractedView({
   onRetry: () => void;
   onSwitchReadable: () => void;
 }) {
-  if (article.readableHtml) return <ArticleHtml html={article.readableHtml} />;
+  if (article.readableHtml) return <ArticleHtml html={article.readableHtml} size={size} />;
   // Only wait ("Preparing"/"Extracting") while an attempt is genuinely pending.
   // A stamped readableFetchedAt or an errored /readable request (e.g. 422 for an
   // article with no source URL, or a transient network/proxy error) both fall

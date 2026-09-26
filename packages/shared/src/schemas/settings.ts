@@ -1,5 +1,13 @@
 import { z } from 'zod';
-import { DEFAULT_ARTICLE_VIEWS, DENSITIES, SORT_ORDERS, THEME_SETTINGS, VIEW_MODES } from '../types.js';
+import {
+  DEFAULT_ARTICLE_VIEWS,
+  DENSITIES,
+  READING_SIZES,
+  READING_WIDTHS,
+  SORT_ORDERS,
+  THEME_SETTINGS,
+  VIEW_MODES,
+} from '../types.js';
 
 export const settingsSchema = z.object({
   theme: z.enum(THEME_SETTINGS),
@@ -12,6 +20,9 @@ export const settingsSchema = z.object({
   /** Mark an article read when it opens (true), or only by hand (#24). */
   markReadOnOpen: z.boolean(),
   showUnreadOnly: z.boolean(),
+  /** Article text size and line width in the reading pane (#41). */
+  readingSize: z.enum(READING_SIZES),
+  readingWidth: z.enum(READING_WIDTHS),
 });
 export type Settings = z.infer<typeof settingsSchema>;
 
@@ -32,4 +43,6 @@ export const DEFAULT_SETTINGS: Settings = {
   markReadOnScroll: false,
   markReadOnOpen: true,
   showUnreadOnly: false,
+  readingSize: 'medium',
+  readingWidth: 'normal',
 };

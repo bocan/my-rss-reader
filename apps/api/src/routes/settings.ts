@@ -23,6 +23,8 @@ async function loadSettings(userId: string): Promise<Settings> {
     markReadOnScroll: row.markReadOnScroll,
     markReadOnOpen: row.markReadOnOpen,
     showUnreadOnly: row.showUnreadOnly,
+    readingSize: row.readingSize as Settings['readingSize'],
+    readingWidth: row.readingWidth as Settings['readingWidth'],
   };
 }
 

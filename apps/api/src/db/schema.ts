@@ -84,6 +84,9 @@ export const userSettings = pgTable('user_settings', {
   markReadOnScroll: boolean().notNull().default(false),
   markReadOnOpen: boolean().notNull().default(true),
   showUnreadOnly: boolean().notNull().default(false),
+  // Reading pane text size and line width (#41).
+  readingSize: text().notNull().default('medium'),
+  readingWidth: text().notNull().default('normal'),
   updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
 
