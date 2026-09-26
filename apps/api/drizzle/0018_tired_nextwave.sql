@@ -1,0 +1,1 @@
+ALTER TABLE "user_settings" ADD COLUMN "mark_read_on_open" boolean DEFAULT true NOT NULL;

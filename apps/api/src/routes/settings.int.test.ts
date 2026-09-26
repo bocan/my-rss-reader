@@ -60,6 +60,31 @@ test('PUT lazily creates the row, then upserts on the next call', async () => {
   expect(row2!.updatedAt.getTime()).toBeGreaterThan(firstUpdatedAt); // bumped
 });
 
+test('markReadOnOpen defaults on and persists when turned off (#24)', async () => {
+  const cookie = await loginAs(await seedUser());
+  expect((await getSettings(cookie)).json().markReadOnOpen).toBe(true);
+
+  expect((await putSettings(cookie, { markReadOnOpen: false })).json().markReadOnOpen).toBe(false);
+  expect((await getSettings(cookie)).json().markReadOnOpen).toBe(false);
+  expect((await putSettings(cookie, { markReadOnOpen: 'no' })).statusCode).toBe(400);
+});
+
+test('reading size and width default to medium and normal, and persist (#41)', async () => {
+  const cookie = await loginAs(await seedUser());
+  expect((await getSettings(cookie)).json()).toMatchObject({
+    readingSize: 'medium',
+    readingWidth: 'normal',
+  });
+
+  await putSettings(cookie, { readingSize: 'large', readingWidth: 'narrow' });
+  expect((await getSettings(cookie)).json()).toMatchObject({
+    readingSize: 'large',
+    readingWidth: 'narrow',
+  });
+  expect((await putSettings(cookie, { readingSize: 'huge' })).statusCode).toBe(400);
+  expect((await putSettings(cookie, { readingWidth: 'full' })).statusCode).toBe(400);
+});
+
 test('an empty PUT body is a no-op that still returns the settings', async () => {
   const cookie = await loginAs(await seedUser());
   await putSettings(cookie, { theme: 'daylight' });
@@ -114,6 +139,24 @@ test('PATCH /feeds/:id sets and clears the per-feed view override', async () => 
 
   const [row] = await db.select().from(subscriptions).where(eq(subscriptions.id, sub.id));
   expect(row!.viewMode).toBeNull();
+});
+
+test('sort order: a user default, and a saved order per feed and per folder (#31)', async () => {
+  const user = await seedUser();
+  const sub = await seedSubscription(user.id, (await seedFeed()).id);
+  const folder = await seedFolder(user.id);
+  const cookie = await loginAs(user);
+  const patch = (url: string, payload: Record<string, unknown>) =>
+    app.inject({ method: 'PATCH', url, headers: { cookie }, payload });
+
+  expect((await getSettings(cookie)).json().defaultSortOrder).toBe('newest');
+  expect((await putSettings(cookie, { defaultSortOrder: 'oldest' })).json().defaultSortOrder).toBe('oldest');
+  expect((await putSettings(cookie, { defaultSortOrder: 'random' })).statusCode).toBe(400);
+
+  expect((await patch(`/api/feeds/${sub.id}`, { sortOrder: 'oldest' })).json().sortOrder).toBe('oldest');
+  expect((await patch(`/api/feeds/${sub.id}`, { sortOrder: null })).json().sortOrder).toBeNull();
+  expect((await patch(`/api/folders/${folder.id}`, { sortOrder: 'oldest' })).json().sortOrder).toBe('oldest');
+  expect((await patch(`/api/folders/${folder.id}`, { sortOrder: 'sideways' })).statusCode).toBe(400);
 });
 
 test('PATCH /feeds rejects an out-of-enum viewMode', async () => {

@@ -41,6 +41,7 @@ export function useSession() {
 export function useLogin() {
   const qc = useQueryClient();
   return useMutation({
+    meta: { inlineError: true },
     mutationFn: (input: LoginInput) =>
       api<PublicUser>('/auth/login', { method: 'POST', body: input }),
     onSuccess: (user) => qc.setQueryData(SESSION_KEY, user),
@@ -50,6 +51,7 @@ export function useLogin() {
 export function useRegister() {
   const qc = useQueryClient();
   return useMutation({
+    meta: { inlineError: true },
     mutationFn: (input: RegisterInput) =>
       api<PublicUser>('/auth/register', { method: 'POST', body: input }),
     onSuccess: (user) => qc.setQueryData(SESSION_KEY, user),
@@ -60,6 +62,7 @@ export function useRegister() {
 export function useUpdateAccount() {
   const qc = useQueryClient();
   return useMutation({
+    meta: { inlineError: true },
     mutationFn: (input: UpdateAccountInput) =>
       api<PublicUser>('/auth/me', { method: 'PATCH', body: input }),
     onSuccess: (user) => qc.setQueryData(SESSION_KEY, user),
@@ -69,6 +72,7 @@ export function useUpdateAccount() {
 /** Change the signed-in user's password after confirming the current one. */
 export function useChangePassword() {
   return useMutation({
+    meta: { inlineError: true },
     mutationFn: (input: ChangePasswordInput) =>
       api<void>('/auth/change-password', { method: 'POST', body: input }),
   });
@@ -77,6 +81,7 @@ export function useChangePassword() {
 export function useLogout() {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorMessage: 'Could not sign out.' },
     mutationFn: () => api<void>('/auth/logout', { method: 'POST' }),
     onSuccess: async () => {
       // Purge every trace of the signed-out user so nothing leaks to the next

@@ -2,6 +2,7 @@ import {
   changeFeedUrlSchema,
   createFolderSchema,
   discoverFeedsQuerySchema,
+  restoreSubscriptionSchema,
   subscribeSchema,
   updateFolderSchema,
   updateSubscriptionSchema,
@@ -22,30 +23,36 @@ import { getUnreadCountsByFeed } from '../lib/unread-counts.js';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const notFound = { error: 'NotFound', message: 'Not found', statusCode: 404 } as const;
 
+/** The GET /feeds columns for one subscription (without its unread count). */
+const subscriptionColumns = {
+  subscriptionId: subscriptions.id,
+  feedId: feeds.id,
+  title: feeds.title,
+  customTitle: subscriptions.customTitle,
+  feedUrl: feeds.feedUrl,
+  siteUrl: feeds.siteUrl,
+  faviconUrl: feeds.faviconUrl,
+  folderId: subscriptions.folderId,
+  position: subscriptions.position,
+  viewMode: subscriptions.viewMode,
+  sortOrder: subscriptions.sortOrder,
+  articleView: subscriptions.articleView,
+  hideFromAll: subscriptions.hideFromAll,
+  inBlogroll: subscriptions.inBlogroll,
+  attention: subscriptions.attention,
+  fetchIntervalSec: feeds.fetchIntervalSec,
+  websubState: feeds.websubState,
+  websubLeaseExpiresAt: feeds.websubLeaseExpiresAt,
+  lastFetchedAt: feeds.lastFetchedAt,
+  lastError: feeds.lastError,
+  // #29: how long a broken feed has been broken.
+  lastSuccessAt: feeds.lastSuccessAt,
+};
+
 /** The GET /feeds row shape for one subscription, including its unread count. */
 async function subscriptionRow(subscriptionId: string, userId: string) {
   const [row] = await db
-    .select({
-      subscriptionId: subscriptions.id,
-      feedId: feeds.id,
-      title: feeds.title,
-      customTitle: subscriptions.customTitle,
-      feedUrl: feeds.feedUrl,
-      siteUrl: feeds.siteUrl,
-      faviconUrl: feeds.faviconUrl,
-      folderId: subscriptions.folderId,
-      position: subscriptions.position,
-      viewMode: subscriptions.viewMode,
-      articleView: subscriptions.articleView,
-      hideFromAll: subscriptions.hideFromAll,
-      inBlogroll: subscriptions.inBlogroll,
-      attention: subscriptions.attention,
-      fetchIntervalSec: feeds.fetchIntervalSec,
-      websubState: feeds.websubState,
-      websubLeaseExpiresAt: feeds.websubLeaseExpiresAt,
-      lastFetchedAt: feeds.lastFetchedAt,
-      lastError: feeds.lastError,
-    })
+    .select(subscriptionColumns)
     .from(subscriptions)
     .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
     .where(eq(subscriptions.id, subscriptionId))
@@ -62,27 +69,7 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
   // List the current user's subscriptions with feed metadata.
   app.get('/feeds', auth, async (request) => {
     const rows = await db
-      .select({
-        subscriptionId: subscriptions.id,
-        feedId: feeds.id,
-        title: feeds.title,
-        customTitle: subscriptions.customTitle,
-        feedUrl: feeds.feedUrl,
-        siteUrl: feeds.siteUrl,
-        faviconUrl: feeds.faviconUrl,
-        folderId: subscriptions.folderId,
-        position: subscriptions.position,
-        viewMode: subscriptions.viewMode,
-        articleView: subscriptions.articleView,
-        hideFromAll: subscriptions.hideFromAll,
-        inBlogroll: subscriptions.inBlogroll,
-        attention: subscriptions.attention,
-        fetchIntervalSec: feeds.fetchIntervalSec,
-        websubState: feeds.websubState,
-        websubLeaseExpiresAt: feeds.websubLeaseExpiresAt,
-        lastFetchedAt: feeds.lastFetchedAt,
-        lastError: feeds.lastError,
-      })
+      .select(subscriptionColumns)
       .from(subscriptions)
       .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
       .where(eq(subscriptions.userId, request.user!.id))
@@ -118,6 +105,23 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
     };
     await Promise.all(Array.from({ length: Math.min(8, feedRows.length) }, worker));
     return { refreshed: feedRows.length };
+  });
+
+  // Fetch one of the caller's feeds right now ("Retry now", #29). Returns the
+  // subscription row afterwards, with the new error or none.
+  app.post('/feeds/:id/refresh', auth, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const userId = request.user!.id;
+    if (!UUID_RE.test(id)) return reply.code(404).send(notFound);
+    const [row] = await db
+      .select({ feed: feeds })
+      .from(subscriptions)
+      .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
+      .where(and(eq(subscriptions.id, id), eq(subscriptions.userId, userId)))
+      .limit(1);
+    if (!row) return reply.code(404).send(notFound);
+    await fetchAndStoreFeed(row.feed); // records errors on the row, never throws
+    return (await subscriptionRow(id, userId))!;
   });
 
   // Discover feed candidates for a URL (feed or homepage). Writes nothing.
@@ -208,6 +212,17 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
       .limit(1);
     if (!current) return reply.code(404).send(notFound);
 
+    // The poll interval is on the shared feed, so it changes the feed for every
+    // subscriber. Only an admin may set it (#38). The first account is always
+    // an admin, so a single-user install keeps full control.
+    if (input.fetchIntervalSec !== undefined && request.user!.role !== 'admin') {
+      return reply.code(403).send({
+        error: 'Forbidden',
+        message: 'Only an administrator can change how often a feed is polled',
+        statusCode: 403,
+      });
+    }
+
     // Validate the destination folder before any write. null moves to root.
     if (input.folderId != null) {
       const [target] = await db
@@ -230,6 +245,7 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
       if (input.title !== undefined) changes.customTitle = input.title;
       if (input.folderId !== undefined) changes.folderId = input.folderId;
       if (input.viewMode !== undefined) changes.viewMode = input.viewMode;
+      if (input.sortOrder !== undefined) changes.sortOrder = input.sortOrder;
       if (input.articleView !== undefined) changes.articleView = input.articleView;
       if (input.hideFromAll !== undefined) changes.hideFromAll = input.hideFromAll;
       if (input.inBlogroll !== undefined) changes.inBlogroll = input.inBlogroll;
@@ -238,18 +254,22 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
         await tx.update(subscriptions).set(changes).where(eq(subscriptions.id, id));
       }
       // The poll interval lives on the shared feed, so this affects everyone
-      // subscribed to it (the dialog copy says so).
+      // subscribed to it (admins only, checked above).
       if (input.fetchIntervalSec !== undefined) {
         await tx
           .update(feeds)
           .set({ fetchIntervalSec: input.fetchIntervalSec })
           .where(eq(feeds.id, current.feedId));
       }
-      // Renormalize the scope it left, then place it in its destination.
+      // Renormalize the scope it left, then place it in its destination. Only on
+      // a move: with no position, placeSubscription appends, so a rename would
+      // send the feed to the bottom of a manually ordered folder (#27).
       if (newFolderId !== oldFolderId) {
         await renormalizeSubscriptionScope(tx, userId, oldFolderId);
       }
-      await placeSubscription(tx, userId, id, newFolderId, input.position);
+      if (newFolderId !== oldFolderId || input.position !== undefined) {
+        await placeSubscription(tx, userId, id, newFolderId, input.position);
+      }
     });
 
     return (await subscriptionRow(id, userId))!;
@@ -341,6 +361,63 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
     return reply.code(204).send();
   });
 
+  // Undo an unsubscribe (#16). The feed row outlives its subscribers, so this
+  // subscribes again by feed id with the old settings, and puts the feed back
+  // in its place. A folder deleted in the meantime falls back to the root.
+  // Returns the GET /feeds row shape.
+  app.post('/feeds/restore', auth, async (request, reply) => {
+    const input = restoreSubscriptionSchema.parse(request.body);
+    const userId = request.user!.id;
+
+    const [feed] = await db
+      .select({ id: feeds.id })
+      .from(feeds)
+      .where(eq(feeds.id, input.feedId))
+      .limit(1);
+    if (!feed) return reply.code(404).send(notFound);
+
+    let folderId = input.folderId;
+    if (folderId) {
+      const [folder] = await db
+        .select({ id: folders.id })
+        .from(folders)
+        .where(and(eq(folders.id, folderId), eq(folders.userId, userId)))
+        .limit(1);
+      if (!folder) folderId = null;
+    }
+
+    const id = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(subscriptions)
+        .values({
+          userId,
+          feedId: input.feedId,
+          folderId,
+          customTitle: input.title,
+          viewMode: input.viewMode,
+          sortOrder: input.sortOrder,
+          articleView: input.articleView,
+          hideFromAll: input.hideFromAll,
+          inBlogroll: input.inBlogroll,
+          attention: input.attention,
+        })
+        .onConflictDoNothing({ target: [subscriptions.userId, subscriptions.feedId] })
+        .returning({ id: subscriptions.id });
+      if (!row) return null;
+      await placeSubscription(tx, userId, row.id, folderId, input.position);
+      return row.id;
+    });
+    if (!id) {
+      return reply.code(409).send({
+        error: 'already_subscribed',
+        message: 'You are already subscribed to that feed',
+        statusCode: 409,
+      });
+    }
+
+    return reply.code(201).send((await subscriptionRow(id, userId))!);
+  });
+
   // --- Folders ---
 
   app.get('/folders', auth, async (request) => {
@@ -354,14 +431,32 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/folders', auth, async (request, reply) => {
     const input = createFolderSchema.parse(request.body);
-    const [folder] = await db
-      .insert(folders)
-      .values({
-        userId: request.user!.id,
-        name: input.name,
-        parentId: input.parentId ?? null,
-      })
-      .returning();
+    const userId = request.user!.id;
+    const parentId = input.parentId ?? null;
+    // The same one-level rule as PATCH (#28): the parent must be the user's own
+    // root folder.
+    if (parentId !== null) {
+      const [parent] = await db
+        .select({ parentId: folders.parentId })
+        .from(folders)
+        .where(and(eq(folders.id, parentId), eq(folders.userId, userId)))
+        .limit(1);
+      const message = !parent
+        ? 'Unknown parent folder'
+        : parent.parentId !== null
+          ? 'Folders can only nest one level deep'
+          : null;
+      if (message) {
+        return reply.code(400).send({ error: 'invalid_parent', message, statusCode: 400 });
+      }
+    }
+    const folder = await db.transaction(async (tx) => {
+      const [row] = await tx.insert(folders).values({ userId, name: input.name, parentId }).returning();
+      // Last in its scope, not tied at 0 with the first folder (manual order, #27).
+      await placeFolder(tx, userId, row!.id, parentId);
+      const [placed] = await tx.select().from(folders).where(eq(folders.id, row!.id)).limit(1);
+      return placed!;
+    });
     return reply.code(201).send(folder);
   });
 
@@ -416,6 +511,7 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
       if (input.name !== undefined) changes.name = input.name;
       if (input.parentId !== undefined) changes.parentId = input.parentId;
       if (input.viewMode !== undefined) changes.viewMode = input.viewMode;
+      if (input.sortOrder !== undefined) changes.sortOrder = input.sortOrder;
       if (Object.keys(changes).length > 0) {
         await tx.update(folders).set(changes).where(eq(folders.id, id));
       }

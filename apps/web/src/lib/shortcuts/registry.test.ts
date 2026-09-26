@@ -29,8 +29,15 @@ describe('isEditableTarget', () => {
 
 describe('resolveShortcut', () => {
   test('resolves list-context keys only in the list context', () => {
-    expect(resolveShortcut('j', 'list')?.label).toBe('Next article');
-    expect(resolveShortcut('j', 'reader')).toBeUndefined();
+    expect(resolveShortcut('o', 'list')?.label).toBe('Open selected article');
+    expect(resolveShortcut('o', 'reader')).toBeUndefined();
+  });
+
+  test('j/k step articles in the full-screen reader too (#23)', () => {
+    for (const ctx of ['list', 'reader'] as const) {
+      expect(resolveShortcut('j', ctx)?.label).toBe('Next article');
+      expect(resolveShortcut('k', ctx)?.label).toBe('Previous article');
+    }
   });
 
   test('Escape is global so it dismisses on lg+, where context stays list', () => {

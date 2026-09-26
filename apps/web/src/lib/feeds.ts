@@ -2,9 +2,11 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from './api';
 
 /** Subscribe to a feed or homepage URL. */
-export function useSubscribe() {
+/** `inlineError`: the caller shows failures itself (the subscribe dialog). */
+export function useSubscribe({ inlineError = false } = {}) {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorMessage: 'Could not subscribe to that feed.', inlineError },
     mutationFn: ({ url, folderId }: { url: string; folderId?: string | null }) =>
       api<{ subscription: unknown; feed: { id: string } }>('/feeds', {
         method: 'POST',

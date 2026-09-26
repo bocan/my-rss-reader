@@ -1,6 +1,6 @@
-import { ARTICLE_VIEWS, type ArticleDetail, type ArticleView } from '@rss/shared';
+import { ARTICLE_VIEWS, type ArticleDetail, type ArticleView, type ReadingSize } from '@rss/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, ExternalLink, Rss, Star } from 'lucide-react';
+import { Download, ExternalLink, Mail, MailOpen, Rss, Star } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ARTICLE_VIEW_LABELS, resolveAutoView } from '@/lib/article-view';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,7 @@ import { api, ApiRequestError } from '@/lib/api';
 import { useToggleArticleState } from '@/lib/articles';
 import { useSubscriptions } from '@/lib/folders';
 import { useOnlineStatus } from '@/lib/pwa';
+import { proseSizeClass, readingColumnClass } from '@/lib/reading-format';
 import { useSettings } from '@/lib/settings';
 import { cn } from '@/lib/utils';
 import { ArticleHtml } from './ArticleHtml';
@@ -27,7 +28,14 @@ function formatDate(iso: string | null): string {
   return Number.isNaN(d.getTime()) ? '' : dateFmt.format(d);
 }
 
-export function ReadingPane({ articleId }: { articleId: string }) {
+export function ReadingPane({
+  articleId,
+  stepper,
+}: {
+  articleId: string;
+  /** Previous / Next controls, shown with the article actions (#23). */
+  stepper?: ReactNode;
+}) {
   const queryClient = useQueryClient();
   const { settings } = useSettings();
   const { data: feedsData } = useSubscriptions();
@@ -67,20 +75,44 @@ export function ReadingPane({ articleId }: { articleId: string }) {
   }, [readableQuery.data, articleId, queryClient]);
 
   const refresh = useMutation({
+    // The Extracted view shows its own "could not extract" state.
+    meta: { inlineError: true },
     mutationFn: () => api<ArticleDetail>(`/articles/${articleId}/readable?refresh=true`),
     onSuccess: (data) => queryClient.setQueryData(['article', articleId], data),
   });
 
-  // Mark read on open, exactly once per article (SPEC-011 can swap this seam for
-  // a scroll-based trigger later). The ref guards against re-render re-fires.
+  // Mark read on open, exactly once per opening, unless the user marks by hand
+  // (settings.markReadOnOpen, #24). The ref guards against re-render re-fires,
+  // so an article marked unread here stays unread while it stays open; the
+  // pane is keyed by article, so opening it again starts fresh.
   const toggle = useToggleArticleState(articleId);
   const markedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (article && !article.read && !markedRef.current.has(article.id)) {
-      markedRef.current.add(article.id);
-      toggle.mutate({ read: true });
+    if (!settings.markReadOnOpen || !article || markedRef.current.has(article.id)) return;
+    // Recorded on first sight even when already read, so a later Mark unread
+    // (button, u, m) is never undone by this effect.
+    markedRef.current.add(article.id);
+    if (!article.read) toggle.mutate({ read: true });
+  }, [article, toggle, settings.markReadOnOpen]);
+  const toggleRead = () => {
+    if (!article) return;
+    markedRef.current.add(article.id);
+    toggle.mutate({ read: !article.read });
+  };
+
+  // #49: move focus into the article once it shows, so the scroll keys act on
+  // it. The pane is keyed by article, so this runs once per article. Never
+  // take focus from a field the user is typing in.
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const loaded = article !== undefined;
+  useEffect(() => {
+    if (!loaded) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active.matches('input, textarea, select, [contenteditable="true"]')) {
+      return;
     }
-  }, [article, toggle]);
+    bodyRef.current?.focus({ preventScroll: true });
+  }, [loaded]);
 
   if (articleQuery.isLoading) {
     return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
@@ -103,94 +135,130 @@ export function ReadingPane({ articleId }: { articleId: string }) {
   }
   if (!article) return null;
 
+  // #41: the header and body share one centered column, so lines stay a
+  // readable length at any window width.
+  const column = readingColumnClass(settings.readingSize, settings.readingWidth);
+
   return (
     <div className="flex h-full flex-col">
       <div className="border-b p-4 md:p-6">
-        <h1 className="font-serif text-[1.7rem] font-semibold leading-tight tracking-tight">
-          {article.title ?? '(untitled)'}
-        </h1>
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-          <span className="flex items-center gap-1.5">
-            {article.feed.faviconUrl ? (
-              <img src={article.feed.faviconUrl} alt="" className="size-4 rounded-sm" />
-            ) : (
-              <Rss className="size-4" />
-            )}
-            {article.feed.title ?? article.feed.siteUrl ?? ''}
-          </span>
-          {article.author && <span>{article.author}</span>}
-          {article.publishedAt && <span>{formatDate(article.publishedAt)}</span>}
-          {article.url && (
-            <a
-              href={article.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-primary hover:underline"
-            >
-              <ExternalLink className="size-3.5" /> Open original
-            </a>
-          )}
-        </div>
-
-        <div className="mt-3 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <div className="inline-flex rounded-md border p-0.5">
-              {ARTICLE_VIEWS.map((v) => (
-                <button
-                  key={v}
-                  onClick={() => chooseView(v)}
-                  aria-pressed={view === v}
-                  title={VIEW_TITLES[v]}
-                  className={cn(
-                    'rounded px-3 py-1 text-sm',
-                    view === v
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  {ARTICLE_VIEW_LABELS[v]}
-                </button>
-              ))}
-            </div>
-            {isAuto && (
-              <span
-                className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-                title="Your default view is Automatic: the reader chose this view for this article. Pick another view to override it."
+        <div className={column}>
+          <h1 className="font-serif text-[1.7rem] font-semibold leading-tight tracking-tight">
+            {article.title ?? '(untitled)'}
+          </h1>
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              {article.feed.faviconUrl ? (
+                <img src={article.feed.faviconUrl} alt="" className="size-4 rounded-sm" />
+              ) : (
+                <Rss className="size-4" />
+              )}
+              {article.feed.title ?? article.feed.siteUrl ?? ''}
+            </span>
+            {article.author && <span>{article.author}</span>}
+            {article.publishedAt && <span>{formatDate(article.publishedAt)}</span>}
+            {article.url && (
+              <a
+                href={article.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-primary hover:underline"
               >
-                Auto
-              </span>
+                <ExternalLink className="size-3.5" /> Open original
+              </a>
             )}
           </div>
-          <div className="flex items-center gap-1">
-            <SharePopover key={article.id} article={article} />
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={article.starred ? 'Unstar' : 'Star'}
-              onClick={() => toggle.mutate({ starred: !article.starred })}
-            >
-              <Star className={cn('size-4', article.starred && 'fill-primary text-primary')} />
-            </Button>
+
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="inline-flex rounded-md border p-0.5" role="group" aria-label="Article view">
+                {ARTICLE_VIEWS.map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => chooseView(v)}
+                    aria-pressed={view === v}
+                    title={VIEW_TITLES[v]}
+                    className={cn(
+                      'rounded px-3 py-1 text-sm',
+                      view === v
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {ARTICLE_VIEW_LABELS[v]}
+                  </button>
+                ))}
+              </div>
+              {isAuto && (
+                <span
+                  className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+                  title="Your default view is Automatic: the reader chose this view for this article. Pick another view to override it."
+                >
+                  Auto
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={article.read ? 'Mark unread' : 'Mark read'}
+                title={article.read ? 'Read. Mark unread (u)' : 'Unread. Mark read (m)'}
+                onClick={toggleRead}
+              >
+                {article.read ? <MailOpen className="size-4" /> : <Mail className="size-4 text-primary" />}
+              </Button>
+              <SharePopover key={article.id} article={article} />
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={article.starred ? 'Unstar' : 'Star'}
+                onClick={() => toggle.mutate({ starred: !article.starred })}
+              >
+                <Star className={cn('size-4', article.starred && 'fill-primary text-primary')} />
+              </Button>
+              {stepper}
+            </div>
           </div>
         </div>
       </div>
 
       {article.enclosureUrl && <EnclosurePlayer article={article} />}
 
-      <div className={cn('min-h-0 flex-1', view === 'web' ? '' : 'overflow-y-auto p-4 md:p-6')}>
-        {view === 'readable' && <FeedView article={article} />}
-        {view === 'simplified' && (
-          <ExtractedView
-            article={article}
-            online={online}
-            loading={readableQuery.isFetching}
-            failed={readableQuery.isError}
-            retrying={refresh.isPending}
-            onRetry={() => refresh.mutate()}
-            onSwitchReadable={() => chooseView('readable')}
-          />
+      <div
+        ref={bodyRef}
+        // Focus lands here when the article opens (#49), so Space, Page Down
+        // and the arrows scroll it at once. j/k are page-wide keys and still
+        // work. No ring: the focus is not from the keyboard.
+        tabIndex={-1}
+        className={cn('min-h-0 flex-1 outline-none', view === 'web' ? '' : 'overflow-y-auto p-4 md:p-6')}
+      >
+        {view === 'web' ? (
+          <WebView article={article} online={online} />
+        ) : (
+          <div className={column} data-testid="reading-column">
+            {view === 'readable' && (
+              <FeedView
+                article={article}
+                size={settings.readingSize}
+                onSwitchExtracted={() => chooseView('simplified')}
+              />
+            )}
+            {view === 'simplified' && (
+              <ExtractedView
+                article={article}
+                size={settings.readingSize}
+                online={online}
+                loading={readableQuery.isFetching}
+                failed={readableQuery.isError}
+                retrying={refresh.isPending}
+                onRetry={() => refresh.mutate()}
+                onSwitchReadable={() => chooseView('readable')}
+              />
+            )}
+            <KeyHint />
+          </div>
         )}
-        {view === 'web' && <WebView article={article} online={online} />}
       </div>
     </div>
   );
@@ -231,14 +299,49 @@ function EnclosurePlayer({ article }: { article: ArticleDetail }) {
   );
 }
 
-function FeedView({ article }: { article: ArticleDetail }) {
-  if (article.contentHtml) return <ArticleHtml html={article.contentHtml} />;
-  if (article.summary) return <Note>{article.summary}</Note>;
+function FeedView({
+  article,
+  size,
+  onSwitchExtracted,
+}: {
+  article: ArticleDetail;
+  size: ReadingSize;
+  onSwitchExtracted: () => void;
+}) {
+  if (article.contentHtml) return <ArticleHtml html={article.contentHtml} size={size} />;
+  if (article.summary) {
+    // A summary is the article as the feed sends it, so it reads as body
+    // text, not as a grey notice (#47). Then say where the rest is.
+    return (
+      <div className="space-y-6">
+        <div
+          className={cn('prose prose-neutral max-w-none dark:prose-invert', proseSizeClass(size))}
+          data-testid="feed-summary"
+        >
+          <p>{article.summary}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 border-t pt-4 text-sm text-muted-foreground">
+          <span className="mr-1">This feed sends only a summary.</span>
+          <Button size="sm" variant="outline" onClick={onSwitchExtracted}>
+            Extracted
+          </Button>
+          {article.url && (
+            <Button size="sm" variant="outline" asChild>
+              <a href={article.url} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="size-3.5" /> Open original
+              </a>
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
   return <Note>No content in this item. Try the Web view.</Note>;
 }
 
 function ExtractedView({
   article,
+  size,
   online,
   loading,
   failed,
@@ -247,6 +350,7 @@ function ExtractedView({
   onSwitchReadable,
 }: {
   article: ArticleDetail;
+  size: ReadingSize;
   online: boolean;
   loading: boolean;
   failed: boolean;
@@ -254,7 +358,7 @@ function ExtractedView({
   onRetry: () => void;
   onSwitchReadable: () => void;
 }) {
-  if (article.readableHtml) return <ArticleHtml html={article.readableHtml} />;
+  if (article.readableHtml) return <ArticleHtml html={article.readableHtml} size={size} />;
   // Only wait ("Preparing"/"Extracting") while an attempt is genuinely pending.
   // A stamped readableFetchedAt or an errored /readable request (e.g. 422 for an
   // article with no source URL, or a transient network/proxy error) both fall
@@ -327,6 +431,18 @@ function WebView({ article, online }: { article: ArticleDetail; online: boolean 
         className="h-full w-full border-0"
       />
     </div>
+  );
+}
+
+const kbd = 'rounded border bg-muted px-1 font-mono';
+
+/** Says that keys exist (#49). Hidden on touch screens, which have no keys. */
+function KeyHint() {
+  return (
+    <p className="mt-10 text-xs text-muted-foreground pointer-coarse:hidden" data-testid="key-hint">
+      <kbd className={kbd}>j</kbd> <kbd className={kbd}>k</kbd> next and previous,{' '}
+      <kbd className={kbd}>v</kbd> open original, <kbd className={kbd}>?</kbd> all shortcuts
+    </p>
   );
 }
 

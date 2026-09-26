@@ -1,11 +1,16 @@
 import {
   articleQuerySchema,
+  FIREHOSE_EXPIRY_DAYS,
   markReadSchema,
+  markUnreadSchema,
+  newArticleCountQuerySchema,
   readableQuerySchema,
   updateArticleStateSchema,
+  type MarkReadResult,
+  type NewArticleCountQuery,
   type Paginated,
 } from '@rss/shared';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNotNull, or, sql, type SQL } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { db } from '../db/index.js';
 import { articles, articleStates, feeds, subscriptions } from '../db/schema.js';
@@ -17,17 +22,16 @@ import {
   type CursorPayload,
   type SearchCursorPayload,
 } from '../lib/cursor.js';
-import { resolveSubscribedFeedIds } from '../lib/feed-scope.js';
+import { folderScopeIds, resolveSubscribedFeedIds } from '../lib/feed-scope.js';
 import { extractReadableHtml } from '../lib/readability.js';
-import { FIREHOSE_EXPIRY_DAYS } from '../lib/unread-counts.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Load one article for a user, scoped to their subscriptions (inner join on
- * subscriptions enforces access). Returns null when the id is malformed, the
- * article does not exist, or the user is not subscribed to its feed - all of
- * which the caller maps to an indistinguishable 404.
+ * Load one article for a user. Access needs a subscription to its feed, or the
+ * user's own star or share on it (those outlive an unsubscribe, #16). Returns
+ * null when the id is malformed, the article does not exist, or neither holds -
+ * all of which the caller maps to an indistinguishable 404.
  */
 async function loadArticleDetail(userId: string, id: string) {
   if (!UUID_RE.test(id)) return null;
@@ -55,7 +59,7 @@ async function loadArticleDetail(userId: string, id: string) {
     })
     .from(articles)
     .innerJoin(feeds, eq(articles.feedId, feeds.id))
-    .innerJoin(
+    .leftJoin(
       subscriptions,
       and(eq(subscriptions.feedId, articles.feedId), eq(subscriptions.userId, userId)),
     )
@@ -63,7 +67,16 @@ async function loadArticleDetail(userId: string, id: string) {
       articleStates,
       and(eq(articleStates.articleId, articles.id), eq(articleStates.userId, userId)),
     )
-    .where(eq(articles.id, id))
+    .where(
+      and(
+        eq(articles.id, id),
+        or(
+          isNotNull(subscriptions.id),
+          eq(articleStates.starred, true),
+          eq(articleStates.shared, true),
+        ),
+      ),
+    )
     .limit(1);
 
   const r = rows[0];
@@ -100,6 +113,80 @@ const badCursor = { error: 'Bad Request', message: 'Invalid cursor', statusCode:
 // depth (10 pages at the default limit of 50).
 const SEARCH_RESULT_CAP = 500;
 
+/**
+ * The WHERE clauses for an article list scope: which feeds, and the read,
+ * starred, and shared marks. Null when the scope has no feeds at all. Shared
+ * by the list and by its "N new" count (#30), so both see the same articles.
+ * The query must join article_states for the caller.
+ */
+async function articleScope(
+  query: Omit<NewArticleCountQuery, 'since'> & { q?: string },
+  userId: string,
+): Promise<{ filters: SQL[]; fhExpired: SQL | null } | null> {
+  // Resolve the caller's feed ids, always scoped by userId, optionally
+  // narrowed by feedId, folderId, and/or attention tier (SPEC-022).
+  const subFilters = [eq(subscriptions.userId, userId)];
+  if (query.feedId) subFilters.push(eq(subscriptions.feedId, query.feedId));
+  // A folder covers its child folders too (#25).
+  if (query.folderId) {
+    subFilters.push(inArray(subscriptions.folderId, await folderScopeIds(userId, query.folderId)));
+  }
+  if (query.attention) subFilters.push(eq(subscriptions.attention, query.attention));
+  // Hidden feeds drop out of the All-items firehose only; an explicit feed,
+  // folder, starred, shared, tier, or search scope still includes them
+  // (SPEC-018).
+  const isAllItems =
+    !query.feedId &&
+    !query.folderId &&
+    !query.starred &&
+    !query.shared &&
+    !query.attention &&
+    query.q === undefined;
+  if (isAllItems) subFilters.push(eq(subscriptions.hideFromAll, false));
+  // Starred and Shared are the user's own marks, so they do not need a
+  // subscription: they survive an unsubscribe (#16). A feed, folder, or tier
+  // narrowing still means "within my subscriptions".
+  const isStateScope =
+    Boolean(query.starred || query.shared) &&
+    !query.feedId &&
+    !query.folderId &&
+    !query.attention;
+  const subs = await db
+    .select({ feedId: subscriptions.feedId, attention: subscriptions.attention })
+    .from(subscriptions)
+    .where(and(...subFilters));
+  const feedIds = subs.map((s) => s.feedId);
+
+  // Firehose expiry (SPEC-022): items older than the window are treated as
+  // read at query time (no state writes). Bound as a single Postgres array
+  // literal of DB-sourced uuids, same trick as mark-read.
+  const firehoseIds = subs.filter((s) => s.attention === 'firehose').map((s) => s.feedId);
+  const fhArray = `{${firehoseIds.join(',')}}`;
+  const fhExpired =
+    firehoseIds.length > 0
+      ? sql`(${articles.feedId} = any(${fhArray}::uuid[])
+          and coalesce(${articles.publishedAt}, ${articles.fetchedAt})
+              < now() - make_interval(days => ${FIREHOSE_EXPIRY_DAYS}))`
+      : null;
+
+  if (feedIds.length === 0 && !isStateScope) return null;
+
+  const filters: SQL[] = isStateScope ? [] : [inArray(articles.feedId, feedIds)];
+  if (query.unread !== undefined) {
+    // No state row means unread; treat missing rows as read=false.
+    filters.push(sql`coalesce(${articleStates.read}, false) = ${!query.unread}`);
+    // Expired firehose items are no longer owed: keep them out of unread.
+    if (query.unread && fhExpired) filters.push(sql`not ${fhExpired}`);
+  }
+  if (query.starred) {
+    filters.push(sql`coalesce(${articleStates.starred}, false) = true`);
+  }
+  if (query.shared) {
+    filters.push(sql`coalesce(${articleStates.shared}, false) = true`);
+  }
+  return { filters, fhExpired };
+}
+
 export async function articleRoutes(app: FastifyInstance): Promise<void> {
   const auth = { preHandler: app.requireAuth };
 
@@ -114,6 +201,8 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
     const query = articleQuerySchema.parse(request.query);
     const userId = request.user!.id;
     const isSearch = query.q !== undefined;
+    // Taken before the query runs: anything fetched later is not on this page.
+    const asOf = new Date().toISOString();
 
     // Decode the cursor for the active mode. A chronological cursor sent with
     // `q` (or a search cursor sent without it) fails its decoder -> 400.
@@ -129,60 +218,12 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
       }
     }
 
-    // Resolve the caller's feed ids, always scoped by userId, optionally
-    // narrowed by feedId, folderId, and/or attention tier (SPEC-022).
-    const subFilters = [eq(subscriptions.userId, userId)];
-    if (query.feedId) subFilters.push(eq(subscriptions.feedId, query.feedId));
-    if (query.folderId) subFilters.push(eq(subscriptions.folderId, query.folderId));
-    if (query.attention) subFilters.push(eq(subscriptions.attention, query.attention));
-    // Hidden feeds drop out of the All-items firehose only; an explicit feed,
-    // folder, starred, shared, tier, or search scope still includes them
-    // (SPEC-018).
-    const isAllItems =
-      !query.feedId &&
-      !query.folderId &&
-      !query.starred &&
-      !query.shared &&
-      !query.attention &&
-      !isSearch;
-    if (isAllItems) subFilters.push(eq(subscriptions.hideFromAll, false));
-    const subs = await db
-      .select({ feedId: subscriptions.feedId, attention: subscriptions.attention })
-      .from(subscriptions)
-      .where(and(...subFilters));
-    const feedIds = subs.map((s) => s.feedId);
-
-    // Firehose expiry (SPEC-022): items older than the window are treated as
-    // read at query time (no state writes). Bound as a single Postgres array
-    // literal of DB-sourced uuids, same trick as mark-read.
-    const firehoseIds = subs.filter((s) => s.attention === 'firehose').map((s) => s.feedId);
-    const fhArray = `{${firehoseIds.join(',')}}`;
-    const fhExpired =
-      firehoseIds.length > 0
-        ? sql`(${articles.feedId} = any(${fhArray}::uuid[])
-            and coalesce(${articles.publishedAt}, ${articles.fetchedAt})
-                < now() - make_interval(days => ${FIREHOSE_EXPIRY_DAYS}))`
-        : null;
-
-    if (feedIds.length === 0) {
-      return { items: [], nextCursor: null } satisfies Paginated<never>;
-    }
+    const scope = await articleScope(query, userId);
+    if (!scope) return { items: [], nextCursor: null, asOf } satisfies Paginated<never>;
+    const { filters, fhExpired } = scope;
 
     const sortKey = sql`coalesce(${articles.publishedAt}, ${articles.fetchedAt})`;
 
-    const filters = [inArray(articles.feedId, feedIds)];
-    if (query.unread !== undefined) {
-      // No state row means unread; treat missing rows as read=false.
-      filters.push(sql`coalesce(${articleStates.read}, false) = ${!query.unread}`);
-      // Expired firehose items are no longer owed: keep them out of unread.
-      if (query.unread && fhExpired) filters.push(sql`not ${fhExpired}`);
-    }
-    if (query.starred) {
-      filters.push(sql`coalesce(${articleStates.starred}, false) = true`);
-    }
-    if (query.shared) {
-      filters.push(sql`coalesce(${articleStates.shared}, false) = true`);
-    }
     // websearch_to_tsquery understands "exact phrase", -exclude and OR, and
     // never throws on malformed input. An all-stopword query yields an empty
     // tsquery that matches nothing, so search simply returns no rows.
@@ -258,7 +299,26 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const items = kept.map(({ sortTs, rank, ...rest }) => rest);
-    return { items, nextCursor } satisfies Paginated<(typeof items)[number]>;
+    return { items, nextCursor, asOf } satisfies Paginated<(typeof items)[number]>;
+  });
+
+  // How many articles joined a list since it was loaded (#30): same scope as
+  // GET /articles, fetched after its `asOf`. The web polls this for its
+  // "N new articles" bar, so the open list never shifts by itself.
+  app.get('/articles/new-count', auth, async (request) => {
+    const query = newArticleCountQuerySchema.parse(request.query);
+    const userId = request.user!.id;
+    const scope = await articleScope(query, userId);
+    if (!scope) return { count: 0 };
+    const [row] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(articles)
+      .leftJoin(
+        articleStates,
+        and(eq(articleStates.articleId, articles.id), eq(articleStates.userId, userId)),
+      )
+      .where(and(...scope.filters, gt(articles.fetchedAt, new Date(query.since))));
+    return { count: row?.count ?? 0 };
   });
 
   // Full article for the reading pane, scoped to the caller's subscriptions.
@@ -270,7 +330,7 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // Read-through cache for the Simplified view. Extraction runs only here, only
-  // on a cache miss (or ?refresh=true), and only for a subscribed article.
+  // on a cache miss (or ?refresh=true), and only for an article the user can open.
   app.get('/articles/:id/readable', auth, async (request, reply) => {
     const { id } = request.params as { id: string };
     const query = readableQuerySchema.parse(request.query);
@@ -301,18 +361,23 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
     return { ...detail, readableHtml: clean, readableFetchedAt };
   });
 
-  // Bulk mark-as-read across a feed, a folder's feeds, or all subscriptions,
-  // optionally only items older than `before`. One set-based statement.
-  app.post('/articles/mark-read', auth, async (request, reply) => {
+  // Bulk mark-as-read across a feed, a folder's feeds, or All items, optionally
+  // only items older than `before` and only items already stored by
+  // `fetchedBefore`. One set-based statement.
+  app.post('/articles/mark-read', auth, async (request) => {
     const input = markReadSchema.parse(request.body);
     const userId = request.user!.id;
 
-    // feedId wins over folderId; neither means all subscribed feeds.
+    // feedId wins over folderId; neither means All items, which leaves out
+    // hidden feeds exactly as the All-items list does. Explicit articleIds
+    // came from a list that showed them, so hidden feeds count there.
     const feedIds = await resolveSubscribedFeedIds(userId, {
       feedId: input.feedId,
       folderId: input.folderId,
+      excludeHidden: !input.articleIds,
     });
-    if (feedIds.length === 0) return reply.code(204).send(); // empty folder / no subs
+    // Empty folder / no subs: nothing to mark.
+    if (feedIds.length === 0) return { markedIds: [] } satisfies MarkReadResult;
 
     // Bind the feed ids as a single Postgres array literal param. (drizzle's sql
     // template expands a JS array into separate params, which breaks any(...).)
@@ -323,19 +388,46 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
     const beforeClause = input.before
       ? sql`and coalesce(a.published_at, a.fetched_at) < ${input.before}::timestamptz`
       : sql``;
+    // Items stored after the caller's list was produced were never shown.
+    const fetchedClause = input.fetchedBefore
+      ? sql`and a.fetched_at <= ${input.fetchedBefore}::timestamptz`
+      : sql``;
+    // Zod checked each id is a uuid, so the array literal is safe (as above).
+    const idsClause = input.articleIds
+      ? sql`and a.id = any(${`{${input.articleIds.join(',')}}`}::uuid[])`
+      : sql``;
 
     // The conflict guard (read = false) makes this idempotent: already-read
     // articles keep their original read_at, and starred/starred_at survive.
-    await db.execute(sql`
+    // RETURNING covers inserted and updated rows only, never the rows the
+    // guard skipped, so it is exactly what this call changed (for Undo, #26).
+    const rows = await db.execute<{ article_id: string }>(sql`
       insert into article_states (user_id, article_id, read, read_at)
       select ${userId}::uuid, a.id, true, now()
       from articles a
-      where a.feed_id = any(${feedIdArray}::uuid[]) ${beforeClause}
+      where a.feed_id = any(${feedIdArray}::uuid[]) ${beforeClause} ${fetchedClause} ${idsClause}
       on conflict (user_id, article_id) do update
         set read = true, read_at = now()
         where article_states.read = false
+      returning article_id
     `);
 
+    return { markedIds: rows.map((r) => r.article_id) } satisfies MarkReadResult;
+  });
+
+  // Undo a mark-read (#26): only the caller's own rows, only ones still read.
+  app.post('/articles/mark-unread', auth, async (request, reply) => {
+    const { articleIds } = markUnreadSchema.parse(request.body);
+    await db
+      .update(articleStates)
+      .set({ read: false, readAt: null })
+      .where(
+        and(
+          eq(articleStates.userId, request.user!.id),
+          inArray(articleStates.articleId, articleIds),
+          eq(articleStates.read, true),
+        ),
+      );
     return reply.code(204).send();
   });
 

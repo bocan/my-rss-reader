@@ -16,14 +16,7 @@
 import { and, asc, eq, gt, isNull, lt, or } from 'drizzle-orm';
 import { client, db } from '../db/index.js';
 import { articles, feeds } from '../db/schema.js';
-import { htmlToText, SANITIZER_VERSION, sanitizeArticleHtml } from '../lib/sanitize.js';
-
-/**
- * A stored summary that is really HTML: it opens with a tag and has a closing
- * tag. Plain-text snippets can mention markup mid-sentence ("put it in a
- * </div>"), and re-parsing real text as HTML would eat it.
- */
-const looksLikeHtml = (s: string) => /^\s*<[a-z]/i.test(s) && /<\/[a-z][a-z0-9]*\s*>/i.test(s);
+import { htmlToText, looksLikeHtml, SANITIZER_VERSION, sanitizeArticleHtml } from '../lib/sanitize.js';
 
 const BATCH = 500;
 

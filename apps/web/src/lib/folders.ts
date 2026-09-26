@@ -1,6 +1,18 @@
-import type { ArticleView, AttentionTier, ViewMode, WebSubState } from '@rss/shared';
+import {
+  describeFeedError,
+  type ArticleView,
+  type AttentionTier,
+  type RestoreSubscriptionInput,
+  type SortOrder,
+  type ViewMode,
+  type WebSubState,
+} from '@rss/shared';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { announce } from './announce';
 import { api } from './api';
+import { placeAt } from './feed-order';
+import { liveQueryOptions } from './live-refresh';
+import { notify } from './notify';
 
 export interface FolderRow {
   id: string;
@@ -10,6 +22,8 @@ export interface FolderRow {
   position: number;
   /** Saved list layout for the folder view; null uses the user default. */
   viewMode: ViewMode | null;
+  /** Saved article order for the folder view; null uses the user default (#31). */
+  sortOrder: SortOrder | null;
   createdAt: string;
 }
 
@@ -24,6 +38,8 @@ export interface SubscriptionRow {
   folderId: string | null;
   position: number;
   viewMode: ViewMode | null;
+  /** Saved article order for this feed; null uses the user default (#31). */
+  sortOrder: SortOrder | null;
   articleView: ArticleView | null;
   hideFromAll: boolean;
   inBlogroll: boolean;
@@ -35,8 +51,18 @@ export interface SubscriptionRow {
   fetchIntervalSec: number | null;
   lastFetchedAt: string | null;
   lastError: string | null;
+  /** The last fetch that worked; null if none has (#29). */
+  lastSuccessAt: string | null;
   unreadCount: number;
 }
+
+/** Subscriptions whose last fetch failed, by name (#29). */
+export const problemFeeds = (subs: readonly SubscriptionRow[]) =>
+  subs
+    .filter((s) => s.lastError)
+    .sort((a, b) =>
+      (a.customTitle ?? a.title ?? a.feedUrl).localeCompare(b.customTitle ?? b.title ?? b.feedUrl),
+    );
 
 type FoldersData = { items: FolderRow[] };
 type FeedsData = { items: SubscriptionRow[] };
@@ -46,7 +72,12 @@ export function useFolders() {
 }
 
 export function useSubscriptions() {
-  return useQuery({ queryKey: ['feeds'], queryFn: () => api<FeedsData>('/feeds') });
+  return useQuery({
+    queryKey: ['feeds'],
+    queryFn: () => api<FeedsData>('/feeds'),
+    // New errors and titles from the worker show up by themselves (#30).
+    ...liveQueryOptions,
+  });
 }
 
 /** Snapshot both trees, so any failed mutation can roll the sidebar back. */
@@ -75,8 +106,13 @@ function reconcileTree(qc: QueryClient) {
 export function useCreateFolder() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (name: string) =>
-      api<FolderRow>('/folders', { method: 'POST', body: { name } }),
+    meta: { errorMessage: 'Could not create the folder.' },
+    /** A name alone makes a root folder; `parentId` makes a subfolder (#28). */
+    mutationFn: (input: string | { name: string; parentId: string }) =>
+      api<FolderRow>('/folders', {
+        method: 'POST',
+        body: typeof input === 'string' ? { name: input } : input,
+      }),
     onSettled: () => reconcileTree(qc),
   });
 }
@@ -84,6 +120,7 @@ export function useCreateFolder() {
 export function useUpdateFolder() {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorMessage: 'Could not update the folder.' },
     mutationFn: ({
       id,
       ...body
@@ -93,12 +130,26 @@ export function useUpdateFolder() {
       parentId?: string | null;
       position?: number;
       viewMode?: ViewMode | null;
+      sortOrder?: SortOrder | null;
     }) => api<FolderRow>(`/folders/${id}`, { method: 'PATCH', body }),
     onMutate: async ({ id, ...patch }): Promise<TreeCtx> => {
       const ctx = await snapshotTree(qc);
-      qc.setQueryData<FoldersData>(['folders'], (d) =>
-        d ? { items: d.items.map((f) => (f.id === id ? { ...f, ...patch } : f)) } : d,
-      );
+      const moves = patch.parentId !== undefined || patch.position !== undefined;
+      qc.setQueryData<FoldersData>(['folders'], (d) => {
+        if (!d) return d;
+        if (!moves) return { items: d.items.map((f) => (f.id === id ? { ...f, ...patch } : f)) };
+        // Mirror the server's placement, so manual order (#27) shows the drop at once.
+        const parentId =
+          patch.parentId !== undefined ? patch.parentId : d.items.find((f) => f.id === id)?.parentId;
+        return {
+          items: placeAt(d.items, {
+            isMoved: (f) => f.id === id,
+            inScope: (f) => f.parentId === parentId,
+            index: patch.position,
+            move: (f) => ({ ...f, ...patch }),
+          }),
+        };
+      });
       return ctx;
     },
     onError: (_e, _v, ctx) => restoreTree(qc, ctx),
@@ -109,6 +160,7 @@ export function useUpdateFolder() {
 export function useDeleteFolder() {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorMessage: 'Could not delete the folder.' },
     mutationFn: (id: string) => api<void>(`/folders/${id}`, { method: 'DELETE' }),
     onMutate: async (id): Promise<TreeCtx> => {
       const ctx = await snapshotTree(qc);
@@ -136,9 +188,11 @@ export function useDeleteFolder() {
   });
 }
 
-export function useUpdateSubscription() {
+/** `inlineError`: the caller shows failures itself (the feed settings form). */
+export function useUpdateSubscription({ inlineError = false } = {}) {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorMessage: 'Could not update the feed.', inlineError },
     mutationFn: ({
       id,
       ...body
@@ -148,6 +202,7 @@ export function useUpdateSubscription() {
       title?: string | null;
       position?: number;
       viewMode?: ViewMode | null;
+      sortOrder?: SortOrder | null;
       articleView?: ArticleView | null;
       hideFromAll?: boolean;
       inBlogroll?: boolean;
@@ -156,30 +211,35 @@ export function useUpdateSubscription() {
     }) => api<SubscriptionRow>(`/feeds/${id}`, { method: 'PATCH', body }),
     onMutate: async ({ id, ...patch }): Promise<TreeCtx> => {
       const ctx = await snapshotTree(qc);
-      qc.setQueryData<FeedsData>(['feeds'], (d) =>
-        d
-          ? {
-              items: d.items.map((s) =>
-                s.subscriptionId === id
-                  ? {
-                      ...s,
-                      ...(patch.folderId !== undefined ? { folderId: patch.folderId } : {}),
-                      ...(patch.title !== undefined ? { customTitle: patch.title } : {}),
-                      ...(patch.position !== undefined ? { position: patch.position } : {}),
-                      ...(patch.viewMode !== undefined ? { viewMode: patch.viewMode } : {}),
-                      ...(patch.articleView !== undefined ? { articleView: patch.articleView } : {}),
-                      ...(patch.hideFromAll !== undefined ? { hideFromAll: patch.hideFromAll } : {}),
-                      ...(patch.inBlogroll !== undefined ? { inBlogroll: patch.inBlogroll } : {}),
-                      ...(patch.attention !== undefined ? { attention: patch.attention } : {}),
-                      ...(patch.fetchIntervalSec !== undefined
-                        ? { fetchIntervalSec: patch.fetchIntervalSec }
-                        : {}),
-                    }
-                  : s,
-              ),
-            }
-          : d,
-      );
+      const apply = (s: SubscriptionRow): SubscriptionRow => ({
+        ...s,
+        ...(patch.folderId !== undefined ? { folderId: patch.folderId } : {}),
+        ...(patch.title !== undefined ? { customTitle: patch.title } : {}),
+        ...(patch.viewMode !== undefined ? { viewMode: patch.viewMode } : {}),
+        ...(patch.sortOrder !== undefined ? { sortOrder: patch.sortOrder } : {}),
+        ...(patch.articleView !== undefined ? { articleView: patch.articleView } : {}),
+        ...(patch.hideFromAll !== undefined ? { hideFromAll: patch.hideFromAll } : {}),
+        ...(patch.inBlogroll !== undefined ? { inBlogroll: patch.inBlogroll } : {}),
+        ...(patch.attention !== undefined ? { attention: patch.attention } : {}),
+        ...(patch.fetchIntervalSec !== undefined ? { fetchIntervalSec: patch.fetchIntervalSec } : {}),
+      });
+      qc.setQueryData<FeedsData>(['feeds'], (d) => {
+        if (!d) return d;
+        const current = d.items.find((s) => s.subscriptionId === id);
+        const folderId = patch.folderId !== undefined ? patch.folderId : current?.folderId;
+        // Mirror the server: only a move re-places the row (#27).
+        if (current && (folderId !== current.folderId || patch.position !== undefined)) {
+          return {
+            items: placeAt(d.items, {
+              isMoved: (s) => s.subscriptionId === id,
+              inScope: (s) => s.folderId === folderId,
+              index: patch.position,
+              move: apply,
+            }),
+          };
+        }
+        return { items: d.items.map((s) => (s.subscriptionId === id ? apply(s) : s)) };
+      });
       return ctx;
     },
     onError: (_e, _v, ctx) => restoreTree(qc, ctx),
@@ -198,6 +258,7 @@ export function useUpdateSubscription() {
 export function useResetViews() {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorMessage: 'Could not reset the views.' },
     mutationFn: () => api<void>('/settings/reset-views', { method: 'POST' }),
     onSuccess: () => {
       qc.setQueryData<FeedsData>(['feeds'], (d) =>
@@ -215,9 +276,61 @@ export function useResetViews() {
 export function useRefreshFeeds() {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorMessage: 'Could not fetch the feeds.' },
     mutationFn: () => api<{ refreshed: number }>('/feeds/refresh', { method: 'POST' }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['feeds'] });
+      qc.invalidateQueries({ queryKey: ['articles'] });
+      qc.invalidateQueries({ queryKey: ['counts'] });
+    },
+  });
+}
+
+/**
+ * "Fetch all feeds now", for the refresh button and the r key alike (#42):
+ * say it started, say how many feeds it fetched, and ignore a second press
+ * while one is running.
+ */
+export function useFetchAllFeeds() {
+  const refresh = useRefreshFeeds();
+  const fetchAll = () => {
+    if (refresh.isPending) return;
+    announce('Fetching all feeds');
+    refresh.mutate(undefined, {
+      onSuccess: ({ refreshed }) =>
+        notify.success(`Fetched ${refreshed} ${refreshed === 1 ? 'feed' : 'feeds'}.`),
+    });
+  };
+  return { fetchAll, isPending: refresh.isPending };
+}
+
+/**
+ * Fetch one feed now ("Retry now", #29, and "Refresh this feed", #45). The row
+ * comes back with its new error or none, and the toast says which.
+ */
+export function useRefreshFeed() {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: { errorMessage: 'Could not fetch the feed.' },
+    mutationFn: (subscriptionId: string) =>
+      api<SubscriptionRow>(`/feeds/${subscriptionId}/refresh`, { method: 'POST' }),
+    onSuccess: (row) => {
+      const before = qc
+        .getQueryData<FeedsData>(['feeds'])
+        ?.items.find((s) => s.subscriptionId === row.subscriptionId);
+      qc.setQueryData<FeedsData>(['feeds'], (d) =>
+        d
+          ? { items: d.items.map((s) => (s.subscriptionId === row.subscriptionId ? row : s)) }
+          : d,
+      );
+      const name = row.customTitle ?? row.title ?? row.feedUrl;
+      const summary = row.lastError && describeFeedError(row.lastError).summary;
+      if (row.lastError) {
+        notify.error(before?.lastError ? `${name} still fails: ${summary}` : `${name} failed: ${summary}`);
+      } else {
+        notify.success(before?.lastError ? `${name} is working again.` : `Fetched ${name}.`);
+      }
+      // It may have brought new articles.
       qc.invalidateQueries({ queryKey: ['articles'] });
       qc.invalidateQueries({ queryKey: ['counts'] });
     },
@@ -228,6 +341,8 @@ export function useRefreshFeeds() {
 export function useChangeFeedUrl() {
   const qc = useQueryClient();
   return useMutation({
+    // The feed settings dialog shows URL errors next to the field.
+    meta: { inlineError: true },
     mutationFn: ({ id, feedUrl }: { id: string; feedUrl: string }) =>
       api<SubscriptionRow>(`/feeds/${id}/url`, { method: 'PATCH', body: { feedUrl } }),
     onSuccess: () => {
@@ -238,9 +353,47 @@ export function useChangeFeedUrl() {
   });
 }
 
+/** How long the Undo button stays on the unsubscribe toast. */
+export const UNDO_UNSUBSCRIBE_MS = 10_000;
+
+/** The body that re-creates a subscription exactly as it was (#16). */
+export function restoreBody(s: SubscriptionRow): RestoreSubscriptionInput {
+  return {
+    feedId: s.feedId,
+    folderId: s.folderId,
+    title: s.customTitle,
+    position: s.position,
+    viewMode: s.viewMode,
+    sortOrder: s.sortOrder,
+    articleView: s.articleView,
+    hideFromAll: s.hideFromAll,
+    inBlogroll: s.inBlogroll,
+    attention: s.attention,
+  };
+}
+
+/** Everything an unsubscribe or its undo changes: the tree, counts, lists. */
+function reconcileSubscriptions(qc: QueryClient) {
+  reconcileTree(qc);
+  qc.invalidateQueries({ queryKey: ['counts'] });
+  qc.invalidateQueries({ queryKey: ['articles'] });
+}
+
+/**
+ * Unsubscribe at once, then offer Undo on a toast for a while. Undo subscribes
+ * again with the same folder, title, place, and settings. Read, starred, and
+ * shared marks are per article, so they were never lost.
+ */
 export function useUnsubscribe() {
   const qc = useQueryClient();
+  const undo = useMutation({
+    meta: { errorMessage: 'Could not undo the unsubscribe.' },
+    mutationFn: (body: RestoreSubscriptionInput) =>
+      api<SubscriptionRow>('/feeds/restore', { method: 'POST', body }),
+    onSettled: () => reconcileSubscriptions(qc),
+  });
   return useMutation({
+    meta: { errorMessage: 'Could not unsubscribe.' },
     mutationFn: (subscriptionId: string) =>
       api<void>(`/feeds/${subscriptionId}`, { method: 'DELETE' }),
     onMutate: async (subscriptionId): Promise<TreeCtx> => {
@@ -251,9 +404,14 @@ export function useUnsubscribe() {
       return ctx;
     },
     onError: (_e, _v, ctx) => restoreTree(qc, ctx),
-    onSettled: () => {
-      reconcileTree(qc);
-      qc.invalidateQueries({ queryKey: ['counts'] });
+    onSuccess: (_d, subscriptionId, ctx) => {
+      const sub = ctx?.feeds?.items.find((s) => s.subscriptionId === subscriptionId);
+      if (!sub) return;
+      notify.success(`Unsubscribed from ${sub.customTitle ?? sub.title ?? sub.feedUrl}.`, {
+        duration: UNDO_UNSUBSCRIBE_MS,
+        action: { label: 'Undo', onClick: () => undo.mutate(restoreBody(sub)) },
+      });
     },
+    onSettled: () => reconcileSubscriptions(qc),
   });
 }

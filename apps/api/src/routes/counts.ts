@@ -2,7 +2,7 @@ import type { UnreadCounts } from '@rss/shared';
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { db } from '../db/index.js';
-import { subscriptions } from '../db/schema.js';
+import { folders, subscriptions } from '../db/schema.js';
 import { getUnreadCountsByFeed } from '../lib/unread-counts.js';
 
 export async function countsRoutes(app: FastifyInstance): Promise<void> {
@@ -25,6 +25,15 @@ export async function countsRoutes(app: FastifyInstance): Promise<void> {
       .where(eq(subscriptions.userId, userId));
     const folderByFeed = new Map(subs.map((s) => [s.feedId, s.folderId]));
     const hiddenFromAll = new Set(subs.filter((s) => s.hideFromAll).map((s) => s.feedId));
+    // A folder's badge covers its child folders too (#25); one level deep.
+    const parentOf = new Map(
+      (
+        await db
+          .select({ id: folders.id, parentId: folders.parentId })
+          .from(folders)
+          .where(eq(folders.userId, userId))
+      ).map((f) => [f.id, f.parentId]),
+    );
 
     // `total` backs the All-items badge, so it excludes hidden feeds (SPEC-018)
     // and firehose-tier feeds (SPEC-022); firehose feeds are excluded from
@@ -37,7 +46,9 @@ export async function countsRoutes(app: FastifyInstance): Promise<void> {
       if (!hiddenFromAll.has(feedId) && !firehose) total += unreadCount;
       const folderId = folderByFeed.get(feedId);
       if (folderId && !firehose) {
-        folderTotals.set(folderId, (folderTotals.get(folderId) ?? 0) + unreadCount);
+        for (const id of [folderId, parentOf.get(folderId)]) {
+          if (id) folderTotals.set(id, (folderTotals.get(id) ?? 0) + unreadCount);
+        }
       }
     }
 

@@ -78,9 +78,15 @@ export const userSettings = pgTable('user_settings', {
   theme: text().notNull().default('auto'),
   density: text().notNull().default('comfortable'),
   defaultViewMode: text().notNull().default('cards'),
+  // Article order for All items and every scope with none saved (#31).
+  defaultSortOrder: text().notNull().default('newest'),
   defaultArticleView: text().notNull().default('auto'),
   markReadOnScroll: boolean().notNull().default(false),
+  markReadOnOpen: boolean().notNull().default(true),
   showUnreadOnly: boolean().notNull().default(false),
+  // Reading pane text size and line width (#41).
+  readingSize: text().notNull().default('medium'),
+  readingWidth: text().notNull().default('normal'),
   updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -130,6 +136,8 @@ export const folders = pgTable('folders', {
   // List layout saved from the switcher while viewing this folder; null uses the
   // user default. Applies to the folder view only, not to its feeds.
   viewMode: text(),
+  // Article order saved for the folder view (#31); null uses the user default.
+  sortOrder: text(),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index('folders_user_id_idx').on(t.userId)]);
 
@@ -148,6 +156,12 @@ export const feeds = pgTable('feeds', {
   lastFetchedAt: timestamp({ withTimezone: true }),
   lastError: text(),
   failureCount: integer().notNull().default(0),
+  // The last fetch that worked (lastFetchedAt also moves on a failure), so the
+  // UI can say how long a feed has been broken (#29).
+  lastSuccessAt: timestamp({ withTimezone: true }),
+  // An early retry after a transient failure (#29): the worker polls the feed
+  // at this time, even before its normal interval. Cleared by any fetch.
+  retryAt: timestamp({ withTimezone: true }),
   // Poll interval override for this global feed (SPEC-018). null = inherit the
   // app-wide default (app_settings.defaultPollIntervalSec).
   fetchIntervalSec: integer(),
@@ -182,6 +196,8 @@ export const subscriptions = pgTable('subscriptions', {
   position: integer().notNull().default(0),
   // Per-feed list-view override (SPEC-011). null = inherit the user default.
   viewMode: text(),
+  // Per-feed article order (#31). null = inherit the user default.
+  sortOrder: text(),
   // Per-feed article-view override (SPEC-018). null = inherit the user default.
   articleView: text(),
   // Exclude this feed from the All-items list and its unread total (SPEC-018).

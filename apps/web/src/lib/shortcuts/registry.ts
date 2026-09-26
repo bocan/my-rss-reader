@@ -15,8 +15,11 @@ export interface ShortcutActions {
   markUnread(): void;
   toggleStar(): void;
   toggleShared(): void;
+  /** The open article's original page, in a new tab (#49). */
+  openOriginal(): void;
   markAllRead(): void;
-  refresh(): void;
+  /** The same as the refresh button: ask the server to fetch every feed (#42). */
+  fetchFeeds(): void;
   focusSearch(): void;
   nextFeed(): void;
   prevFeed(): void;
@@ -38,16 +41,18 @@ export interface Shortcut {
 
 export const SHORTCUTS: Shortcut[] = [
   // Navigation
+  // With an article open, j/k open the next/previous one in every layout,
+  // including the full-screen reader (#23).
   {
     keys: ['j'],
-    contexts: ['list'],
+    contexts: ['list', 'reader'],
     group: 'Navigation',
     label: 'Next article',
     run: (a) => a.selectNext(),
   },
   {
     keys: ['k'],
-    contexts: ['list'],
+    contexts: ['list', 'reader'],
     group: 'Navigation',
     label: 'Previous article',
     run: (a) => a.selectPrev(),
@@ -121,6 +126,13 @@ export const SHORTCUTS: Shortcut[] = [
     run: (a) => a.toggleShared(),
   },
   {
+    keys: ['v'],
+    contexts: ['global'],
+    group: 'Article',
+    label: 'Open original in a new tab',
+    run: (a) => a.openOriginal(),
+  },
+  {
     keys: ['a'],
     contexts: ['global'],
     group: 'Article',
@@ -133,8 +145,8 @@ export const SHORTCUTS: Shortcut[] = [
     keys: ['r'],
     contexts: ['global'],
     group: 'App',
-    label: 'Refresh',
-    run: (a) => a.refresh(),
+    label: 'Fetch all feeds now',
+    run: (a) => a.fetchFeeds(),
   },
   {
     keys: ['/'],

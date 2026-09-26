@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import { ArticleThumbnail } from './ArticleThumbnail';
 import { useUsableArticleImage } from './article-image';
 import { deriveArticleRow, type FeedMetaMap } from './article-row';
+import { RowActions, type RowToggle } from './RowActions';
 
 // Minimum natural size for an article image to be shown as cover art without
 // upscaling into blur. Below this we show no image (never the feed favicon). The
@@ -19,6 +20,8 @@ export interface ViewProps {
   focusedId: string | null;
   onSelect: (article: ArticleListItem) => void;
   registerRow: (id: string) => (el: HTMLElement | null) => void;
+  /** Star and read toggles from the row itself (#32). No actions without it. */
+  onToggle?: RowToggle;
 }
 
 /**
@@ -37,14 +40,28 @@ const focusRing = (focused: boolean) => focused && 'ring-2 ring-ring';
 // Two-line rows at comfortable density; the `compact:` variant collapses them
 // to a single dense title-only line (SPEC-016 replaces the old Compact view).
 
-export function ListView({ items, feeds, selectedId, focusedId, onSelect, registerRow }: ViewProps) {
+export function ListView({
+  items,
+  feeds,
+  selectedId,
+  focusedId,
+  onSelect,
+  registerRow,
+  onToggle,
+}: ViewProps) {
   return (
     <ul role="listbox" aria-label="Articles">
       {items.map((article, index) => {
         const row = deriveArticleRow(article, feeds);
         const focused = focusedId === article.id;
         return (
-          <li key={article.id} role="option" aria-selected={focused} ref={registerRow(article.id)}>
+          <li
+            key={article.id}
+            role="option"
+            aria-selected={focused}
+            ref={registerRow(article.id)}
+            className="group/row relative"
+          >
             <button
               type="button"
               onClick={() => onSelect(article)}
@@ -53,6 +70,8 @@ export function ListView({ items, feeds, selectedId, focusedId, onSelect, regist
                 'flex w-full items-start gap-2 border-b px-3 py-2.5 text-left',
                 'transition-colors duration-200 motion-reduce:transition-none',
                 'compact:items-center compact:py-1.5',
+                // Room for the always-visible touch "..." button.
+                onToggle && 'pointer-coarse:pr-12',
                 selectedId === article.id ? 'bg-accent' : 'hover:bg-accent/60',
                 focusRing(focused),
                 ENTER,
@@ -87,6 +106,9 @@ export function ListView({ items, feeds, selectedId, focusedId, onSelect, regist
                 <Star className="hidden size-3 shrink-0 fill-primary text-primary compact:inline" />
               )}
             </button>
+            {onToggle && (
+              <RowActions article={article} onToggle={onToggle} className="right-2 top-1/2 -translate-y-1/2" />
+            )}
           </li>
         );
       })}
@@ -109,6 +131,7 @@ function Card({
   focused,
   onSelect,
   registerRow,
+  onToggle,
 }: {
   article: ArticleListItem;
   feeds: FeedMetaMap;
@@ -117,12 +140,20 @@ function Card({
   focused: boolean;
   onSelect: (a: ArticleListItem) => void;
   registerRow: ViewProps['registerRow'];
+  onToggle?: RowToggle;
 }) {
   const row = deriveArticleRow(article, feeds);
   const showImage = useUsableArticleImage(row.imageUrl, CARD_IMAGE_MIN.w, CARD_IMAGE_MIN.h);
 
   return (
-    <li role="option" aria-selected={focused} ref={registerRow(article.id)}>
+    // The hover slide keys on the whole card (group/row), so moving onto the
+    // quick actions does not drop it back.
+    <li
+      role="option"
+      aria-selected={focused}
+      ref={registerRow(article.id)}
+      className="group/row relative"
+    >
       <button
         type="button"
         onClick={() => onSelect(article)}
@@ -144,7 +175,7 @@ function Card({
             'absolute inset-x-0 top-0 flex flex-col',
             'transition-transform duration-300 ease-out motion-reduce:transition-none',
             showImage
-              ? 'h-[162.5%] group-hover:-translate-y-[38.4615%] group-focus-visible:-translate-y-[38.4615%]'
+              ? 'h-[162.5%] group-hover/row:-translate-y-[38.4615%] group-focus-visible:-translate-y-[38.4615%]'
               : 'h-full',
           )}
         >
@@ -180,7 +211,7 @@ function Card({
                   // Below the fold at rest when there is an image; revealed as
                   // the stack rises. Always visible when there is no image.
                   showImage &&
-                    'opacity-0 transition-opacity duration-300 group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:opacity-100 motion-reduce:transition-none',
+                    'opacity-0 transition-opacity duration-300 group-hover/row:opacity-100 group-focus-visible:opacity-100 motion-reduce:opacity-100 motion-reduce:transition-none',
                 )}
               >
                 {row.excerpt}
@@ -195,11 +226,20 @@ function Card({
           />
         )}
       </button>
+      {onToggle && <RowActions article={article} onToggle={onToggle} className="bottom-2 right-2" />}
     </li>
   );
 }
 
-export function CardsView({ items, feeds, selectedId, focusedId, onSelect, registerRow }: ViewProps) {
+export function CardsView({
+  items,
+  feeds,
+  selectedId,
+  focusedId,
+  onSelect,
+  registerRow,
+  onToggle,
+}: ViewProps) {
   return (
     <ul
       role="listbox"
@@ -216,6 +256,7 @@ export function CardsView({ items, feeds, selectedId, focusedId, onSelect, regis
           focused={focusedId === article.id}
           onSelect={onSelect}
           registerRow={registerRow}
+          onToggle={onToggle}
         />
       ))}
     </ul>
@@ -232,6 +273,7 @@ function MagazineRow({
   focused,
   onSelect,
   registerRow,
+  onToggle,
 }: {
   article: ArticleListItem;
   feeds: FeedMetaMap;
@@ -240,12 +282,18 @@ function MagazineRow({
   focused: boolean;
   onSelect: (a: ArticleListItem) => void;
   registerRow: ViewProps['registerRow'];
+  onToggle?: RowToggle;
 }) {
   const row = deriveArticleRow(article, feeds);
   const showImage = useUsableArticleImage(row.imageUrl, MAGAZINE_IMAGE_MIN.w, MAGAZINE_IMAGE_MIN.h);
 
   return (
-    <li role="option" aria-selected={focused} ref={registerRow(article.id)}>
+    <li
+      role="option"
+      aria-selected={focused}
+      ref={registerRow(article.id)}
+      className="group/row relative"
+    >
       <button
         type="button"
         onClick={() => onSelect(article)}
@@ -253,7 +301,8 @@ function MagazineRow({
         className={cn(
           'flex w-full gap-3 rounded-lg border p-3 text-left',
           'transition-[transform,box-shadow,background-color] duration-200',
-          'hover:-translate-y-0.5 hover:shadow-md motion-reduce:hover:translate-y-0',
+          // Keyed on the whole tile, so the lift holds over the quick actions.
+          'group-hover/row:-translate-y-0.5 group-hover/row:shadow-md motion-reduce:group-hover/row:translate-y-0',
           selected && 'bg-accent',
           focusRing(focused),
           ENTER,
@@ -281,11 +330,20 @@ function MagazineRow({
           )}
         </span>
       </button>
+      {onToggle && <RowActions article={article} onToggle={onToggle} className="right-2 top-2" />}
     </li>
   );
 }
 
-export function MagazineView({ items, feeds, selectedId, focusedId, onSelect, registerRow }: ViewProps) {
+export function MagazineView({
+  items,
+  feeds,
+  selectedId,
+  focusedId,
+  onSelect,
+  registerRow,
+  onToggle,
+}: ViewProps) {
   return (
     <ul role="listbox" aria-label="Articles" className="grid grid-cols-1 gap-3 p-3 lg:grid-cols-2">
       {items.map((article, index) => (
@@ -298,6 +356,7 @@ export function MagazineView({ items, feeds, selectedId, focusedId, onSelect, re
           focused={focusedId === article.id}
           onSelect={onSelect}
           registerRow={registerRow}
+          onToggle={onToggle}
         />
       ))}
     </ul>

@@ -11,9 +11,13 @@ const SERVER: Settings = {
   theme: 'midnight',
   density: 'comfortable',
   defaultViewMode: 'magazine',
+  defaultSortOrder: 'newest',
   defaultArticleView: 'readable',
   markReadOnScroll: true,
+  markReadOnOpen: true,
   showUnreadOnly: false,
+  readingSize: 'large',
+  readingWidth: 'wide',
 };
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -76,6 +80,18 @@ describe('useSettings', () => {
     render(<Probe />, { wrapper: wrapper(makeClient()) });
     expect(screen.getByTestId('theme').textContent).toBe(DEFAULT_SETTINGS.theme);
     expect(screen.getByTestId('view').textContent).toBe(DEFAULT_SETTINGS.defaultViewMode);
+  });
+
+  test('a cached object from an older build gets the defaults for new fields (#31)', () => {
+    fetchMock.mockReturnValue(new Promise(() => {}));
+    const client = makeClient();
+    const { defaultSortOrder: _dropped, ...old } = SERVER;
+    client.setQueryData(['settings'], old);
+    function SortProbe() {
+      return <span data-testid="sort">{useSettings().settings.defaultSortOrder}</span>;
+    }
+    render(<SortProbe />, { wrapper: wrapper(client) });
+    expect(screen.getByTestId('sort').textContent).toBe('newest');
   });
 
   test('reconciles a stale cache to the server value on mount', async () => {

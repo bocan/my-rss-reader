@@ -1,30 +1,35 @@
 import {
   DEFAULT_ARTICLE_VIEWS,
   DENSITIES,
+  READING_SIZES,
+  READING_WIDTHS,
   SHARE_VISIBILITIES,
+  SORT_ORDERS,
   VIEW_MODES,
   type Density,
-  type ImportOpmlResult,
   type Settings,
   type ShareVisibility,
-  type ViewMode,
+  type UpdateProfileInput,
 } from '@rss/shared';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, Download, Smartphone, Upload } from 'lucide-react';
+import { ChevronLeft, Download, Smartphone } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
+import { OpmlImportDescription, OpmlImportPanel } from '@/components/feed/OpmlImport';
 import { AppShell } from '@/components/layout/AppShell';
 import { ThemeTiles } from '@/components/theme/ThemePicker';
 import { Button } from '@/components/ui/button';
-import { announce } from '@/lib/announce';
-import { api, ApiRequestError } from '@/lib/api';
+import { notify } from '@/lib/notify';
+import { ApiRequestError } from '@/lib/api';
 import { ARTICLE_VIEW_LABELS } from '@/lib/article-view';
 import { useChangePassword, useSession, useUpdateAccount } from '@/lib/auth';
 import { useResetViews } from '@/lib/folders';
 import { useProfile, useUpdateProfile } from '@/lib/profile';
 import { useInstallPrompt } from '@/lib/pwa';
+import { READING_SIZE_LABELS, READING_WIDTH_LABELS } from '@/lib/reading-format';
 import { useSettings } from '@/lib/settings';
+import { SORT_LABELS } from '@/lib/sort-order';
 import { cn } from '@/lib/utils';
+import { VIEW_LABELS } from '@/lib/view-labels';
 
 const inputClass =
   'h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
@@ -188,11 +193,6 @@ function AccountSection() {
   );
 }
 
-const VIEW_LABEL: Record<ViewMode, string> = {
-  list: 'List',
-  cards: 'Cards',
-  magazine: 'Magazine',
-};
 const DENSITY_LABEL: Record<Density, string> = {
   comfortable: 'Comfortable',
   compact: 'Compact',
@@ -273,7 +273,7 @@ function ResetViewsRow() {
   const onReset = () => {
     if (!confirm('Reset every feed and folder to the default list view?')) return;
     reset.mutate(undefined, {
-      onSuccess: () => announce('All feeds and folders now use the default list view.'),
+      onSuccess: () => notify.success('All feeds and folders now use the default list view.'),
     });
   };
   return (
@@ -301,10 +301,14 @@ const VISIBILITY_HINT: Record<ShareVisibility, string> = {
   public: 'Anyone on the web can read your shared items page and subscribe to its feed.',
 };
 
-/** Sharing profile (SPEC-019): visibility, slug, and the public page fields. */
-function SharingSection() {
+/** Sharing profile (SPEC-019): visibility, slug, and the public page fields.
+ *  The switches save at once, as in Preferences. The text fields wait for
+ *  their Save button (#44). */
+export function SharingSection() {
   const { data: profile } = useProfile();
   const update = useUpdateProfile();
+  // A second instance, so a switch never makes the Save button say "Saving…".
+  const updateSwitch = useUpdateProfile();
   const [visibility, setVisibility] = useState<ShareVisibility>('off');
   const [slug, setSlug] = useState('');
   const [title, setTitle] = useState('');
@@ -324,19 +328,46 @@ function SharingSection() {
     setBlogrollEnabled(profile.blogrollEnabled);
   }, [profile]);
 
+  // Show the new value at once. If the save fails, go back to the old one.
+  function saveNow(patch: Pick<UpdateProfileInput, 'visibility' | 'blogrollEnabled'>, done: string, revert: () => void) {
+    setError(null);
+    updateSwitch.mutate(patch, {
+      onSuccess: () => notify.success(done),
+      onError: (err) => {
+        revert();
+        setError(errorMessage(err, 'Could not save sharing settings'));
+      },
+    });
+  }
+
+  function onVisibility(next: ShareVisibility) {
+    const before = visibility;
+    setVisibility(next);
+    saveNow({ visibility: next }, `Who can see your shares: ${VISIBILITY_LABEL[next]}.`, () =>
+      setVisibility(before),
+    );
+  }
+
+  function onBlogroll(next: boolean) {
+    setBlogrollEnabled(next);
+    saveNow(
+      { blogrollEnabled: next },
+      next ? 'Public blogroll on.' : 'Public blogroll off.',
+      () => setBlogrollEnabled(!next),
+    );
+  }
+
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     update.mutate(
       {
-        visibility,
         slug: slug.trim(),
         title: title.trim() || null,
         bio: bio.trim() || null,
-        blogrollEnabled,
       },
       {
-        onSuccess: () => announce('Sharing settings saved'),
+        onSuccess: () => notify.success('Page details saved.'),
         onError: (err) => setError(errorMessage(err, 'Could not save sharing settings')),
       },
     );
@@ -357,10 +388,30 @@ function SharingSection() {
             value={visibility}
             options={SHARE_VISIBILITIES}
             labels={VISIBILITY_LABEL}
-            onChange={setVisibility}
+            onChange={onVisibility}
           />
           <p className="text-xs text-muted-foreground">{VISIBILITY_HINT[visibility]}</p>
         </div>
+
+        <Toggle
+          label="Public blogroll"
+          hint="Publishes the feeds you follow (and your folder names) as a page + OPML. Exclude individual feeds from each feed's settings."
+          checked={blogrollEnabled}
+          onChange={onBlogroll}
+        />
+        {profile?.blogrollUrl && (
+          <p className="text-xs text-muted-foreground">
+            Your blogroll:{' '}
+            <a
+              href={profile.blogrollUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary hover:underline"
+            >
+              {profile.blogrollUrl.replace(/^https?:\/\//, '')}
+            </a>
+          </p>
+        )}
 
         <label className="block space-y-1">
           <span className="text-sm">Page address</span>
@@ -402,31 +453,11 @@ function SharingSection() {
           />
         </label>
 
-        <Toggle
-          label="Public blogroll"
-          hint="Publishes the feeds you follow (and your folder names) as a page + OPML. Exclude individual feeds from each feed's settings."
-          checked={blogrollEnabled}
-          onChange={setBlogrollEnabled}
-        />
-        {profile?.blogrollUrl && (
-          <p className="text-xs text-muted-foreground">
-            Your blogroll:{' '}
-            <a
-              href={profile.blogrollUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-primary hover:underline"
-            >
-              {profile.blogrollUrl.replace(/^https?:\/\//, '')}
-            </a>
-          </p>
-        )}
-
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error &&<p className="text-sm text-destructive">{error}</p>}
 
         <div className="flex items-center gap-3">
           <Button type="submit" disabled={update.isPending}>
-            {update.isPending ? 'Saving…' : 'Save sharing settings'}
+            {update.isPending ? 'Saving…' : 'Save page details'}
           </Button>
           {profile?.shareUrl && (
             <a
@@ -450,43 +481,10 @@ function SharingSection() {
   );
 }
 
-/** Mirrors the server's OPML_MAX_BYTES default so we fail fast client-side. */
-const MAX_BYTES = 5 * 1024 * 1024;
-
 export function SettingsPage() {
-  const queryClient = useQueryClient();
   const { settings, update } = useSettings();
   const { canInstall, promptInstall } = useInstallPrompt();
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) => update({ [key]: value });
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<ImportOpmlResult | null>(null);
-  const [showFailures, setShowFailures] = useState(false);
-
-  const importOpml = useMutation({
-    mutationFn: (opml: string) =>
-      api<ImportOpmlResult>('/opml/import', { method: 'POST', body: { opml } }),
-    onSuccess: (data) => {
-      setResult(data);
-      // New folders and feeds should appear in the sidebar immediately.
-      queryClient.invalidateQueries({ queryKey: ['feeds'] });
-      queryClient.invalidateQueries({ queryKey: ['folders'] });
-      queryClient.invalidateQueries({ queryKey: ['counts'] });
-    },
-    onError: (err) =>
-      setError(err instanceof ApiRequestError ? (err.body?.message ?? err.message) : 'Import failed'),
-  });
-
-  async function onPick(file: File | undefined) {
-    setError(null);
-    setResult(null);
-    if (!file) return;
-    if (file.size > MAX_BYTES) {
-      setError(`That file is ${(file.size / 1024 / 1024).toFixed(1)} MB; the limit is 5 MB.`);
-      return;
-    }
-    importOpml.mutate(await file.text());
-  }
 
   return (
     <AppShell>
@@ -514,10 +512,17 @@ export function SettingsPage() {
             label="Default list view"
             value={settings.defaultViewMode}
             options={VIEW_MODES}
-            labels={VIEW_LABEL}
+            labels={VIEW_LABELS}
             onChange={(v) => set('defaultViewMode', v)}
           />
           <ResetViewsRow />
+          <Segmented
+            label="Default article order"
+            value={settings.defaultSortOrder}
+            options={SORT_ORDERS}
+            labels={SORT_LABELS}
+            onChange={(v) => set('defaultSortOrder', v)}
+          />
           <Segmented
             label="Density"
             value={settings.density}
@@ -532,15 +537,35 @@ export function SettingsPage() {
             labels={ARTICLE_VIEW_LABELS}
             onChange={(v) => set('defaultArticleView', v)}
           />
+          <Segmented
+            label="Article text size"
+            value={settings.readingSize}
+            options={READING_SIZES}
+            labels={READING_SIZE_LABELS}
+            onChange={(v) => set('readingSize', v)}
+          />
+          <Segmented
+            label="Article line width"
+            value={settings.readingWidth}
+            options={READING_WIDTHS}
+            labels={READING_WIDTH_LABELS}
+            onChange={(v) => set('readingWidth', v)}
+          />
+          <Toggle
+            label="Mark read when opened"
+            hint="Off: articles stay unread until you mark them (the envelope button, m, or u)."
+            checked={settings.markReadOnOpen}
+            onChange={(v) => set('markReadOnOpen', v)}
+          />
           <Toggle
             label="Mark read on scroll"
-            hint="Mark articles read as you scroll past them."
+            hint="Mark an article read when it scrolls off the top of the list."
             checked={settings.markReadOnScroll}
             onChange={(v) => set('markReadOnScroll', v)}
           />
           <Toggle
             label="Show unread only"
-            hint="Hide already-read articles from lists by default."
+            hint="Hide read articles, and feeds with nothing unread. The same as the toolbar button."
             checked={settings.showUnreadOnly}
             onChange={(v) => set('showUnreadOnly', v)}
           />
@@ -561,60 +586,10 @@ export function SettingsPage() {
 
         <section className="rounded-lg border p-4">
           <h2 className="font-medium">Import subscriptions</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Pick an OPML file exported from another reader. Folders and nesting are preserved, and
-            feeds you already follow are skipped.
-          </p>
-
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".opml,.xml,text/xml,text/x-opml,application/xml"
-            className="hidden"
-            onChange={(e) => void onPick(e.target.files?.[0])}
-          />
-          <Button
-            className="mt-3"
-            disabled={importOpml.isPending}
-            onClick={() => fileRef.current?.click()}
-          >
-            <Upload className="size-4" />
-            {importOpml.isPending ? 'Importing…' : 'Choose OPML file'}
-          </Button>
-
-          {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
-
-          {result && (
-            <div className="mt-4 rounded-md border bg-muted/40 p-3 text-sm">
-              <p>
-                Added <strong>{result.feedsAdded}</strong> feed
-                {result.feedsAdded === 1 ? '' : 's'} in{' '}
-                <strong>{result.foldersCreated}</strong> new folder
-                {result.foldersCreated === 1 ? '' : 's'}. Skipped{' '}
-                <strong>{result.skipped}</strong> already-subscribed.
-              </p>
-              {result.failed.length > 0 && (
-                <div className="mt-2">
-                  <button
-                    className="text-destructive underline"
-                    onClick={() => setShowFailures((v) => !v)}
-                  >
-                    {result.failed.length} failed
-                  </button>
-                  {showFailures && (
-                    <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
-                      {result.failed.map((f, i) => (
-                        <li key={`${f.xmlUrl ?? f.title ?? i}`}>
-                          <span className="font-medium">{f.title ?? '(untitled)'}</span>
-                          {f.xmlUrl ? ` ${f.xmlUrl}` : ''}: {f.reason}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+          <OpmlImportDescription className="mt-1 text-sm text-muted-foreground" />
+          <div className="mt-3">
+            <OpmlImportPanel />
+          </div>
         </section>
 
         <section className="rounded-lg border p-4">

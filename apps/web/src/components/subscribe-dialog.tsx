@@ -1,8 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import type { AmbiguousFeedError, FeedCandidate } from '@rss/shared';
+import { FolderOptions } from '@/components/feed/folder-options';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { announce } from '@/lib/announce';
+import { notify } from '@/lib/notify';
 import { ApiRequestError } from '@/lib/api';
 import { useSubscribe } from '@/lib/feeds';
 import { useCreateFolder, useFolders } from '@/lib/folders';
@@ -31,7 +32,7 @@ export function SubscribeDialog({ open, onOpenChange, onSubscribed }: SubscribeD
   // '' = no folder, a folder id, or NEW_FOLDER (name comes from newFolderName).
   const [folderChoice, setFolderChoice] = useState('');
   const [newFolderName, setNewFolderName] = useState('');
-  const subscribe = useSubscribe();
+  const subscribe = useSubscribe({ inlineError: true });
   const createFolder = useCreateFolder();
   const { data: foldersData } = useFolders();
   const folders = foldersData?.items ?? [];
@@ -73,7 +74,7 @@ export function SubscribeDialog({ open, onOpenChange, onSubscribed }: SubscribeD
     try {
       const folderId = await resolveFolderId();
       const result = await subscribe.mutateAsync({ url: targetUrl, folderId });
-      announce('Subscription added');
+      notify.success('Subscription added.');
       onOpenChange(false);
       // Jump to the new feed: unmissable confirmation that the add worked.
       onSubscribed?.(result.feed.id);
@@ -125,11 +126,7 @@ export function SubscribeDialog({ open, onOpenChange, onSubscribed }: SubscribeD
               title="Folder for the new subscription"
             >
               <option value="">No folder</option>
-              {folders.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.name}
-                </option>
-              ))}
+              <FolderOptions folders={folders} />
               <option value={NEW_FOLDER}>New folder…</option>
             </select>
           </label>

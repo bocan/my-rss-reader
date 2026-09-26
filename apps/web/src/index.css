@@ -21,6 +21,12 @@
   --dur-fast: 120ms;
   --dur-base: 200ms;
 
+  /* Toasts clear the phone bottom nav (shown below md) and the home bar. */
+  --toast-offset-bottom: calc(4.5rem + env(safe-area-inset-bottom));
+  @media (width >= 48rem) {
+    --toast-offset-bottom: 1rem;
+  }
+
   /* Daylight — cool clean light, azure accent. */
   --background: oklch(0.99 0.004 245);
   --foreground: oklch(0.21 0.02 260);

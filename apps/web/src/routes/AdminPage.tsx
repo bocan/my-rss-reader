@@ -6,7 +6,7 @@ import {
   type UserRole,
 } from '@rss/shared';
 import { Check, ChevronLeft, Copy, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/button';
@@ -244,7 +244,7 @@ function inviteStatus(inv: InviteDto): { label: string; tone: string } {
   return { label: 'Active', tone: 'text-primary' };
 }
 
-function InvitesSection() {
+export function InvitesSection() {
   const { data: invites } = useInvites();
   const create = useCreateInvite();
   const del = useDeleteInvite();
@@ -323,7 +323,6 @@ function InvitesSection() {
                   </span>
                 </div>
               </div>
-              {active && <CopyLink link={inv.link} />}
               {active && (
                 <Button
                   variant="ghost"
@@ -335,6 +334,7 @@ function InvitesSection() {
                   <Trash2 className="size-4 text-destructive" />
                 </Button>
               )}
+              {active && <InviteLink link={inv.link} />}
             </div>
           );
         })}
@@ -343,24 +343,52 @@ function InvitesSection() {
   );
 }
 
-function CopyLink({ link }: { link: string }) {
+/**
+ * The invite link, always visible in a read-only field (#50). On plain HTTP
+ * there is no `navigator.clipboard`, so Copy then selects the text and says
+ * how to copy it by hand.
+ */
+function InviteLink({ link }: { link: string }) {
   const [copied, setCopied] = useState(false);
+  const [manual, setManual] = useState(false);
+  const field = useRef<HTMLInputElement>(null);
   const url = `${window.location.origin}${link}`;
 
   async function copy() {
     try {
+      if (!navigator.clipboard) throw new Error('no clipboard');
       await navigator.clipboard.writeText(url);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
     } catch {
-      // Clipboard denied; the link is still visible for manual copy.
+      field.current?.focus();
+      field.current?.select();
+      setManual(true);
     }
   }
 
   return (
-    <Button variant="outline" size="sm" onClick={copy}>
-      {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
-      {copied ? 'Copied' : 'Copy link'}
-    </Button>
+    <div className="basis-full space-y-1">
+      <div className="flex items-center gap-2">
+        <input
+          ref={field}
+          readOnly
+          value={url}
+          aria-label="Invite link"
+          aria-describedby={manual ? `invite-copy-${link}` : undefined}
+          onFocus={(e) => e.currentTarget.select()}
+          className="h-8 min-w-0 flex-1 rounded-md border bg-muted/40 px-2 font-mono text-xs"
+        />
+        <Button variant="outline" size="sm" onClick={copy}>
+          {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+          {copied ? 'Copied' : 'Copy link'}
+        </Button>
+      </div>
+      {manual && (
+        <p id={`invite-copy-${link}`} role="status" className="text-xs text-muted-foreground">
+          This browser cannot copy here. The link is selected: press Ctrl+C (or ⌘C) to copy it.
+        </p>
+      )}
+    </div>
   );
 }

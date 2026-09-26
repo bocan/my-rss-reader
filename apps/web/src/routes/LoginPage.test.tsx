@@ -67,3 +67,41 @@ describe('LoginPage registration adaptation', () => {
     expect(screen.queryByText(/Have an account\? Sign in/i)).not.toBeInTheDocument();
   });
 });
+
+// #50: sign in offers Register only when it can work, and the form says the
+// password rule before submit.
+describe('LoginPage register link and password rule', () => {
+  test('open mode offers Register on sign in', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ mode: 'open' }));
+    renderAt('/login');
+    expect(await screen.findByRole('button', { name: 'Need an account? Register' })).toBeInTheDocument();
+  });
+
+  test('closed mode shows no Register link', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ mode: 'closed' }));
+    renderAt('/login');
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByText(/Register/)).not.toBeInTheDocument());
+  });
+
+  test('invite mode says registration is by invite, with no link', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ mode: 'invite' }));
+    renderAt('/login');
+    expect(await screen.findByText('Registration is by invite. Ask an admin for a link.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Register/ })).not.toBeInTheDocument();
+  });
+
+  test('the register form states the 8-character rule and enforces it', () => {
+    fetchMock.mockResolvedValue(jsonResponse({ mode: 'open' }));
+    renderAt('/register');
+    const password = screen.getByLabelText('Password');
+    expect(password).toHaveAttribute('minlength', '8');
+    expect(password).toHaveAccessibleDescription('At least 8 characters.');
+  });
+
+  test('the sign-in form has no password rule', () => {
+    fetchMock.mockResolvedValue(jsonResponse({ mode: 'open' }));
+    renderAt('/login');
+    expect(screen.getByLabelText('Password')).not.toHaveAttribute('minlength');
+  });
+});

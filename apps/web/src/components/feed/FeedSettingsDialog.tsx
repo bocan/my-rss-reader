@@ -1,6 +1,7 @@
 import {
   ARTICLE_VIEWS,
   ATTENTION_TIERS,
+  describeFeedError,
   VIEW_MODES,
   type ArticleView,
   type AttentionTier,
@@ -8,9 +9,11 @@ import {
 } from '@rss/shared';
 import { Check, Copy } from 'lucide-react';
 import { useState, type FormEvent, type RefObject } from 'react';
+import { FolderOptions } from '@/components/feed/folder-options';
+import { relativeTime } from '@/lib/relative-time';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { announce } from '@/lib/announce';
+import { notify } from '@/lib/notify';
 import { ApiRequestError } from '@/lib/api';
 import {
   useChangeFeedUrl,
@@ -19,38 +22,18 @@ import {
   type SubscriptionRow,
 } from '@/lib/folders';
 import { ARTICLE_VIEW_LABELS } from '@/lib/article-view';
+import { ATTENTION_EFFECTS, ATTENTION_LABELS } from '@/lib/attention';
+import { useSession } from '@/lib/auth';
 import { useProfile } from '@/lib/profile';
+import { useSettings } from '@/lib/settings';
 import { cn } from '@/lib/utils';
+import { VIEW_LABELS } from '@/lib/view-labels';
 
 const inputClass =
   'h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
-const VIEW_LABEL: Record<ViewMode, string> = { list: 'List', cards: 'Cards', magazine: 'Magazine' };
-const ATTENTION_LABEL: Record<AttentionTier, string> = {
-  firehose: 'Firehose',
-  normal: 'Normal',
-  precious: 'Precious',
-};
-
-const ATTENTION_HINT: Record<AttentionTier, string> = {
-  firehose: 'No unread pressure: no badges, and items quietly expire after 14 days.',
-  normal: 'Counts and badges as usual.',
-  precious: 'Never miss a post: highlighted and pinned to the Precious shelf.',
-};
-
-function relativeTime(iso: string | null): string {
-  if (!iso) return 'never';
-  const secs = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
-  if (secs < 60) return 'just now';
-  const mins = Math.round(secs / 60);
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
-}
-
-/** Consolidated feed editor (SPEC-018): rename, folder, view overrides, hide,
- *  and the shared poll interval, saved in one PATCH. */
+/** Consolidated feed editor (SPEC-018): URL, rename, folder, view overrides,
+ *  hide, and the shared poll interval, all applied by one Save. */
 export function FeedSettingsDialog({
   sub,
   restoreFocusRef,
@@ -63,7 +46,8 @@ export function FeedSettingsDialog({
   const { data: foldersData } = useFolders();
   const folders = foldersData?.items ?? [];
   const { data: profile } = useProfile();
-  const update = useUpdateSubscription();
+  const { settings } = useSettings();
+  const update = useUpdateSubscription({ inlineError: true });
   const changeUrl = useChangeFeedUrl();
 
   const [url, setUrl] = useState(sub.feedUrl);
@@ -75,13 +59,38 @@ export function FeedSettingsDialog({
   const [hideFromAll, setHideFromAll] = useState(sub.hideFromAll);
   const [inBlogroll, setInBlogroll] = useState(sub.inBlogroll);
   const [attention, setAttention] = useState<AttentionTier>(sub.attention);
-  const [intervalMin, setIntervalMin] = useState<string>(
-    sub.fetchIntervalSec != null ? String(Math.round(sub.fetchIntervalSec / 60)) : '',
-  );
+  const { data: me } = useSession();
+  // #38: the interval is on the shared feed. Only an admin may change it.
+  const canSetInterval = me?.role === 'admin';
+  const initialMin =
+    sub.fetchIntervalSec != null ? String(Math.round(sub.fetchIntervalSec / 60)) : '';
+  const [intervalMin, setIntervalMin] = useState<string>(initialMin);
 
-  function submit(e: FormEvent) {
+  const newUrl = url.trim();
+  const urlChanged = newUrl !== sub.feedUrl;
+  const saving = changeUrl.isPending || update.isPending;
+
+  /** #37: one Save does both. A changed URL goes first; if the server refuses
+   *  it, the dialog stays open with the error and nothing else is saved. */
+  async function submit(e: FormEvent) {
     e.preventDefault();
+    if (urlChanged) {
+      setUrlMsg(null);
+      try {
+        await changeUrl.mutateAsync({ id: sub.subscriptionId, feedUrl: newUrl });
+      } catch (err) {
+        setUrlMsg(
+          err instanceof ApiRequestError
+            ? (err.body?.message ?? err.message)
+            : 'Could not change the URL.',
+        );
+        return;
+      }
+    }
     const trimmed = name.trim();
+    // Send the interval only when it changed, so a Save of other settings never
+    // rewrites the value that everyone subscribed to this feed shares.
+    const intervalChanged = canSetInterval && intervalMin.trim() !== initialMin;
     const min = intervalMin.trim() === '' ? null : Math.max(1, Math.round(Number(intervalMin)));
     update.mutate(
       {
@@ -93,11 +102,11 @@ export function FeedSettingsDialog({
         hideFromAll,
         inBlogroll,
         attention,
-        fetchIntervalSec: min == null ? null : min * 60,
+        ...(intervalChanged ? { fetchIntervalSec: min == null ? null : min * 60 } : {}),
       },
       {
         onSuccess: () => {
-          announce('Feed settings saved');
+          notify.success('Feed settings saved.');
           onOpenChange(false);
         },
       },
@@ -131,6 +140,10 @@ export function FeedSettingsDialog({
             <div className="flex items-center gap-2">
               <input
                 type="url"
+                required
+                aria-label="Feed URL"
+                aria-invalid={urlMsg ? true : undefined}
+                aria-describedby={urlChanged || urlMsg ? 'feed-url-note' : undefined}
                 value={url}
                 onChange={(e) => {
                   setUrl(e.target.value);
@@ -140,37 +153,16 @@ export function FeedSettingsDialog({
               />
               <CopyButton value={url} />
             </div>
-            {url.trim() !== sub.feedUrl && (
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={changeUrl.isPending || !url.trim()}
-                  onClick={() => {
-                    setUrlMsg(null);
-                    changeUrl.mutate(
-                      { id: sub.subscriptionId, feedUrl: url.trim() },
-                      {
-                        onSuccess: () => onOpenChange(false),
-                        onError: (err) =>
-                          setUrlMsg(
-                            err instanceof ApiRequestError
-                              ? (err.body?.message ?? err.message)
-                              : 'Could not change the URL.',
-                          ),
-                      },
-                    );
-                  }}
-                >
-                  {changeUrl.isPending ? 'Checking feed…' : 'Change URL'}
-                </Button>
-                <span className="text-xs text-muted-foreground">
-                  Re-points this subscription; the new URL is fetched to verify it.
-                </span>
-              </div>
+            {urlChanged && !urlMsg && (
+              <p id="feed-url-note" className="text-xs text-muted-foreground">
+                Save checks the new URL first, then moves this subscription to it.
+              </p>
             )}
-            {urlMsg && <p className="text-xs text-destructive">{urlMsg}</p>}
+            {urlMsg && (
+              <p id="feed-url-note" role="alert" className="text-xs text-destructive">
+                {urlMsg} Your other changes are not saved yet.
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -182,11 +174,7 @@ export function FeedSettingsDialog({
                 onChange={(e) => setFolderId(e.target.value)}
               >
                 <option value="">No folder</option>
-                {folders.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.name}
-                  </option>
-                ))}
+                <FolderOptions folders={folders} />
               </select>
             </label>
             <label className="block space-y-1">
@@ -196,10 +184,10 @@ export function FeedSettingsDialog({
                 value={viewMode}
                 onChange={(e) => setViewMode(e.target.value)}
               >
-                <option value="">Default</option>
+                <option value="">Use default ({VIEW_LABELS[settings.defaultViewMode]})</option>
                 {VIEW_MODES.map((v) => (
                   <option key={v} value={v}>
-                    {VIEW_LABEL[v]}
+                    {VIEW_LABELS[v]}
                   </option>
                 ))}
               </select>
@@ -208,13 +196,16 @@ export function FeedSettingsDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <label className="block space-y-1">
-              <span className="text-sm">Opens in</span>
+              {/* #48: "Article view" everywhere: here, in Settings and on the pane. */}
+              <span className="text-sm">Article view</span>
               <select
                 className={inputClass}
                 value={articleView}
                 onChange={(e) => setArticleView(e.target.value)}
               >
-                <option value="">Default</option>
+                <option value="">
+                  Use default ({ARTICLE_VIEW_LABELS[settings.defaultArticleView]})
+                </option>
                 {ARTICLE_VIEWS.map((v) => (
                   <option key={v} value={v}>
                     {ARTICLE_VIEW_LABELS[v]}
@@ -228,44 +219,58 @@ export function FeedSettingsDialog({
                 type="number"
                 min={1}
                 max={1440}
-                className={inputClass}
+                className={cn(inputClass, !canSetInterval && 'cursor-not-allowed opacity-70')}
                 value={intervalMin}
                 onChange={(e) => setIntervalMin(e.target.value)}
                 placeholder="App default"
+                readOnly={!canSetInterval}
+                aria-describedby="poll-interval-note"
               />
+              <span id="poll-interval-note" className="block text-xs text-muted-foreground">
+                {canSetInterval
+                  ? 'Applies to everyone subscribed to this feed.'
+                  : 'Set by an admin. It applies to everyone subscribed to this feed.'}
+              </span>
             </label>
           </div>
 
-          <label className="block space-y-1">
-            <span className="text-sm">Attention</span>
-            <select
-              className={inputClass}
-              value={attention}
-              onChange={(e) => setAttention(e.target.value as AttentionTier)}
-              title="How much unread pressure this feed may generate"
-            >
-              {ATTENTION_TIERS.map((tier) => (
-                <option key={tier} value={tier}>
-                  {ATTENTION_LABEL[tier]}
-                </option>
-              ))}
-            </select>
-            <span className="block text-xs text-muted-foreground">
-              {ATTENTION_HINT[attention]}
-            </span>
-          </label>
+          {/* #36: each level says what it does, next to "Show in All items",
+              which is a separate choice. */}
+          <fieldset className="space-y-2">
+            <legend className="text-sm">How much attention</legend>
+            {ATTENTION_TIERS.map((tier) => (
+              <label key={tier} className="flex items-start gap-2">
+                <input
+                  type="radio"
+                  name="attention"
+                  value={tier}
+                  checked={attention === tier}
+                  onChange={() => setAttention(tier)}
+                  className="mt-0.5 size-4 shrink-0 accent-primary"
+                />
+                <span>
+                  <span className="block text-sm">{ATTENTION_LABELS[tier]}</span>
+                  <span className="block text-xs text-muted-foreground">
+                    {ATTENTION_EFFECTS[tier]}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
 
           <label className="flex items-center justify-between gap-4">
             <span>
-              <span className="block text-sm">Hide from All Items</span>
+              <span className="block text-sm">Show in All items</span>
               <span className="block text-xs text-muted-foreground">
-                Keeps polling; still reachable by clicking the feed.
+                Off: this feed's articles are not in the All items list. The feed still updates,
+                and you read it from the sidebar. This is not the same as Skim, which keeps the
+                articles in All items but removes the count.
               </span>
             </span>
             <input
               type="checkbox"
-              checked={hideFromAll}
-              onChange={(e) => setHideFromAll(e.target.checked)}
+              checked={!hideFromAll}
+              onChange={(e) => setHideFromAll(!e.target.checked)}
               className="size-4 shrink-0 accent-primary"
             />
           </label>
@@ -311,17 +316,15 @@ export function FeedSettingsDialog({
 
           {sub.lastError ? (
             <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-              <span className="font-medium">This feed failed to update</span> (last tried{' '}
-              {relativeTime(sub.lastFetchedAt)}): {sub.lastError}
+              <span className="font-medium">{describeFeedError(sub.lastError).summary}</span> Last
+              tried {relativeTime(sub.lastFetchedAt)}, last worked {relativeTime(sub.lastSuccessAt)}:{' '}
+              {sub.lastError}
             </p>
           ) : (
             <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
               Last fetched {relativeTime(sub.lastFetchedAt)} · no errors.
             </p>
           )}
-          <p className="text-xs text-muted-foreground">
-            The poll interval is shared by everyone subscribed to this feed.
-          </p>
 
           {update.isError && (
             <p className="text-sm text-destructive">Could not save. Try again.</p>
@@ -331,8 +334,8 @@ export function FeedSettingsDialog({
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={update.isPending} className={cn(update.isPending && 'opacity-70')}>
-              {update.isPending ? 'Saving…' : 'Save'}
+            <Button type="submit" disabled={saving} className={cn(saving && 'opacity-70')}>
+              {changeUrl.isPending ? 'Checking feed…' : update.isPending ? 'Saving…' : 'Save'}
             </Button>
           </div>
         </form>

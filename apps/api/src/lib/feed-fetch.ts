@@ -1,12 +1,13 @@
 import type { IncomingHttpHeaders } from 'node:http';
-import type { FeedCandidate } from '@rss/shared';
-import { eq, sql } from 'drizzle-orm';
+import { transientRetryDelaySec, type FeedCandidate } from '@rss/shared';
+import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { parse } from 'node-html-parser';
 import Parser from 'rss-parser';
 import { Agent, interceptors, request } from 'undici';
 import { db } from '../db/index.js';
 import { articles, feeds } from '../db/schema.js';
-import { extractText, htmlToText, SANITIZER_VERSION, sanitizeArticleHtml } from './sanitize.js';
+import { extractText, htmlToText, looksLikeHtml, SANITIZER_VERSION, sanitizeArticleHtml } from './sanitize.js';
+import { findRenamedEntries } from './renamed-entries.js';
 import { discoverWebSubLinks, unsubscribeFromHub } from './websub.js';
 
 export type FeedRow = typeof feeds.$inferSelect;
@@ -264,12 +265,15 @@ export function feedArticleRows(feedId: string, parsed: ParsedFeed): NewArticleI
       const rawContent = item['content:encoded'] ?? item.content ?? null;
       const raw = typeof rawContent === 'string' ? rawContent : asText(rawContent);
       const baseUrl = asId(item.link) ?? parsed.link ?? null;
-      const cleanHtml = raw ? sanitizeArticleHtml(raw, baseUrl) : null;
+      const rawSummary = asText(item.summary);
+      // With no body, an HTML summary is the body (#47): some Atom feeds (e.g.
+      // simonwillison.net) send the whole post in <summary type="html">.
+      const bodyHtml = raw || (rawSummary && looksLikeHtml(rawSummary) ? rawSummary : null);
+      const cleanHtml = bodyHtml ? sanitizeArticleHtml(bodyHtml, baseUrl) : null;
       // Search text: prefer the body, fall back to the summary so summary-only
       // feeds stay searchable (SPEC-006). searchVector regenerates on write.
       // contentSnippet is already plain text; an Atom summary may be HTML
       // (type="html"), so strip it to text before it reaches a card.
-      const rawSummary = asText(item.summary);
       const summaryText =
         asText(item.contentSnippet) ?? (rawSummary ? htmlToText(rawSummary) || null : null);
       const contentText = cleanHtml
@@ -421,22 +425,68 @@ export async function discoverFeedCandidates(url: string): Promise<FeedCandidate
  * a no-op write on every ordinary poll.
  */
 export async function storeNewArticles(
-  // The feed id seam exists for SPEC-025's per-user filter rules hook.
-  _feedId: string,
+  // Also the seam for SPEC-025's per-user filter rules hook.
+  feedId: string,
   rows: NewArticleInsert[],
 ): Promise<void> {
   if (rows.length === 0) return;
+  await adoptRenamedEntries(feedId, rows);
   await db
     .insert(articles)
     .values(rows)
     .onConflictDoUpdate({
       target: [articles.feedId, articles.guid],
+      // A stored article never changes, except to fill a gap from a later
+      // fetch: an enclosure, or a body (#47: rows stored before HTML summaries
+      // became the body, which is still in the feed). Each field keeps its
+      // stored value when it has one.
       set: {
-        enclosureUrl: sql`excluded.enclosure_url`,
-        enclosureType: sql`excluded.enclosure_type`,
+        enclosureUrl: sql`coalesce(${articles.enclosureUrl}, excluded.enclosure_url)`,
+        enclosureType: sql`case when ${articles.enclosureUrl} is null then excluded.enclosure_type else ${articles.enclosureType} end`,
+        contentHtml: sql`coalesce(${articles.contentHtml}, excluded.content_html)`,
       },
-      setWhere: sql`${articles.enclosureUrl} is null and excluded.enclosure_url is not null`,
+      setWhere: sql`(${articles.enclosureUrl} is null and excluded.enclosure_url is not null)
+        or (${articles.contentHtml} is null and excluded.content_html is not null)`,
     });
+}
+
+/**
+ * #51: an entry whose guid changed (the author fixed the post URL) is the same
+ * post. Give the stored article the new guid and URL, so the insert that
+ * follows finds it and does not store a second copy. The rule is in
+ * renamed-entries.ts.
+ */
+async function adoptRenamedEntries(feedId: string, rows: NewArticleInsert[]): Promise<void> {
+  const titles = [...new Set(rows.filter((r) => r.title && r.publishedAt).map((r) => r.title!))];
+  if (titles.length === 0) return;
+  const stored = await db
+    .select({
+      id: articles.id,
+      guid: articles.guid,
+      title: articles.title,
+      publishedAt: articles.publishedAt,
+      contentText: articles.contentText,
+    })
+    .from(articles)
+    .where(
+      and(
+        eq(articles.feedId, feedId),
+        or(inArray(articles.guid, rows.map((r) => r.guid)), inArray(articles.title, titles)),
+      ),
+    );
+  const renamed = findRenamedEntries(
+    rows.map((r) => ({
+      guid: r.guid,
+      title: r.title ?? null,
+      publishedAt: r.publishedAt ?? null,
+      contentText: r.contentText ?? null,
+    })),
+    stored,
+  );
+  for (const row of rows) {
+    const id = renamed.get(row.guid);
+    if (id) await db.update(articles).set({ guid: row.guid, url: row.url }).where(eq(articles.id, id));
+  }
 }
 
 /**
@@ -454,9 +504,10 @@ export async function fetchAndStoreFeed(feed: FeedRow): Promise<void> {
     // A 304 is a successful fetch: it must clear a stale error too, or one
     // transient failure (e.g. DNS on wake) sticks until the feed next changes.
     if (result.status === 'not-modified') {
+      const now = new Date();
       await db
         .update(feeds)
-        .set({ lastFetchedAt: new Date(), lastError: null, failureCount: 0 })
+        .set({ lastFetchedAt: now, lastSuccessAt: now, lastError: null, failureCount: 0, retryAt: null })
         .where(eq(feeds.id, feed.id));
       return;
     }
@@ -501,8 +552,10 @@ export async function fetchAndStoreFeed(feed: FeedRow): Promise<void> {
         etag: result.etag ?? feed.etag,
         lastModified: result.lastModified ?? feed.lastModified,
         lastFetchedAt: new Date(),
+        lastSuccessAt: new Date(),
         lastError: null,
         failureCount: 0,
+        retryAt: null,
         updatedAt: new Date(),
         ...(faviconUrl !== undefined ? { faviconUrl } : {}),
         ...websubChanges,
@@ -512,12 +565,16 @@ export async function fetchAndStoreFeed(feed: FeedRow): Promise<void> {
     await storeNewArticles(feed.id, feedArticleRows(feed.id, parsed));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    // A short network problem gets an early retry (#29), so a feed that failed
+    // while the network was down recovers in minutes, not a full interval.
+    const delay = transientRetryDelaySec(message, feed.failureCount + 1);
     await db
       .update(feeds)
       .set({
         lastFetchedAt: new Date(),
         lastError: message,
         failureCount: sql`${feeds.failureCount} + 1`,
+        retryAt: delay === null ? null : new Date(Date.now() + delay * 1000),
       })
       .where(eq(feeds.id, feed.id));
   }

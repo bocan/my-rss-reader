@@ -8,6 +8,7 @@ import { findDueFeeds } from '../worker/poll.js';
 import {
   loginAs,
   resetDb,
+  seedAdmin,
   seedArticle,
   seedFeed,
   seedSubscription,
@@ -33,7 +34,7 @@ const getFeeds = (cookie: string) =>
   app.inject({ method: 'GET', url: '/api/feeds', headers: { cookie } });
 
 test('PATCH sets article-view, hide-from-all, and the shared feed interval', async () => {
-  const user = await seedUser();
+  const user = await seedAdmin();
   const feed = await seedFeed();
   const sub = await seedSubscription(user.id, feed.id);
   const cookie = await loginAs(user);
@@ -52,6 +53,34 @@ test('PATCH sets article-view, hide-from-all, and the shared feed interval', asy
 
   const list = (await getFeeds(cookie)).json().items[0];
   expect(list).toMatchObject({ articleView: 'web', hideFromAll: true, fetchIntervalSec: 1800 });
+});
+
+// #38: the interval changes the feed for every subscriber, so only an admin
+// may set it.
+test('a non-admin cannot change the shared poll interval, and nothing is written', async () => {
+  const user = await seedUser();
+  const feed = await seedFeed({ fetchIntervalSec: 3600 });
+  const sub = await seedSubscription(user.id, feed.id);
+  const cookie = await loginAs(user);
+
+  const res = await patchFeed(cookie, sub.id, { title: 'Mine', fetchIntervalSec: 60 });
+  expect(res.statusCode).toBe(403);
+  expect(res.json().message).toMatch(/administrator/);
+
+  const [row] = await db.select().from(feeds).where(eq(feeds.id, feed.id));
+  expect(row!.fetchIntervalSec).toBe(3600);
+  expect((await getFeeds(cookie)).json().items[0].customTitle).toBeNull();
+});
+
+test('a non-admin can still save other settings when the interval is not sent', async () => {
+  const user = await seedUser();
+  const feed = await seedFeed({ fetchIntervalSec: 3600 });
+  const sub = await seedSubscription(user.id, feed.id);
+  const cookie = await loginAs(user);
+
+  const res = await patchFeed(cookie, sub.id, { title: 'Mine' });
+  expect(res.statusCode).toBe(200);
+  expect(res.json()).toMatchObject({ customTitle: 'Mine', fetchIntervalSec: 3600 });
 });
 
 test('hidden feeds drop out of All items but stay reachable directly', async () => {
@@ -109,6 +138,20 @@ test('the poller honors coalesce(feed override, app default)', async () => {
   const dueIds = due.map((f) => f.id);
   expect(dueIds).toContain(inheriting.id);
   expect(dueIds).not.toContain(overridden.id);
+});
+
+test('a due early retry makes a feed due before its interval (#29)', async () => {
+  const justNow = new Date(Date.now() - 60 * 1000);
+  const retryDue = await seedFeed({ fetchIntervalSec: 3600, lastFetchedAt: justNow, retryAt: justNow });
+  const retryLater = await seedFeed({
+    fetchIntervalSec: 3600,
+    lastFetchedAt: justNow,
+    retryAt: new Date(Date.now() + 60 * 1000),
+  });
+
+  const dueIds = (await findDueFeeds()).map((f) => f.id);
+  expect(dueIds).toContain(retryDue.id);
+  expect(dueIds).not.toContain(retryLater.id);
 });
 
 test('admin default poll interval round-trips', async () => {

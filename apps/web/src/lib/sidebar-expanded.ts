@@ -30,13 +30,27 @@ function persist() {
   }
 }
 
+function commit(next: Set<string>) {
+  snapshot = next;
+  persist();
+  listeners.forEach((notify) => notify());
+}
+
 export function toggleFolderExpanded(id: string): void {
   const next = new Set(snapshot);
   if (next.has(id)) next.delete(id);
   else next.add(id);
-  snapshot = next;
-  persist();
-  listeners.forEach((notify) => notify());
+  commit(next);
+}
+
+/** Expand or collapse all of these folders at once (#46). */
+export function setFoldersExpanded(ids: Iterable<string>, open: boolean): void {
+  const next = new Set(snapshot);
+  for (const id of ids) {
+    if (open) next.add(id);
+    else next.delete(id);
+  }
+  commit(next);
 }
 
 export function useExpandedFolders(): Set<string> {

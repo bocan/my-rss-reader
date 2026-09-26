@@ -1,7 +1,14 @@
-import type { ArticleDetail, Paginated, UnreadCounts } from '@rss/shared';
-import { useMutation, useQuery, type QueryClient } from '@tanstack/react-query';
+import type { ArticleDetail, MarkReadResult, Paginated, UnreadCounts } from '@rss/shared';
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type MutateOptions,
+  type QueryClient,
+} from '@tanstack/react-query';
 import type { ArticleListItem } from '@/hooks/use-articles';
 import { api } from './api';
+import { liveQueryOptions } from './live-refresh';
 
 type ArticlesData = { pages: Paginated<ArticleListItem>[]; pageParams: unknown[] };
 interface FeedItem {
@@ -12,21 +19,89 @@ interface FeedItem {
   attention: string;
 }
 type FeedsData = { items: FeedItem[] };
+interface FolderItem {
+  id: string;
+  parentId: string | null;
+}
 
 const clamp = (n: number) => Math.max(0, n);
 
 /** Unread counts for the sidebar. Kept fresh by the optimistic writes below. */
 export function useUnreadCounts() {
-  return useQuery({ queryKey: ['counts'], queryFn: () => api<UnreadCounts>('/counts') });
+  return useQuery({
+    queryKey: ['counts'],
+    queryFn: () => api<UnreadCounts>('/counts'),
+    // Counts keep up with the worker by themselves (#30).
+    ...liveQueryOptions,
+  });
 }
 
-function folderForFeed(qc: QueryClient, feedId: string): string | null {
-  return qc.getQueryData<FeedsData>(['feeds'])?.items.find((f) => f.feedId === feedId)?.folderId ?? null;
-}
-
-function feedsInFolder(qc: QueryClient, folderId: string): Set<string> {
+function feedMeta(qc: QueryClient): Map<string, FeedItem> {
   const items = qc.getQueryData<FeedsData>(['feeds'])?.items ?? [];
-  return new Set(items.filter((i) => i.folderId === folderId).map((i) => i.feedId));
+  return new Map(items.map((i) => [i.feedId, i]));
+}
+
+/**
+ * The folder badges a feed in `folderId` counts toward: its folder and that
+ * folder's parent (#25; nesting is one level deep), as the server rolls up.
+ */
+function badgeFolders(qc: QueryClient, folderId: string | null | undefined): string[] {
+  if (!folderId) return [];
+  const folders = qc.getQueryData<{ items: FolderItem[] }>(['folders'])?.items ?? [];
+  const parentId = folders.find((f) => f.id === folderId)?.parentId;
+  return parentId ? [folderId, parentId] : [folderId];
+}
+
+/**
+ * Which feeds a bulk mark-read covers, mirroring the server: one feed, one
+ * folder with its child folders (#25), or All items, which leaves out hidden
+ * feeds. A feed missing from the cache counts as visible (the refetch
+ * corrects any drift).
+ */
+export function markReadScopeTest(
+  qc: QueryClient,
+  scope: { feedId?: string; folderId?: string },
+): (feedId: string) => boolean {
+  const meta = feedMeta(qc);
+  if (scope.feedId) return (id) => id === scope.feedId;
+  if (scope.folderId) {
+    const folderId = scope.folderId;
+    return (id) => badgeFolders(qc, meta.get(id)?.folderId).includes(folderId);
+  }
+  return (id) => !meta.get(id)?.hideFromAll;
+}
+
+/**
+ * Zero the unread count of every feed in scope, and take exactly those counts
+ * off their folders and the total, following the server's rollup rules:
+ * hidden and firehose feeds never count toward the total, and firehose feeds
+ * never count toward their folder.
+ */
+function zeroCounts(
+  qc: QueryClient,
+  c: UnreadCounts,
+  inScope: (feedId: string) => boolean,
+): UnreadCounts {
+  const meta = feedMeta(qc);
+  let totalDrop = 0;
+  const folderDrop = new Map<string, number>();
+  const feeds = c.feeds.map((f) => {
+    if (!inScope(f.feedId) || f.unreadCount === 0) return f;
+    const m = meta.get(f.feedId);
+    const firehose = m?.attention === 'firehose';
+    if (!m?.hideFromAll && !firehose) totalDrop += f.unreadCount;
+    if (!firehose) {
+      for (const id of badgeFolders(qc, m?.folderId)) {
+        folderDrop.set(id, (folderDrop.get(id) ?? 0) + f.unreadCount);
+      }
+    }
+    return { ...f, unreadCount: 0 };
+  });
+  const folders = c.folders.map((f) => {
+    const drop = folderDrop.get(f.folderId) ?? 0;
+    return drop ? { ...f, unreadCount: clamp(f.unreadCount - drop) } : f;
+  });
+  return { feeds, folders, total: clamp(c.total - totalDrop) };
 }
 
 /** Current read state + feed id for an article, from the list or detail cache. */
@@ -38,6 +113,35 @@ function currentState(qc: QueryClient, articleId: string): { read: boolean; feed
   const detail = qc.getQueryData<ArticleDetail>(['article', articleId]);
   if (detail) return { read: detail.read, feedId: detail.feed.id };
   return undefined;
+}
+
+/**
+ * An article's read/starred/shared flags as the UI shows them: the detail
+ * cache first (the open article; the only shape with `shared`), else its list
+ * row. Both carry the same optimistic patches.
+ */
+export function articleFlags(
+  qc: QueryClient,
+  articleId: string,
+): { read: boolean; starred: boolean; shared: boolean } | undefined {
+  const detail = qc.getQueryData<ArticleDetail>(['article', articleId]);
+  if (detail) return { read: detail.read, starred: detail.starred, shared: detail.shared };
+  for (const [, data] of qc.getQueriesData<ArticlesData>({ queryKey: ['articles'] })) {
+    const found = data?.pages.flatMap((p) => p.items).find((a) => a.id === articleId);
+    if (found) return { read: found.read, starred: found.starred, shared: false };
+  }
+  return undefined;
+}
+
+/** The article's original link, from the open article or any loaded list. */
+export function articleUrl(qc: QueryClient, articleId: string): string | null {
+  const detail = qc.getQueryData<ArticleDetail>(['article', articleId]);
+  if (detail) return detail.url;
+  for (const [, data] of qc.getQueriesData<ArticlesData>({ queryKey: ['articles'] })) {
+    const found = data?.pages.flatMap((p) => p.items).find((a) => a.id === articleId);
+    if (found) return found.url;
+  }
+  return null;
 }
 
 function patchArticle(
@@ -63,24 +167,22 @@ function patchArticle(
 
 function adjustCounts(qc: QueryClient, feedId: string, delta: number) {
   const meta = qc.getQueryData<FeedsData>(['feeds'])?.items.find((f) => f.feedId === feedId);
-  const folderId = meta?.folderId ?? null;
   // Mirror the server's rollup rules so optimistic writes cannot drift:
   // hidden feeds (SPEC-018) and firehose feeds (SPEC-022) never contribute to
-  // total; firehose feeds never contribute to their folder badge either.
+  // total; firehose feeds never contribute to a folder badge either. A feed
+  // counts toward its folder and that folder's parent (#25).
   const firehose = meta?.attention === 'firehose';
   const inTotal = !meta?.hideFromAll && !firehose;
+  const folderIds = firehose ? [] : badgeFolders(qc, meta?.folderId);
   qc.setQueryData<UnreadCounts>(['counts'], (c) =>
     c
       ? {
           feeds: c.feeds.map((f) =>
             f.feedId === feedId ? { ...f, unreadCount: clamp(f.unreadCount + delta) } : f,
           ),
-          folders:
-            folderId && !firehose
-              ? c.folders.map((f) =>
-                  f.folderId === folderId ? { ...f, unreadCount: clamp(f.unreadCount + delta) } : f,
-                )
-              : c.folders,
+          folders: c.folders.map((f) =>
+            folderIds.includes(f.folderId) ? { ...f, unreadCount: clamp(f.unreadCount + delta) } : f,
+          ),
           total: inTotal ? clamp(c.total + delta) : c.total,
         }
       : c,
@@ -96,17 +198,34 @@ async function snapshot(qc: QueryClient) {
   };
 }
 
-type Ctx = { prevArticles: [readonly unknown[], unknown][]; prevCounts: UnreadCounts | undefined };
+type Ctx = {
+  prevArticles: [readonly unknown[], unknown][];
+  prevCounts: UnreadCounts | undefined;
+  /** The open article's detail, which patchArticle also writes. */
+  prevDetail?: [readonly unknown[], ArticleDetail | undefined];
+};
 
 function restore(qc: QueryClient, ctx: Ctx | undefined) {
   if (!ctx) return;
   for (const [key, data] of ctx.prevArticles) qc.setQueryData(key, data);
   qc.setQueryData(['counts'], ctx.prevCounts);
+  if (ctx.prevDetail) qc.setQueryData(ctx.prevDetail[0], ctx.prevDetail[1]);
 }
 
 function reconcile(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ['articles'] });
   qc.invalidateQueries({ queryKey: ['counts'] });
+}
+
+/**
+ * After a single-article change (#19): refresh the counts, and let lists the
+ * reader is NOT looking at refetch the next time they show. The list on screen
+ * keeps its optimistic patch and is not refetched, so an item just read stays
+ * (shown as read) in an unread-only list until a scope change or refresh.
+ */
+function settleOne(qc: QueryClient) {
+  qc.invalidateQueries({ queryKey: ['counts'] });
+  qc.invalidateQueries({ queryKey: ['articles'], type: 'inactive' });
 }
 
 // Stable mutation keys so a rehydrated paused mutation can find its default
@@ -122,7 +241,14 @@ type ToggleVars = {
   shareNote?: string | null;
 };
 type TogglePatch = Omit<ToggleVars, 'articleId'>;
-type MarkReadScope = { feedId?: string; folderId?: string; before?: string };
+export type MarkReadScope = {
+  feedId?: string;
+  folderId?: string;
+  before?: string;
+  fetchedBefore?: string;
+  /** Exactly these articles (mark read on scroll, #17). */
+  articleIds?: string[];
+};
 
 /**
  * Register the read/star and mark-read mutation logic on the client, keyed by
@@ -131,13 +257,18 @@ type MarkReadScope = { feedId?: string; folderId?: string; before?: string };
  */
 export function registerMutationDefaults(qc: QueryClient): void {
   qc.setMutationDefaults(TOGGLE_STATE_KEY, {
+    meta: { errorMessage: 'Could not update the article.' },
     mutationFn: ({ articleId, read, starred, shared, shareNote }: ToggleVars) =>
       api<void>(`/articles/${articleId}/state`, {
         method: 'PATCH',
         body: { read, starred, shared, shareNote },
       }),
     onMutate: async ({ articleId, ...vars }: ToggleVars): Promise<Ctx> => {
-      const ctx = await snapshot(qc);
+      const detailKey = ['article', articleId] as const;
+      const ctx: Ctx = {
+        ...(await snapshot(qc)),
+        prevDetail: [detailKey, qc.getQueryData<ArticleDetail>(detailKey)],
+      };
       const state = currentState(qc, articleId);
       // Only a read change moves counts; starred never does.
       if (vars.read !== undefined && state && state.read !== vars.read) {
@@ -147,41 +278,30 @@ export function registerMutationDefaults(qc: QueryClient): void {
       return ctx;
     },
     onError: (_e: unknown, _v: ToggleVars, ctx: Ctx | undefined) => restore(qc, ctx),
-    onSettled: () => reconcile(qc),
+    onSettled: () => settleOne(qc),
   });
 
   qc.setMutationDefaults(MARK_READ_KEY, {
+    meta: { errorMessage: 'Could not mark the articles as read.' },
     mutationFn: (scope: MarkReadScope) =>
-      api<void>('/articles/mark-read', { method: 'POST', body: scope }),
+      api<MarkReadResult>('/articles/mark-read', { method: 'POST', body: scope }),
     onMutate: async (scope: MarkReadScope): Promise<Ctx> => {
       const ctx = await snapshot(qc);
+      if (scope.articleIds) {
+        for (const id of scope.articleIds) {
+          const state = currentState(qc, id);
+          if (!state || state.read) continue;
+          adjustCounts(qc, state.feedId, -1);
+          patchArticle(qc, id, { read: true });
+        }
+        return ctx;
+      }
       // With a `before` cutoff the exact set is unknowable from a partial cache;
       // skip the optimistic write and let onSettled refetch the truth.
       if (scope.before) return ctx;
 
-      // Which feeds are in scope: one feed, a folder's feeds, or all (null).
-      const feedSet: Set<string> | null = scope.feedId
-        ? new Set([scope.feedId])
-        : scope.folderId
-          ? feedsInFolder(qc, scope.folderId)
-          : null;
-
-      qc.setQueryData<UnreadCounts>(['counts'], (c) => {
-        if (!c) return c;
-        const zeroed = c.feeds.map((f) =>
-          !feedSet || feedSet.has(f.feedId) ? { ...f, unreadCount: 0 } : f,
-        );
-        const removed = c.feeds
-          .filter((f) => !feedSet || feedSet.has(f.feedId))
-          .reduce((s, f) => s + f.unreadCount, 0);
-        const folderId = scope.feedId ? folderForFeed(qc, scope.feedId) : scope.folderId ?? null;
-        const folders = feedSet
-          ? c.folders.map((f) =>
-              f.folderId === folderId ? { ...f, unreadCount: clamp(f.unreadCount - removed) } : f,
-            )
-          : c.folders.map((f) => ({ ...f, unreadCount: 0 }));
-        return { feeds: zeroed, folders, total: clamp(c.total - removed) };
-      });
+      const inScope = markReadScopeTest(qc, scope);
+      qc.setQueryData<UnreadCounts>(['counts'], (c) => (c ? zeroCounts(qc, c, inScope) : c));
 
       qc.setQueriesData<ArticlesData>({ queryKey: ['articles'] }, (data) =>
         data
@@ -189,9 +309,7 @@ export function registerMutationDefaults(qc: QueryClient): void {
               ...data,
               pages: data.pages.map((p) => ({
                 ...p,
-                items: p.items.map((a) =>
-                  !feedSet || feedSet.has(a.feedId) ? { ...a, read: true } : a,
-                ),
+                items: p.items.map((a) => (inScope(a.feedId) ? { ...a, read: true } : a)),
               })),
             }
           : data,
@@ -199,7 +317,10 @@ export function registerMutationDefaults(qc: QueryClient): void {
       return ctx;
     },
     onError: (_e: unknown, _v: MarkReadScope, ctx: Ctx | undefined) => restore(qc, ctx),
-    onSettled: () => reconcile(qc),
+    // A scroll batch leaves the list on screen as it is (see settleOne); a
+    // whole-scope mark refetches, so the list shows the server's truth.
+    onSettled: (_d: unknown, _e: unknown, scope: MarkReadScope) =>
+      scope.articleIds ? settleOne(qc) : reconcile(qc),
   });
 }
 
@@ -212,12 +333,33 @@ export function useToggleArticleState(articleId: string) {
   const m = useMutation<void, Error, ToggleVars, Ctx>({ mutationKey: TOGGLE_STATE_KEY });
   return {
     isPending: m.isPending,
-    mutate: (vars: TogglePatch) => m.mutate({ articleId, ...vars }),
+    mutate: (vars: TogglePatch, opts?: MutateOptions<void, Error, ToggleVars, Ctx>) =>
+      m.mutate({ articleId, ...vars }, opts),
     mutateAsync: (vars: TogglePatch) => m.mutateAsync({ articleId, ...vars }),
   };
 }
 
+/**
+ * The same toggle for any article, named per call: the list rows' quick
+ * actions (#32), where one hook serves every row.
+ */
+export function useToggleAnyArticleState() {
+  const m = useMutation<void, Error, ToggleVars, Ctx>({ mutationKey: TOGGLE_STATE_KEY });
+  return (articleId: string, vars: TogglePatch) => m.mutate({ articleId, ...vars });
+}
+
 /** Optimistically mark a whole scope read (feed, folder, or everything). */
 export function useMarkRead() {
-  return useMutation<void, Error, MarkReadScope, Ctx>({ mutationKey: MARK_READ_KEY });
+  return useMutation<MarkReadResult, Error, MarkReadScope, Ctx>({ mutationKey: MARK_READ_KEY });
+}
+
+/** Undo a mark-read (#26): these articles go back to unread, then refetch. */
+export function useMarkUnread() {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: { errorMessage: 'Could not undo. The articles are still read.' },
+    mutationFn: (articleIds: string[]) =>
+      api<void>('/articles/mark-unread', { method: 'POST', body: { articleIds } }),
+    onSettled: () => reconcile(qc),
+  });
 }

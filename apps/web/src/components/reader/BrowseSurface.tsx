@@ -1,5 +1,7 @@
 import { ChevronLeft } from 'lucide-react';
+import type { ReactNode } from 'react';
 import type { ArticleSurface } from '@/hooks/use-article-surface';
+import { useRowToggle } from '@/hooks/use-article-toggles';
 import type { ArticleListItem } from '@/hooks/use-articles';
 import { ReadingPane } from '@/components/reading-pane/ReadingPane';
 import { Button } from '@/components/ui/button';
@@ -26,6 +28,9 @@ export function BrowseSurface({
   selectedId,
   onSelect,
   onBack,
+  stepper,
+  header,
+  empty,
 }: {
   surface: ArticleSurface;
   feeds: FeedMetaMap;
@@ -33,15 +38,27 @@ export function BrowseSurface({
   selectedId: string | null;
   onSelect: (article: ArticleListItem) => void;
   onBack: () => void;
+  /** Previous / Next controls for the open article (#23). */
+  stepper?: ReactNode;
+  /** Above the grid, e.g. what a search covers (#33). */
+  header?: ReactNode;
+  /** The empty state for this scope (#35). */
+  empty?: ReactNode;
 }) {
   const View = view === 'cards' ? CardsView : MagazineView;
   const reading = selectedId !== null;
+  const onToggle = useRowToggle();
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
       {/* Grid stays mounted (just hidden) while reading, so returning restores
           scroll position and every loaded page. */}
-      <ArticleScroller surface={surface} className={cn(reading && 'hidden')}>
+      <ArticleScroller
+        surface={surface}
+        header={header}
+        empty={empty}
+        className={cn(reading && 'hidden')}
+      >
         <div key={view} className="animate-in fade-in duration-200 motion-reduce:animate-none">
           <View
             items={surface.items}
@@ -53,6 +70,7 @@ export function BrowseSurface({
               onSelect(a);
             }}
             registerRow={surface.registerRow}
+            onToggle={onToggle}
           />
         </div>
       </ArticleScroller>
@@ -65,7 +83,8 @@ export function BrowseSurface({
             </Button>
           </div>
           <div className="min-h-0 flex-1">
-            <ReadingPane articleId={selectedId} />
+            {/* Keyed so each article starts at the top when stepping. */}
+            <ReadingPane key={selectedId} articleId={selectedId} stepper={stepper} />
           </div>
         </div>
       )}

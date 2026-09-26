@@ -14,8 +14,9 @@ function makeActions(): ShortcutActions {
     markUnread: vi.fn(),
     toggleStar: vi.fn(),
     toggleShared: vi.fn(),
+    openOriginal: vi.fn(),
     markAllRead: vi.fn(),
-    refresh: vi.fn(),
+    fetchFeeds: vi.fn(),
     focusSearch: vi.fn(),
     nextFeed: vi.fn(),
     prevFeed: vi.fn(),
@@ -57,8 +58,14 @@ describe('useShortcuts dispatch', () => {
 
   test('does not fire a list key while the reader is open', () => {
     render(<Harness ctx="reader" actions={actions} />);
+    press('o');
+    expect(actions.openFocused).not.toHaveBeenCalled();
+  });
+
+  test('j steps articles in the reader too (#23)', () => {
+    render(<Harness ctx="reader" actions={actions} />);
     press('j');
-    expect(actions.selectNext).not.toHaveBeenCalled();
+    expect(actions.selectNext).toHaveBeenCalledOnce();
   });
 
   test('never fires while typing in a field', () => {
@@ -78,7 +85,26 @@ describe('useShortcuts dispatch', () => {
     act(() => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', metaKey: true, bubbles: true }));
     });
-    expect(actions.refresh).not.toHaveBeenCalled();
+    expect(actions.fetchFeeds).not.toHaveBeenCalled();
+  });
+
+  test('r fetches all feeds, the same action as the refresh button (#42)', () => {
+    render(<Harness ctx="list" actions={actions} />);
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', bubbles: true }));
+    });
+    expect(actions.fetchFeeds).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('v opens the original (#49)', () => {
+  test('in the list and in the full-screen reader', () => {
+    const { unmount } = render(<Harness ctx="list" actions={actions} />);
+    press('v');
+    unmount();
+    render(<Harness ctx="reader" actions={actions} />);
+    press('v');
+    expect(actions.openOriginal).toHaveBeenCalledTimes(2);
   });
 });
 

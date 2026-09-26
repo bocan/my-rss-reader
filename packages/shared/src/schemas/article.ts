@@ -22,6 +22,15 @@ export const articleQuerySchema = z.object({
 });
 export type ArticleQuery = z.infer<typeof articleQuerySchema>;
 
+/**
+ * How many articles joined a list scope after `since` (the list's `asOf`), for
+ * the "N new articles" bar (#30). Search has no such bar.
+ */
+export const newArticleCountQuerySchema = articleQuerySchema
+  .pick({ feedId: true, folderId: true, unread: true, starred: true, shared: true, attention: true })
+  .extend({ since: z.iso.datetime({ offset: true }) });
+export type NewArticleCountQuery = z.infer<typeof newArticleCountQuerySchema>;
+
 export const updateArticleStateSchema = z.object({
   read: z.boolean().optional(),
   starred: z.boolean().optional(),
@@ -67,11 +76,36 @@ export const readableQuerySchema = z.object({
 });
 export type ReadableQuery = z.infer<typeof readableQuerySchema>;
 
-/** Bulk mark-as-read (e.g. "mark all read in this folder"). */
+/**
+ * Bulk mark-as-read (e.g. "mark all read in this folder"). With neither
+ * feedId nor folderId it covers All items, which (like the list) leaves out
+ * feeds hidden from All items.
+ */
 export const markReadSchema = z.object({
   feedId: z.uuid().optional(),
   folderId: z.uuid().optional(),
-  /** Only mark items older than this ISO timestamp. */
+  /** Only mark items published (or, if undated, fetched) before this time. */
   before: z.iso.datetime().optional(),
+  /** Only mark items the server had stored by this time (a list's `asOf`). */
+  fetchedBefore: z.iso.datetime().optional(),
+  /**
+   * Only these articles (mark read on scroll, #17). Hidden feeds are not
+   * left out here: the ids came from a list that showed them.
+   */
+  articleIds: z.array(z.uuid()).min(1).max(200).optional(),
 });
 export type MarkReadInput = z.infer<typeof markReadSchema>;
+
+/**
+ * POST /articles/mark-read answer: exactly the articles this call turned from
+ * unread to read (already-read ones are left out), for Undo (#26).
+ */
+export interface MarkReadResult {
+  markedIds: string[];
+}
+
+/** Undo a mark-read (#26): set these articles back to unread. */
+export const markUnreadSchema = z.object({
+  articleIds: z.array(z.uuid()).min(1).max(20_000),
+});
+export type MarkUnreadInput = z.infer<typeof markUnreadSchema>;

@@ -6,9 +6,13 @@ import { ReaderPage } from '@/routes/ReaderPage';
 import { SettingsPage } from '@/routes/SettingsPage';
 
 export function App() {
-  const { data: user, isLoading } = useSession();
+  // isPending, not isLoading: while the persisted cache restores, the session
+  // query is pending but not yet fetching (isLoading false). Routing then
+  // would read "signed out" and bounce through /login, which drops a deep
+  // link's ?article= on the way back.
+  const { data: user, isPending } = useSession();
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
         Loading…

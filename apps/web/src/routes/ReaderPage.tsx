@@ -1,10 +1,7 @@
-import { useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowDownAZ,
-  ArrowDownWideNarrow,
+  AlertTriangle,
+  ChevronDown,
   ChevronLeft,
-  Circle,
-  CircleDot,
   Gem,
   Inbox,
   Keyboard,
@@ -15,34 +12,70 @@ import {
   Share2,
   Shield,
   Star,
+  Upload,
   Users,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { AppShell } from '@/components/layout/AppShell';
 import { MobileNav } from '@/components/layout/MobileNav';
+import { mobileNavTab } from '@/components/layout/mobile-nav-tab';
 import { CommunityPane } from '@/components/community/CommunityPane';
+import { FeedProblemsDialog } from '@/components/feed/FeedProblemsDialog';
+import { ImportOpmlDialog } from '@/components/feed/OpmlImport';
+import { ArticleStepper } from '@/components/reader/ArticleStepper';
 import { BrowseSurface } from '@/components/reader/BrowseSurface';
+import { EmptyArticles, Kbd } from '@/components/reader/EmptyArticles';
 import { ListColumn } from '@/components/reader/ListColumn';
+import { SearchField, SearchScope } from '@/components/reader/Search';
+import { SortToggle } from '@/components/reader/SortToggle';
+import { UnreadToggle } from '@/components/reader/UnreadToggle';
 import { ViewSwitcher } from '@/components/reader/ViewSwitcher';
 import { ReadingPane } from '@/components/reading-pane/ReadingPane';
 import { ShortcutsOverlay } from '@/components/shortcuts/ShortcutsOverlay';
+import { AddMenu } from '@/components/sidebar/add-menu';
+import { FeedSortMenu } from '@/components/sidebar/feed-sort-menu';
 import { FolderTree } from '@/components/sidebar/folder-tree';
 import { SubscribeDialog } from '@/components/subscribe-dialog';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useArticleSurface } from '@/hooks/use-article-surface';
+import { useArticleToggles } from '@/hooks/use-article-toggles';
 import type { ArticleFilters, ArticleListItem } from '@/hooks/use-articles';
-import { useListView, type ViewScope } from '@/hooks/use-list-view';
+import { useLeaveGoneFeed } from '@/hooks/use-leave-gone-feed';
+import { useListView, useSortOrder, type SortScope, type ViewScope } from '@/hooks/use-list-view';
 import { useShortcuts } from '@/hooks/use-shortcuts';
 import { useSidebar } from '@/hooks/use-sidebar';
 import { announce } from '@/lib/announce';
-import { useMarkRead, useToggleArticleState, useUnreadCounts } from '@/lib/articles';
+import { useUnreadCounts } from '@/lib/articles';
+import { OLDER_THAN, olderThan, useMarkAllRead } from '@/lib/mark-all-read';
 import { useSession } from '@/lib/auth';
 import { useCommunityShares } from '@/lib/community';
-import { orderedVisibleFeedIds, type FeedSort } from '@/lib/feed-order';
+import { ATTENTION_LABELS } from '@/lib/attention';
+import { emptyReason, nextUnreadFeed } from '@/lib/empty-state';
+import { unreadForScope } from '@/lib/scope-count';
+import { isFeedSort, orderedVisibleFeedIds, type FeedSort } from '@/lib/feed-order';
 import {
+  problemFeeds,
   useFolders,
-  useRefreshFeeds,
+  useFetchAllFeeds,
   useSubscriptions,
   useUpdateFolder,
   useUpdateSubscription,
@@ -50,9 +83,11 @@ import {
 import { useProfile } from '@/lib/profile';
 import { useExpandedFolders } from '@/lib/sidebar-expanded';
 import { useSettings } from '@/lib/settings';
-import type { ArticleDetail } from '@rss/shared';
+import { SORT_LABELS } from '@/lib/sort-order';
+import { useUnreadOnly } from '@/lib/unread-only';
 import type { ShortcutContextName } from '@/lib/shortcuts/registry';
 import { cn } from '@/lib/utils';
+import type { SortOrder, ViewMode } from '@rss/shared';
 
 /** Reactively tracks a media query. */
 function useMediaQuery(query: string): boolean {
@@ -88,10 +123,11 @@ export function ReaderPage() {
   // sidebar but phones otherwise cannot reach.
   const [mobileStep, setMobileStep] = useState<'feeds' | 'list'>('feeds');
 
-  // Sidebar feed ordering (folders are always alphabetical). Persisted locally.
+  // Sidebar ordering: by name, by unread, or manual (#27). Persisted locally.
   const [feedSort, setFeedSort] = useState<FeedSort>(() => {
     try {
-      return window.localStorage.getItem('reader:feed-sort') === 'unread' ? 'unread' : 'name';
+      const saved = window.localStorage.getItem('reader:feed-sort');
+      return isFeedSort(saved) ? saved : 'name';
     } catch {
       return 'name';
     }
@@ -105,21 +141,12 @@ export function ReaderPage() {
   }, [feedSort]);
 
   // "Unread only": hides read articles from the lists and read-empty feeds from
-  // the sidebar. A global toggle (not per-scope), persisted locally.
-  const [unreadOnly, setUnreadOnly] = useState<boolean>(() => {
-    try {
-      return window.localStorage.getItem('reader:unread-only') === 'true';
-    } catch {
-      return false;
-    }
-  });
-  useEffect(() => {
-    try {
-      window.localStorage.setItem('reader:unread-only', String(unreadOnly));
-    } catch {
-      // display preference only
-    }
-  }, [unreadOnly]);
+  // the sidebar. A global toggle (not per-scope), the same value as Settings.
+  const [unreadOnly, setUnreadOnly] = useUnreadOnly();
+  const changeUnreadOnly = (on: boolean) => {
+    setUnreadOnly(on);
+    announce(on ? 'Showing unread only' : 'Showing all articles');
+  };
 
   const { data: feedsData, isLoading } = useSubscriptions();
   // Stable identity so downstream useMemos (feedMeta, feedOrder) do not churn.
@@ -129,6 +156,10 @@ export function ReaderPage() {
 
   const countByFeed = useMemo(
     () => new Map((counts?.feeds ?? []).map((f) => [f.feedId, f.unreadCount])),
+    [counts],
+  );
+  const countByFolder = useMemo(
+    () => new Map((counts?.folders ?? []).map((f) => [f.folderId, f.unreadCount])),
     [counts],
   );
   const feedMeta = useMemo(
@@ -146,6 +177,10 @@ export function ReaderPage() {
   );
   const preciousUnread = preciousFeedIds.reduce((n, id) => n + (countByFeed.get(id) ?? 0), 0);
 
+  // "Feeds with problems" (#29), shown only while one is failing.
+  const failingFeeds = problemFeeds(subs).length;
+  const [problemsOpen, setProblemsOpen] = useState(false);
+
   const [filters, setFilters] = useState<ArticleFilters>({ sort: 'newest' });
 
   // Community mode (SPEC-019): swaps the content region to other users'
@@ -159,7 +194,7 @@ export function ReaderPage() {
   // List layout (the Inoreader model, see useListView): a feed or folder shows
   // its saved layout, else the user default. The switcher saves where you are
   // only; on All items it sets the default. Feed settings edits the same field.
-  const refreshFeeds = useRefreshFeeds();
+  const { fetchAll: fetchFeeds, isPending: fetchingFeeds } = useFetchAllFeeds();
   const updateSub = useUpdateSubscription();
   const updateFolder = useUpdateFolder();
   const currentSub = filters.feedId ? subs.find((s) => s.feedId === filters.feedId) : undefined;
@@ -183,30 +218,59 @@ export function ReaderPage() {
   });
   const isBrowse = view === 'cards' || view === 'magazine';
 
+  // Article order (#31): the same model as the layout. A feed or folder shows
+  // its saved order, else the default, which a pick on All items sets.
+  const sortScope: SortScope = currentSub
+    ? { kind: 'feed', subscriptionId: currentSub.subscriptionId, saved: currentSub.sortOrder ?? null }
+    : currentFolder
+      ? { kind: 'folder', folderId: currentFolder.id, saved: currentFolder.sortOrder ?? null }
+      : isAllItems
+        ? { kind: 'all' }
+        : { kind: 'other' };
+  const [sort, setSort] = useSortOrder(sortScope, scopeKey, settings.defaultSortOrder, {
+    feed: (id, sortOrder) => updateSub.mutate({ id, sortOrder }),
+    folder: (id, sortOrder) => updateFolder.mutate({ id, sortOrder }),
+    default: (defaultSortOrder) => updateSettings({ defaultSortOrder }),
+  });
+
   const [searchInput, setSearchInput] = useState('');
+  // Phones (below sm) show the search box only after the Search tab is used,
+  // and while it holds a query.
+  const [phoneSearchOpen, setPhoneSearchOpen] = useState(false);
+  const phoneSearchShown = phoneSearchOpen || searchInput !== '';
   const [debouncedQ, setDebouncedQ] = useState('');
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedQ(searchInput.trim()), 300);
     return () => clearTimeout(timer);
   }, [searchInput]);
   const isSearching = debouncedQ.length > 0;
+  // Picking another scope ends a search (#33), so the header never keeps
+  // "Results for" over a list that is not a search.
+  const endSearch = () => {
+    setSearchInput('');
+    setDebouncedQ('');
+    setPhoneSearchOpen(false);
+  };
   // Searching always searches articles; leave community mode when a query starts.
   useEffect(() => {
     if (isSearching) setCommunityOpen(false);
   }, [isSearching]);
   const effectiveFilters = useMemo(() => {
-    let f = filters;
+    // Search orders by relevance, so the saved sort does not apply there (#31).
+    let f: ArticleFilters = { ...filters, sort: debouncedQ ? 'newest' : sort };
     if (unreadOnly) f = { ...f, unread: true };
     if (debouncedQ) f = { ...f, q: debouncedQ };
     return f;
-  }, [filters, unreadOnly, debouncedQ]);
+  }, [filters, sort, unreadOnly, debouncedQ]);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedId = searchParams.get('article');
-  const selectArticle = (id: string) => {
+  // Stepping between articles (#23) replaces the history entry, so Back
+  // still returns to the list instead of walking back through every article.
+  const selectArticle = (id: string, { replace = false } = {}) => {
     const next = new URLSearchParams(searchParams);
     next.set('article', id);
-    setSearchParams(next);
+    setSearchParams(next, { replace });
   };
   const clearArticle = () => {
     if (!searchParams.has('article')) return; // idempotent: no spurious history entry
@@ -226,9 +290,24 @@ export function ReaderPage() {
   const pickScope = (apply: () => void) => {
     clearArticle();
     setCommunityOpen(false);
+    endSearch();
     apply();
     goToList();
   };
+  // The one scope change that keeps the query: widen it to every feed.
+  const searchAllFeeds = () => {
+    clearArticle();
+    setFilters({ sort: 'newest' });
+  };
+  // An unsubscribed feed in view falls back to All items (#16).
+  const subscribedFeedIds = useMemo(
+    () => (feedsData ? new Set(feedsData.items.map((s) => s.feedId)) : undefined),
+    [feedsData],
+  );
+  useLeaveGoneFeed(filters.feedId, subscribedFeedIds, () => {
+    clearArticle();
+    setFilters({ sort: 'newest' });
+  });
   const openCommunity = () => {
     clearArticle();
     setCommunityOpen(true);
@@ -236,8 +315,9 @@ export function ReaderPage() {
   };
 
   const [addOpen, setAddOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [overlayOpen, setOverlayOpen] = useState(false);
-  const queryClient = useQueryClient();
   const searchRef = useRef<HTMLInputElement>(null);
 
   // Moving focus opens in place only in list/compact at lg (the reader is a
@@ -246,7 +326,29 @@ export function ReaderPage() {
   const openInPlace = (article: ArticleListItem) => {
     if (isWide && !isBrowse) selectArticle(article.id);
   };
-  const surface = useArticleSurface(effectiveFilters, openInPlace);
+  const surface = useArticleSurface(effectiveFilters, openInPlace, {
+    markReadOnScroll: settings.markReadOnScroll,
+    onOpen: (article) => selectArticle(article.id, { replace: true }),
+  });
+
+  // Keep keyboard focus on the open article (e.g. after a deep link), so
+  // Next / Previous step from it.
+  const hasItems = surface.items.length > 0;
+  useEffect(() => {
+    if (selectedId && surface.items.some((a) => a.id === selectedId)) {
+      surface.setFocusedId(selectedId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the open article or the first page changes
+  }, [selectedId, hasItems]);
+  const adjacent = selectedId ? surface.adjacency(selectedId) : null;
+  const stepper = adjacent && (
+    <ArticleStepper
+      hasPrev={adjacent.hasPrev}
+      hasNext={adjacent.hasNext}
+      onPrev={() => surface.openAdjacent(-1)}
+      onNext={() => surface.openAdjacent(1)}
+    />
+  );
 
   // --- Scope chrome + mark all read (top bar) ---------------------------
   const scopeLabel = communityOpen
@@ -256,25 +358,47 @@ export function ReaderPage() {
       : filters.shared
         ? 'Shared'
         : filters.attention === 'precious'
-          ? 'Precious'
+          ? ATTENTION_LABELS.precious
           : filters.feedId
           ? (feedMeta[filters.feedId]?.name ?? 'Feed')
           : filters.folderId
             ? (foldersData?.items.find((f) => f.id === filters.folderId)?.name ?? 'Folder')
             : 'All items';
-  const unreadForView = filters.feedId
-    ? (countByFeed.get(filters.feedId) ?? 0)
-    : filters.folderId
-      ? (counts?.folders.find((f) => f.folderId === filters.folderId)?.unreadCount ?? 0)
-      : (counts?.total ?? 0);
+  const searchStrip = isSearching ? (
+    <SearchScope
+      query={debouncedQ}
+      scope={scopeLabel}
+      allFeeds={isAllItems}
+      unreadOnly={unreadOnly}
+      onSearchAll={searchAllFeeds}
+      onClear={() => {
+        endSearch();
+        searchRef.current?.focus();
+      }}
+    />
+  ) : undefined;
+  // null: this scope has no unread count (Starred, Shared).
+  const unreadForView = unreadForScope(filters, {
+    byFeed: countByFeed,
+    byFolder: countByFolder,
+    total: counts?.total ?? 0,
+    mustRead: preciousUnread,
+  });
+  const hasUnread = (unreadForView ?? 0) > 0;
   const canMarkAll = !filters.starred && !filters.shared && !filters.attention && !communityOpen;
-  const markRead = useMarkRead();
-  function markAllRead() {
-    if (unreadForView > 20 && !window.confirm(`Mark ${unreadForView} articles as read?`)) return;
-    markRead.mutate(
-      filters.feedId ? { feedId: filters.feedId } : filters.folderId ? { folderId: filters.folderId } : {},
-    );
-    announce(`Marked ${unreadForView} ${unreadForView === 1 ? 'article' : 'articles'} as read in ${scopeLabel}`);
+  const markAll = useMarkAllRead();
+  // Undo on the toast replaces the old "more than 20?" confirm (#26).
+  // `olderThanMs` keeps items newer than that unread.
+  function markAllRead(olderThanMs?: number) {
+    // Only what this list could have shown: nothing stored after it loaded.
+    const fetchedBefore = surface.asOf ?? undefined;
+    const before = olderThanMs ? olderThan(olderThanMs) : undefined;
+    const scope = filters.feedId
+      ? { feedId: filters.feedId }
+      : filters.folderId
+        ? { folderId: filters.folderId }
+        : {};
+    markAll({ ...scope, fetchedBefore, before }, scopeLabel);
   }
 
   // --- Keyboard layer (SPEC-008) ---------------------------------------
@@ -293,6 +417,31 @@ export function ReaderPage() {
       }),
     [foldersData, subs, feedSort, countByFeed, expandedFolders],
   );
+  // Each empty list says why, and what to do next (#35).
+  const nextUnread = nextUnreadFeed(feedOrder, filters.feedId, countByFeed);
+  const emptyState = (
+    <EmptyArticles
+      reason={emptyReason({
+        // Not while the list of feeds is still loading.
+        hasSubscriptions: !feedsData || subs.length > 0,
+        query: debouncedQ,
+        scope: scopeLabel,
+        allFeeds: isAllItems,
+        unreadOnly,
+        starred: Boolean(filters.starred),
+        shared: Boolean(filters.shared),
+        feed: currentSub,
+      })}
+      actions={{
+        onAddFeed: () => setAddOpen(true),
+        onImportOpml: () => setImportOpen(true),
+        onSearchAll: searchAllFeeds,
+        onShowRead: () => changeUnreadOnly(false),
+        onNextFeed: nextUnread ? () => onSelectFeed(nextUnread) : undefined,
+      }}
+    />
+  );
+
   const stepFeed = (delta: number) => {
     if (feedOrder.length === 0) return;
     const at = filters.feedId ? feedOrder.indexOf(filters.feedId) : -1;
@@ -300,45 +449,37 @@ export function ReaderPage() {
     const feedId = feedOrder[at === -1 && delta < 0 ? feedOrder.length - 1 : next];
     if (feedId) {
       clearArticle(); // same reset as clicking a feed: don't strand the open article
+      setCommunityOpen(false); // else the header still says "Community" (#39)
+      endSearch();
       setFilters({ feedId, sort: 'newest' });
     }
   };
 
+  // The open article, else the focused row.
   const targetId = selectedId ?? surface.getFocused()?.id ?? null;
-  const toggle = useToggleArticleState(targetId ?? '');
+  const toggles = useArticleToggles(targetId);
 
   // Only the below-lg full-screen reader in list/compact takes over the
   // context; everywhere else j/k keep working over the visible items.
   const readerTakesContext = Boolean(selectedId) && !isWide && !isBrowse;
   const activeContext: ShortcutContextName = readerTakesContext ? 'reader' : 'list';
   useShortcuts(activeContext, {
-    selectNext: surface.focusNext,
-    selectPrev: surface.focusPrev,
+    // With an article open, j/k open the next/previous one in every layout;
+    // otherwise they move the list focus.
+    selectNext: () => (selectedId ? surface.openAdjacent(1) : surface.focusNext()),
+    selectPrev: () => (selectedId ? surface.openAdjacent(-1) : surface.focusPrev()),
     openFocused: () => {
       const a = surface.getFocused();
       if (a) selectArticle(a.id);
     },
     closeReader: () => (overlayOpen ? setOverlayOpen(false) : clearArticle()),
-    toggleRead: () => {
-      if (!targetId) return;
-      toggle.mutate({ read: selectedId ? true : !surface.getFocused()?.read });
-    },
-    markUnread: () => targetId && toggle.mutate({ read: false }),
-    toggleStar: () => targetId && toggle.mutate({ starred: !surface.getFocused()?.starred }),
-    toggleShared: () => {
-      if (!targetId) return;
-      // Shared state lives on the detail shape only; an article never opened
-      // this session reads as unshared and S shares it.
-      const detail = queryClient.getQueryData<ArticleDetail>(['article', targetId]);
-      const next = !(detail?.shared ?? false);
-      toggle.mutate({ shared: next });
-      announce(next ? 'Added to shared items' : 'Removed from shared items');
-    },
-    markAllRead: () => canMarkAll && unreadForView > 0 && markAllRead(),
-    refresh: () => {
-      queryClient.invalidateQueries({ queryKey: ['articles'] });
-      queryClient.invalidateQueries({ queryKey: ['counts'] });
-    },
+    toggleRead: toggles.toggleRead,
+    markUnread: toggles.markUnread,
+    toggleStar: toggles.toggleStar,
+    toggleShared: toggles.toggleShared,
+    openOriginal: toggles.openOriginal,
+    markAllRead: () => canMarkAll && hasUnread && markAllRead(),
+    fetchFeeds,
     focusSearch: () => searchRef.current?.focus(),
     nextFeed: () => stepFeed(1),
     prevFeed: () => stepFeed(-1),
@@ -405,7 +546,7 @@ export function ReaderPage() {
               }
             >
               <Gem className="size-4 text-primary" />
-              <span className="flex-1">Precious</span>
+              <span className="flex-1">{ATTENTION_LABELS.precious}</span>
               {preciousUnread > 0 && (
                 <span className="shrink-0 rounded-full bg-primary/15 px-1.5 py-0.5 text-xs font-medium tabular-nums text-primary">
                   {preciousUnread}
@@ -421,41 +562,47 @@ export function ReaderPage() {
             </button>
           </li>
         )}
+        {/* #29: only while something is broken. */}
+        {failingFeeds > 0 && (
+          <li>
+            <button className={navItem(false)} onClick={() => setProblemsOpen(true)}>
+              <AlertTriangle className="size-4 text-destructive" />
+              <span className="flex-1">Feeds with problems</span>
+              <span className="shrink-0 rounded-full bg-destructive/15 px-1.5 py-0.5 text-xs font-medium tabular-nums text-destructive">
+                {failingFeeds}
+              </span>
+            </button>
+          </li>
+        )}
       </ul>
+      {problemsOpen && <FeedProblemsDialog onOpenChange={setProblemsOpen} />}
 
       <div className="mt-4 flex items-center justify-between px-2">
         <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Feeds
         </span>
         <div className="flex items-center gap-0.5">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-6"
-            aria-label={feedSort === 'name' ? 'Sort feeds by unread' : 'Sort feeds by name'}
-            title={feedSort === 'name' ? 'Sorted by name — click to sort by unread' : 'Sorted by unread — click to sort by name'}
-            onClick={() => setFeedSort((s) => (s === 'name' ? 'unread' : 'name'))}
-          >
-            {feedSort === 'name' ? (
-              <ArrowDownAZ className="size-3.5" />
-            ) : (
-              <ArrowDownWideNarrow className="size-3.5" />
-            )}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-6"
-            aria-label="Add subscription"
-            onClick={() => setAddOpen(true)}
-          >
-            <Plus />
-          </Button>
+          <FeedSortMenu sort={feedSort} onChange={setFeedSort} />
+          <AddMenu
+            onAddFeed={() => setAddOpen(true)}
+            onNewFolder={() => setNewFolderOpen(true)}
+            onImportOpml={() => setImportOpen(true)}
+          />
         </div>
       </div>
       {isLoading && <p className="px-2 py-1.5 text-sm text-muted-foreground">Loading…</p>}
       {!isLoading && subs.length === 0 && (
-        <p className="px-2 py-1.5 text-sm text-muted-foreground">No subscriptions yet.</p>
+        <div className="space-y-2 px-2 py-1.5 text-sm text-muted-foreground">
+          <p>No subscriptions yet.</p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>
+              <Plus className="size-4" /> Add a feed
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
+              <Upload className="size-4" /> Import OPML
+            </Button>
+          </div>
+        </div>
       )}
       <FolderTree
         activeFeedId={communityOpen ? undefined : filters.feedId}
@@ -463,8 +610,11 @@ export function ReaderPage() {
         onSelectFeed={onSelectFeed}
         onSelectFolder={onSelectFolder}
         countByFeed={countByFeed}
+        countByFolder={countByFolder}
         sort={feedSort}
         hideRead={unreadOnly}
+        creatingFolder={newFolderOpen}
+        onCreatingFolderChange={setNewFolderOpen}
       />
 
       <div className="mt-auto space-y-0.5 pt-2">
@@ -523,86 +673,139 @@ export function ReaderPage() {
           <ChevronLeft />
         </Button>
       )}
-      <span className="min-w-0 truncate text-sm font-medium">
-        {isSearching ? (
-          <>
-            Results for <span className="text-muted-foreground">{`"${debouncedQ}"`}</span>
-          </>
-        ) : (
-          <>
-            {scopeLabel}
-            {unreadForView > 0 && !communityOpen && !filters.shared && (
-              <span className="ml-2 text-xs font-normal text-muted-foreground">{unreadForView}</span>
-            )}
-          </>
+      <span
+        className={cn(
+          'min-w-0 truncate text-sm font-medium',
+          // An open phone search box takes the label's place.
+          phoneSearchShown && 'hidden sm:inline',
+        )}
+      >
+        {/* The scope stays in view while searching; the strip over the
+            results says what the search covers (#33). */}
+        {scopeLabel}
+        {hasUnread && !communityOpen && (
+          <span className="ml-2 text-xs font-normal text-muted-foreground">{unreadForView}</span>
+        )}
+        {/* #34: the filter is always in view, also on phones, where its
+            switch is in the "More actions" menu. */}
+        {unreadOnly && !communityOpen && (
+          <span className="ml-2 text-xs font-normal text-muted-foreground">· unread only</span>
         )}
       </span>
-      <div className="ml-auto flex items-center gap-2">
+      <div className={cn('ml-auto flex items-center gap-2', phoneSearchShown && 'flex-1 sm:flex-none')}>
         <Button
           variant="ghost"
           size="icon"
           aria-label="Fetch all feeds now"
-          title="Fetch all feeds now"
-          disabled={refreshFeeds.isPending}
-          onClick={() => {
-            announce('Fetching all feeds');
-            refreshFeeds.mutate(undefined, {
-              onSuccess: () => announce('Feeds updated'),
-              onError: () => announce('Could not fetch feeds'),
-            });
-          }}
+          title="Fetch all feeds now (r)"
+          disabled={fetchingFeeds}
+          onClick={fetchFeeds}
         >
           <RefreshCw
-            className={cn(
-              refreshFeeds.isPending && 'animate-spin motion-reduce:animate-none',
-            )}
+            className={cn(fetchingFeeds && 'animate-spin motion-reduce:animate-none')}
           />
         </Button>
-        <input
+        <SearchField
           ref={searchRef}
-          type="search"
           value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          placeholder="Search"
-          aria-label="Search articles"
-          className="h-8 w-32 rounded-md border border-input bg-background px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-44 lg:w-56"
+          onChange={setSearchInput}
+          onLeave={() => setPhoneSearchOpen(false)}
+          className={cn(
+            'min-w-0 sm:block sm:w-44 sm:flex-none lg:w-56',
+            // Phones reach search from the bottom nav's Search tab.
+            phoneSearchShown ? 'block w-full flex-1' : 'hidden',
+          )}
         />
-        {canMarkAll && !isSearching && unreadForView > 0 && (
-          <Button variant="ghost" size="sm" className="hidden sm:inline-flex" onClick={markAllRead}>
-            Mark all read
-          </Button>
+        {canMarkAll && !isSearching && hasUnread && (
+          <div className="hidden items-center sm:flex">
+            <Button variant="ghost" size="sm" className="rounded-r-none pr-2" onClick={() => markAllRead()}>
+              Mark all read
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="rounded-l-none px-1"
+                  aria-label="Mark older articles read"
+                  title="Mark older articles read"
+                >
+                  <ChevronDown className="size-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {OLDER_THAN.map((o) => (
+                  <DropdownMenuItem key={o.label} onSelect={() => markAllRead(o.ms)}>
+                    {o.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         )}
-        <Button
-          variant={unreadOnly ? 'default' : 'ghost'}
-          size="icon"
-          aria-pressed={unreadOnly}
-          aria-label={unreadOnly ? 'Showing unread only' : 'Show unread only'}
-          title={
-            unreadOnly
-              ? 'Showing unread only — click to show all'
-              : 'Show unread only'
-          }
-          onClick={() =>
-            setUnreadOnly((v) => {
-              const next = !v;
-              announce(next ? 'Showing unread only' : 'Showing all articles');
-              return next;
-            })
-          }
-        >
-          {unreadOnly ? <CircleDot /> : <Circle />}
-        </Button>
-        <ViewSwitcher view={view} onChange={setView} />
+        <div className="hidden sm:flex">
+          <UnreadToggle unreadOnly={unreadOnly} onChange={changeUnreadOnly} />
+        </div>
+        {!isSearching && (
+          <div className="hidden sm:flex">
+            <SortToggle sort={sort} onChange={setSort} />
+          </div>
+        )}
+        <div className="hidden sm:flex">
+          <ViewSwitcher view={view} onChange={setView} />
+        </div>
       </div>
+    </>
+  );
+
+  // Below sm the header keeps only back, the scope, and refresh; the rest of
+  // the bar lives in AppShell's "More actions" menu (#22).
+  const phoneMenu = (
+    <>
+      {canMarkAll && !isSearching && hasUnread && (
+        <>
+          <DropdownMenuItem onSelect={() => markAllRead()}>Mark all read</DropdownMenuItem>
+          {OLDER_THAN.map((o) => (
+            <DropdownMenuItem key={o.label} onSelect={() => markAllRead(o.ms)}>
+              Mark read: {o.label.toLowerCase()}
+            </DropdownMenuItem>
+          ))}
+        </>
+      )}
+      <DropdownMenuCheckboxItem
+        checked={unreadOnly}
+        onCheckedChange={changeUnreadOnly}
+      >
+        Unread only
+      </DropdownMenuCheckboxItem>
+      {!isSearching && (
+        <>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>Order</DropdownMenuLabel>
+          <DropdownMenuRadioGroup value={sort} onValueChange={(v) => setSort(v as SortOrder)}>
+            <DropdownMenuRadioItem value="newest">{SORT_LABELS.newest}</DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="oldest">{SORT_LABELS.oldest}</DropdownMenuRadioItem>
+          </DropdownMenuRadioGroup>
+        </>
+      )}
+      <DropdownMenuSeparator />
+      <DropdownMenuLabel>View</DropdownMenuLabel>
+      <DropdownMenuRadioGroup value={view} onValueChange={(v) => setView(v as ViewMode)}>
+        <DropdownMenuRadioItem value="list">List</DropdownMenuRadioItem>
+        <DropdownMenuRadioItem value="cards">Cards</DropdownMenuRadioItem>
+        <DropdownMenuRadioItem value="magazine">Magazine</DropdownMenuRadioItem>
+      </DropdownMenuRadioGroup>
     </>
   );
 
   return (
     <AppShell
       leading={
+        // The sidebar exists from md up; phones use the feed picker instead.
         <Button
           variant="ghost"
           size="icon"
+          className="hidden md:inline-flex"
           aria-label={collapsed ? 'Show sidebar' : 'Hide sidebar'}
           aria-expanded={!collapsed}
           onClick={toggleSidebar}
@@ -611,12 +814,14 @@ export function ReaderPage() {
         </Button>
       }
       bar={topBar}
+      phoneMenu={phoneMenu}
     >
       <SubscribeDialog
         open={addOpen}
         onOpenChange={setAddOpen}
         onSubscribed={(feedId) => pickScope(() => setFilters({ feedId, sort: 'newest' }))}
       />
+      <ImportOpmlDialog open={importOpen} onOpenChange={setImportOpen} />
       <ShortcutsOverlay open={overlayOpen} onOpenChange={setOverlayOpen} />
 
       <div
@@ -656,6 +861,9 @@ export function ReaderPage() {
               selectedId={selectedId}
               onSelect={(a) => selectArticle(a.id)}
               onBack={clearArticle}
+              stepper={stepper}
+              header={searchStrip}
+              empty={emptyState}
             />
           ) : (
             <div className="grid h-full grid-cols-1 lg:grid-cols-[360px_minmax(0,1fr)]">
@@ -665,6 +873,8 @@ export function ReaderPage() {
                   feeds={feedMeta}
                   selectedId={selectedId}
                   onSelect={(a) => selectArticle(a.id)}
+                  header={searchStrip}
+                  empty={emptyState}
                 />
               </section>
               <article
@@ -684,11 +894,20 @@ export function ReaderPage() {
                       <ChevronLeft className="size-4" /> Back to articles
                     </button>
                     <div className="min-h-0 flex-1">
-                      <ReadingPane articleId={selectedId} />
+                      {/* Keyed so each article starts at the top when stepping. */}
+                      <ReadingPane key={selectedId} articleId={selectedId} stepper={stepper} />
                     </div>
                   </div>
                 ) : (
-                  <EmptyPane title="Select an article" hint="Nothing selected yet." />
+                  <EmptyPane
+                    title="Select an article"
+                    hint={
+                      <>
+                        Pick one from the list, or press <Kbd>j</Kbd> and <Kbd>k</Kbd> to move
+                        and <Kbd>Enter</Kbd> to open. <Kbd>?</Kbd> shows every shortcut.
+                      </>
+                    }
+                  />
                 )}
               </article>
             </div>
@@ -698,20 +917,14 @@ export function ReaderPage() {
 
       {showBottomNav && (
         <MobileNav
-          active={
-            isSearching
-              ? 'search'
-              : filters.starred
-                ? 'starred'
-                : !filters.feedId && !filters.folderId
-                  ? 'all'
-                  : null
-          }
+          active={mobileNavTab({ isSearching, communityOpen, filters })}
           onAll={() => pickScope(() => setFilters({ sort: 'newest' }))}
           onStarred={() => pickScope(() => setFilters({ starred: true, sort: 'newest' }))}
           onSearch={() => {
             if (mobileStep === 'feeds') goToList();
-            searchRef.current?.focus();
+            // Below sm the search box shows only on demand; focus it once shown.
+            setPhoneSearchOpen(true);
+            requestAnimationFrame(() => searchRef.current?.focus());
           }}
         />
       )}
@@ -728,7 +941,7 @@ function CountBadge({ n }: { n: number }) {
   );
 }
 
-function EmptyPane({ title, hint }: { title: string; hint: string }) {
+function EmptyPane({ title, hint }: { title: string; hint: ReactNode }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-1 p-8 text-center">
       <p className="font-medium">{title}</p>

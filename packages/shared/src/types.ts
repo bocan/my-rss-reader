@@ -30,6 +30,12 @@ export type DefaultArticleView = (typeof DEFAULT_ARTICLE_VIEWS)[number];
 export const SORT_ORDERS = ['newest', 'oldest'] as const;
 export type SortOrder = (typeof SORT_ORDERS)[number];
 
+/** Text size and line width of the article body in the reading pane (#41). */
+export const READING_SIZES = ['small', 'medium', 'large'] as const;
+export type ReadingSize = (typeof READING_SIZES)[number];
+export const READING_WIDTHS = ['narrow', 'normal', 'wide'] as const;
+export type ReadingWidth = (typeof READING_WIDTHS)[number];
+
 export type UserRole = 'admin' | 'user';
 
 /** Named color themes (SPEC-016). Each is inherently light or dark. */
@@ -84,6 +90,12 @@ export function resolveTheme(setting: ThemeSetting, prefersDark: boolean): Theme
 export const ATTENTION_TIERS = ['firehose', 'normal', 'precious'] as const;
 export type AttentionTier = (typeof ATTENTION_TIERS)[number];
 
+/**
+ * Unread items on a firehose-tier subscription count as read after this many
+ * days (SPEC-022). Shared so the feed settings text names the same number.
+ */
+export const FIREHOSE_EXPIRY_DAYS = 14;
+
 /** WebSub subscriber states for a feed (SPEC-021). */
 export const WEBSUB_STATES = ['inactive', 'pending', 'active', 'denied'] as const;
 export type WebSubState = (typeof WEBSUB_STATES)[number];
@@ -136,6 +148,12 @@ export interface Paginated<T> {
   items: T[];
   /** Opaque cursor for the next page, or null when exhausted. */
   nextCursor: string | null;
+  /**
+   * Server time the page was produced (article lists only). Echoed back as
+   * mark-read's `fetchedBefore` so "mark all read" never touches items that
+   * arrived after the list was loaded.
+   */
+  asOf?: string;
 }
 
 /** Standard API error body. */
