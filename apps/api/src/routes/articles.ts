@@ -114,6 +114,8 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
     const query = articleQuerySchema.parse(request.query);
     const userId = request.user!.id;
     const isSearch = query.q !== undefined;
+    // Taken before the query runs: anything fetched later is not on this page.
+    const asOf = new Date().toISOString();
 
     // Decode the cursor for the active mode. A chronological cursor sent with
     // `q` (or a search cursor sent without it) fails its decoder -> 400.
@@ -165,7 +167,7 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
         : null;
 
     if (feedIds.length === 0) {
-      return { items: [], nextCursor: null } satisfies Paginated<never>;
+      return { items: [], nextCursor: null, asOf } satisfies Paginated<never>;
     }
 
     const sortKey = sql`coalesce(${articles.publishedAt}, ${articles.fetchedAt})`;
@@ -258,7 +260,7 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const items = kept.map(({ sortTs, rank, ...rest }) => rest);
-    return { items, nextCursor } satisfies Paginated<(typeof items)[number]>;
+    return { items, nextCursor, asOf } satisfies Paginated<(typeof items)[number]>;
   });
 
   // Full article for the reading pane, scoped to the caller's subscriptions.
@@ -301,16 +303,19 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
     return { ...detail, readableHtml: clean, readableFetchedAt };
   });
 
-  // Bulk mark-as-read across a feed, a folder's feeds, or all subscriptions,
-  // optionally only items older than `before`. One set-based statement.
+  // Bulk mark-as-read across a feed, a folder's feeds, or All items, optionally
+  // only items older than `before` and only items already stored by
+  // `fetchedBefore`. One set-based statement.
   app.post('/articles/mark-read', auth, async (request, reply) => {
     const input = markReadSchema.parse(request.body);
     const userId = request.user!.id;
 
-    // feedId wins over folderId; neither means all subscribed feeds.
+    // feedId wins over folderId; neither means All items, which leaves out
+    // hidden feeds exactly as the All-items list does.
     const feedIds = await resolveSubscribedFeedIds(userId, {
       feedId: input.feedId,
       folderId: input.folderId,
+      excludeHidden: true,
     });
     if (feedIds.length === 0) return reply.code(204).send(); // empty folder / no subs
 
@@ -323,6 +328,10 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
     const beforeClause = input.before
       ? sql`and coalesce(a.published_at, a.fetched_at) < ${input.before}::timestamptz`
       : sql``;
+    // Items stored after the caller's list was produced were never shown.
+    const fetchedClause = input.fetchedBefore
+      ? sql`and a.fetched_at <= ${input.fetchedBefore}::timestamptz`
+      : sql``;
 
     // The conflict guard (read = false) makes this idempotent: already-read
     // articles keep their original read_at, and starred/starred_at survive.
@@ -330,7 +339,7 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
       insert into article_states (user_id, article_id, read, read_at)
       select ${userId}::uuid, a.id, true, now()
       from articles a
-      where a.feed_id = any(${feedIdArray}::uuid[]) ${beforeClause}
+      where a.feed_id = any(${feedIdArray}::uuid[]) ${beforeClause} ${fetchedClause}
       on conflict (user_id, article_id) do update
         set read = true, read_at = now()
         where article_states.read = false

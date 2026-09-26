@@ -12,6 +12,8 @@ import { useArticles, type ArticleFilters, type ArticleListItem } from './use-ar
  */
 export interface ArticleSurface {
   items: ArticleListItem[];
+  /** Server time the list was produced; send as mark-read `fetchedBefore`. */
+  asOf: string | null;
   isLoading: boolean;
   isError: boolean;
   error: unknown;
@@ -36,6 +38,8 @@ export function useArticleSurface(
     useArticles(filters);
 
   const items = useMemo(() => data?.pages.flatMap((p) => p.items) ?? [], [data]);
+  // Server time of the first page: nothing stored after it is on screen.
+  const asOf = data?.pages[0]?.asOf ?? null;
   const itemsRef = useRef(items);
   itemsRef.current = items;
 
@@ -118,6 +122,7 @@ export function useArticleSurface(
 
   return {
     items,
+    asOf,
     isLoading,
     isError,
     error,

@@ -271,8 +271,14 @@ export function ReaderPage() {
   const markRead = useMarkRead();
   function markAllRead() {
     if (unreadForView > 20 && !window.confirm(`Mark ${unreadForView} articles as read?`)) return;
+    // Only what this list could have shown: nothing stored after it loaded.
+    const fetchedBefore = surface.asOf ?? undefined;
     markRead.mutate(
-      filters.feedId ? { feedId: filters.feedId } : filters.folderId ? { folderId: filters.folderId } : {},
+      filters.feedId
+        ? { feedId: filters.feedId, fetchedBefore }
+        : filters.folderId
+          ? { folderId: filters.folderId, fetchedBefore }
+          : { fetchedBefore },
     );
     announce(`Marked ${unreadForView} ${unreadForView === 1 ? 'article' : 'articles'} as read in ${scopeLabel}`);
   }

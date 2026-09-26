@@ -113,6 +113,56 @@ test('before cutoff marks only older items, undated via fetchedAt', async () => 
   expect((await counts(cookie)).total).toBe(1); // only the June article remains unread
 });
 
+// #14: All items leaves out hidden feeds, so marking All items read must too.
+test('mark-read with no scope (All items) leaves feeds hidden from All unread', async () => {
+  const user = await seedUser();
+  const shown = await seedFeed();
+  const hidden = await seedFeed();
+  await seedSubscription(user.id, shown.id);
+  await seedSubscription(user.id, hidden.id, { hideFromAll: true });
+  await seedArticle(shown.id, {});
+  await seedArticle(hidden.id, {});
+  await seedArticle(hidden.id, {});
+  const cookie = await loginAs(user);
+
+  await markRead(cookie, {});
+  const c = await counts(cookie);
+  expect(feedUnread(c, shown.id)).toBe(0);
+  expect(feedUnread(c, hidden.id)).toBe(2);
+
+  // An explicit feed scope still reaches a hidden feed.
+  await markRead(cookie, { feedId: hidden.id });
+  expect(feedUnread(await counts(cookie), hidden.id)).toBe(0);
+});
+
+// #14: items stored after the list was produced were never on screen.
+test('fetchedBefore (the list asOf) leaves later arrivals unread', async () => {
+  const user = await seedUser();
+  const feed = await seedFeed();
+  await seedSubscription(user.id, feed.id);
+  await seedArticle(feed.id, { fetchedAt: new Date('2026-01-01T00:00:00Z') });
+  await seedArticle(feed.id, { fetchedAt: new Date('2026-01-01T00:00:05Z') }); // at cutoff -> marked
+  await seedArticle(feed.id, { fetchedAt: new Date('2026-01-01T00:10:00Z') }); // later -> kept
+  const cookie = await loginAs(user);
+
+  await markRead(cookie, { feedId: feed.id, fetchedBefore: '2026-01-01T00:00:05.000Z' });
+  expect(feedUnread(await counts(cookie), feed.id)).toBe(1);
+});
+
+test('the article list reports the server time it was produced (asOf)', async () => {
+  const user = await seedUser();
+  const feed = await seedFeed();
+  await seedSubscription(user.id, feed.id);
+  await seedArticle(feed.id, {});
+  const cookie = await loginAs(user);
+
+  const before = Date.now();
+  const res = await app.inject({ method: 'GET', url: '/api/articles', headers: { cookie } });
+  const asOf = Date.parse(res.json().asOf);
+  expect(asOf).toBeGreaterThanOrEqual(before - 1000);
+  expect(asOf).toBeLessThanOrEqual(Date.now());
+});
+
 test('mark-read is idempotent and preserves starred/read_at', async () => {
   const user = await seedUser();
   const feed = await seedFeed();

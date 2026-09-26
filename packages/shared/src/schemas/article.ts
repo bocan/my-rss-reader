@@ -67,11 +67,17 @@ export const readableQuerySchema = z.object({
 });
 export type ReadableQuery = z.infer<typeof readableQuerySchema>;
 
-/** Bulk mark-as-read (e.g. "mark all read in this folder"). */
+/**
+ * Bulk mark-as-read (e.g. "mark all read in this folder"). With neither
+ * feedId nor folderId it covers All items, which (like the list) leaves out
+ * feeds hidden from All items.
+ */
 export const markReadSchema = z.object({
   feedId: z.uuid().optional(),
   folderId: z.uuid().optional(),
-  /** Only mark items older than this ISO timestamp. */
+  /** Only mark items published (or, if undated, fetched) before this time. */
   before: z.iso.datetime().optional(),
+  /** Only mark items the server had stored by this time (a list's `asOf`). */
+  fetchedBefore: z.iso.datetime().optional(),
 });
 export type MarkReadInput = z.infer<typeof markReadSchema>;

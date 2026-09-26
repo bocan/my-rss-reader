@@ -136,6 +136,12 @@ export interface Paginated<T> {
   items: T[];
   /** Opaque cursor for the next page, or null when exhausted. */
   nextCursor: string | null;
+  /**
+   * Server time the page was produced (article lists only). Echoed back as
+   * mark-read's `fetchedBefore` so "mark all read" never touches items that
+   * arrived after the list was loaded.
+   */
+  asOf?: string;
 }
 
 /** Standard API error body. */

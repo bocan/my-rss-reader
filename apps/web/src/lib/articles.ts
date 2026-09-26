@@ -20,13 +20,55 @@ export function useUnreadCounts() {
   return useQuery({ queryKey: ['counts'], queryFn: () => api<UnreadCounts>('/counts') });
 }
 
-function folderForFeed(qc: QueryClient, feedId: string): string | null {
-  return qc.getQueryData<FeedsData>(['feeds'])?.items.find((f) => f.feedId === feedId)?.folderId ?? null;
+function feedMeta(qc: QueryClient): Map<string, FeedItem> {
+  const items = qc.getQueryData<FeedsData>(['feeds'])?.items ?? [];
+  return new Map(items.map((i) => [i.feedId, i]));
 }
 
-function feedsInFolder(qc: QueryClient, folderId: string): Set<string> {
-  const items = qc.getQueryData<FeedsData>(['feeds'])?.items ?? [];
-  return new Set(items.filter((i) => i.folderId === folderId).map((i) => i.feedId));
+/**
+ * Which feeds a bulk mark-read covers, mirroring the server: one feed, one
+ * folder's direct feeds, or All items, which leaves out hidden feeds. A feed
+ * missing from the cache counts as visible (the refetch corrects any drift).
+ */
+export function markReadScopeTest(
+  qc: QueryClient,
+  scope: { feedId?: string; folderId?: string },
+): (feedId: string) => boolean {
+  const meta = feedMeta(qc);
+  if (scope.feedId) return (id) => id === scope.feedId;
+  if (scope.folderId) return (id) => meta.get(id)?.folderId === scope.folderId;
+  return (id) => !meta.get(id)?.hideFromAll;
+}
+
+/**
+ * Zero the unread count of every feed in scope, and take exactly those counts
+ * off their folders and the total, following the server's rollup rules:
+ * hidden and firehose feeds never count toward the total, and firehose feeds
+ * never count toward their folder.
+ */
+function zeroCounts(
+  qc: QueryClient,
+  c: UnreadCounts,
+  inScope: (feedId: string) => boolean,
+): UnreadCounts {
+  const meta = feedMeta(qc);
+  let totalDrop = 0;
+  const folderDrop = new Map<string, number>();
+  const feeds = c.feeds.map((f) => {
+    if (!inScope(f.feedId) || f.unreadCount === 0) return f;
+    const m = meta.get(f.feedId);
+    const firehose = m?.attention === 'firehose';
+    if (!m?.hideFromAll && !firehose) totalDrop += f.unreadCount;
+    if (m?.folderId && !firehose) {
+      folderDrop.set(m.folderId, (folderDrop.get(m.folderId) ?? 0) + f.unreadCount);
+    }
+    return { ...f, unreadCount: 0 };
+  });
+  const folders = c.folders.map((f) => {
+    const drop = folderDrop.get(f.folderId) ?? 0;
+    return drop ? { ...f, unreadCount: clamp(f.unreadCount - drop) } : f;
+  });
+  return { feeds, folders, total: clamp(c.total - totalDrop) };
 }
 
 /** Current read state + feed id for an article, from the list or detail cache. */
@@ -122,7 +164,7 @@ type ToggleVars = {
   shareNote?: string | null;
 };
 type TogglePatch = Omit<ToggleVars, 'articleId'>;
-type MarkReadScope = { feedId?: string; folderId?: string; before?: string };
+type MarkReadScope = { feedId?: string; folderId?: string; before?: string; fetchedBefore?: string };
 
 /**
  * Register the read/star and mark-read mutation logic on the client, keyed by
@@ -159,29 +201,8 @@ export function registerMutationDefaults(qc: QueryClient): void {
       // skip the optimistic write and let onSettled refetch the truth.
       if (scope.before) return ctx;
 
-      // Which feeds are in scope: one feed, a folder's feeds, or all (null).
-      const feedSet: Set<string> | null = scope.feedId
-        ? new Set([scope.feedId])
-        : scope.folderId
-          ? feedsInFolder(qc, scope.folderId)
-          : null;
-
-      qc.setQueryData<UnreadCounts>(['counts'], (c) => {
-        if (!c) return c;
-        const zeroed = c.feeds.map((f) =>
-          !feedSet || feedSet.has(f.feedId) ? { ...f, unreadCount: 0 } : f,
-        );
-        const removed = c.feeds
-          .filter((f) => !feedSet || feedSet.has(f.feedId))
-          .reduce((s, f) => s + f.unreadCount, 0);
-        const folderId = scope.feedId ? folderForFeed(qc, scope.feedId) : scope.folderId ?? null;
-        const folders = feedSet
-          ? c.folders.map((f) =>
-              f.folderId === folderId ? { ...f, unreadCount: clamp(f.unreadCount - removed) } : f,
-            )
-          : c.folders.map((f) => ({ ...f, unreadCount: 0 }));
-        return { feeds: zeroed, folders, total: clamp(c.total - removed) };
-      });
+      const inScope = markReadScopeTest(qc, scope);
+      qc.setQueryData<UnreadCounts>(['counts'], (c) => (c ? zeroCounts(qc, c, inScope) : c));
 
       qc.setQueriesData<ArticlesData>({ queryKey: ['articles'] }, (data) =>
         data
@@ -189,9 +210,7 @@ export function registerMutationDefaults(qc: QueryClient): void {
               ...data,
               pages: data.pages.map((p) => ({
                 ...p,
-                items: p.items.map((a) =>
-                  !feedSet || feedSet.has(a.feedId) ? { ...a, read: true } : a,
-                ),
+                items: p.items.map((a) => (inScope(a.feedId) ? { ...a, read: true } : a)),
               })),
             }
           : data,
