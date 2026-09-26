@@ -3,6 +3,7 @@ import {
   canReorder,
   dropIndex,
   FEED_SORTS,
+  feedMatches,
   isFeedSort,
   makeFeedComparator,
   makeFolderComparator,
@@ -183,5 +184,18 @@ describe('placeAt (the optimistic copy of the server placement)', () => {
       move: (r) => ({ ...r, scope: 't' }),
     });
     expect(out.find((r) => r.id === 'a')).toEqual({ id: 'a', scope: 't', position: 2 });
+  });
+});
+
+// #46: the sidebar filter.
+describe('feedMatches', () => {
+  const s = { title: 'Dave Rupert', customTitle: 'Dave', feedUrl: 'https://daverupert.com/atom.xml' };
+  test('matches the title, the custom title or the URL, in any case', () => {
+    expect(feedMatches(s, 'rupert')).toBe(true);
+    expect(feedMatches({ ...s, title: null }, 'dave')).toBe(true);
+    expect(feedMatches(s, 'atom.xml')).toBe(true);
+  });
+  test('no match, and a missing title is not an error', () => {
+    expect(feedMatches({ ...s, title: null, customTitle: null }, 'simon')).toBe(false);
   });
 });

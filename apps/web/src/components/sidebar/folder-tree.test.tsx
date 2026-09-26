@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { FeedSort } from '@/lib/feed-order';
 import type { SubscriptionRow } from '@/lib/folders';
+import { setFoldersExpanded } from '@/lib/sidebar-expanded';
 import { FolderTree } from './folder-tree';
 
 const markRead = vi.hoisted(() => vi.fn());
@@ -226,6 +227,111 @@ describe('feed menu actions', () => {
     renderFeed(sub);
     fireEvent.click(screen.getByRole('menuitem', { name: 'Refresh this feed' }));
     await waitFor(() => expect(call('POST')?.url).toBe('/api/feeds/s1/refresh'));
+  });
+});
+
+// #46: a feed filter, and collapse or expand all folders.
+describe('feed filter and collapse all', () => {
+  const folder = (id: string, name: string, parentId: string | null = null) => ({
+    id, userId: 'u1', name, parentId, position: 0, viewMode: null, createdAt: '',
+  });
+  const many = (n: number): SubscriptionRow[] =>
+    Array.from({ length: n }, (_, i) => ({
+      ...sub,
+      subscriptionId: `s${i}`,
+      feedId: `f${i}`,
+      title: `Feed ${i}`,
+      feedUrl: `https://feed${i}.example/rss`,
+      // Two feeds in the Tech folder, the rest at the top level.
+      folderId: i < 2 ? 'd1' : null,
+    }));
+  const tech = { ...many(1)[0]!, subscriptionId: 'sx', feedId: 'fx', title: 'Simon Willison', folderId: 'd2' };
+  // The expanded set is a module store that outlives each test.
+  beforeEach(() => setFoldersExpanded(['d1', 'd2'], false));
+  afterEach(() => setFoldersExpanded(['d1', 'd2'], false));
+
+  function renderMany(feeds: SubscriptionRow[], hideRead = false) {
+    const qc = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
+    qc.setQueryData(['folders'], { items: [folder('d1', 'Tech'), folder('d2', 'Python', 'd1')] });
+    qc.setQueryData(['feeds'], { items: feeds });
+    render(
+      <QueryClientProvider client={qc}>
+        <FolderTree
+          onSelectFeed={vi.fn()}
+          onSelectFolder={vi.fn()}
+          countByFeed={new Map(feeds.map((f) => [f.feedId, 1]))}
+          sort="name"
+          hideRead={hideRead}
+        />
+      </QueryClientProvider>,
+    );
+  }
+  const filterBox = () => screen.getByRole('textbox', { name: 'Filter feeds' });
+
+  test('no filter with only a few feeds', () => {
+    renderMany(many(9));
+    expect(screen.queryByRole('textbox', { name: 'Filter feeds' })).toBeNull();
+  });
+
+  test('typing shows only the matches, and opens the folders that hold them', () => {
+    renderMany([...many(10), tech]);
+    // Tech is collapsed, so its subfolder's feed is not shown yet.
+    expect(screen.queryByRole('button', { name: 'Simon Willison' })).toBeNull();
+
+    fireEvent.change(filterBox(), { target: { value: 'simon' } });
+    expect(screen.getByRole('button', { name: 'Simon Willison' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tech' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Python' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Feed 5' })).toBeNull();
+  });
+
+  test('the URL matches too, and a folder with no match is hidden', () => {
+    renderMany([...many(10), tech]);
+    fireEvent.change(filterBox(), { target: { value: 'feed5.example' } });
+    expect(screen.getByRole('button', { name: 'Feed 5' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Tech' })).toBeNull();
+  });
+
+  test('Escape clears the filter, and the folders go back to how they were', () => {
+    renderMany([...many(10), tech]);
+    fireEvent.change(filterBox(), { target: { value: 'simon' } });
+    fireEvent.keyDown(filterBox(), { key: 'Escape' });
+    expect(filterBox()).toHaveValue('');
+    expect(screen.queryByRole('button', { name: 'Simon Willison' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Feed 5' })).toBeInTheDocument();
+  });
+
+  test('a match shows in unread only mode too, and no match says so', () => {
+    renderMany([...many(10), { ...tech, folderId: null }], true);
+    fireEvent.change(filterBox(), { target: { value: 'nothing like this' } });
+    expect(screen.getByText('No feeds match “nothing like this”.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear the filter' }));
+    expect(screen.queryByText(/No feeds match/)).toBeNull();
+  });
+
+  test('Alt-click on a chevron expands, then collapses, every folder', () => {
+    renderMany([...many(10), tech]);
+    const chevron = within(screen.getByRole('button', { name: 'Tech' }).parentElement!).getByRole('button', {
+      name: 'Expand folder',
+    });
+    expect(chevron).toHaveAttribute('title', 'Expand folder (Alt-click: expand all folders)');
+    fireEvent.click(chevron, { altKey: true });
+    // Python, a subfolder, opened too.
+    expect(screen.getByRole('button', { name: 'Simon Willison' })).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Collapse folder' })[0]!, { altKey: true });
+    expect(screen.queryByRole('button', { name: 'Python' })).toBeNull();
+    expect(screen.queryAllByRole('button', { name: 'Collapse folder' })).toHaveLength(0);
+  });
+
+  test('the folder menu has Expand all and Collapse all', () => {
+    renderMany([...many(10), tech]);
+    const trigger = screen.getByRole('button', { name: 'Folder actions for Tech' });
+    act(() => trigger.focus());
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+    // All are collapsed, so only Expand all does something.
+    expect(screen.getByRole('menuitem', { name: 'Collapse all folders' })).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Expand all folders' }));
+    expect(screen.getByRole('button', { name: 'Simon Willison' })).toBeInTheDocument();
   });
 });
 

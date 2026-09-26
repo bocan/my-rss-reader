@@ -58,6 +58,15 @@ export function makeFeedComparator(sort: FeedSort, countByFeed: Map<string, numb
  * subfolders (by name) marked with `depth: 1`, so the select can indent
  * them (#28).
  */
+/** The sidebar filter (#46): `query` is lower case, and matches the feed's
+ *  title, its custom title, or its feed URL. */
+export function feedMatches(
+  s: Pick<SubscriptionRow, 'title' | 'customTitle' | 'feedUrl'>,
+  query: string,
+): boolean {
+  return [s.title, s.customTitle, s.feedUrl].some((v) => v?.toLowerCase().includes(query));
+}
+
 export function folderChoices(folders: readonly FolderRow[]): { folder: FolderRow; depth: 0 | 1 }[] {
   const roots = folders.filter((f) => f.parentId === null).sort(byFolderName);
   return roots.flatMap((root) => [

@@ -24,6 +24,8 @@ import {
   MoreHorizontal,
   Plus,
   Rss,
+  Search,
+  X,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { describeFeedError } from '@rss/shared';
@@ -48,6 +50,7 @@ import {
   byFolderName,
   canReorder,
   dropIndex,
+  feedMatches,
   folderChoices,
   makeFeedComparator,
   makeFolderComparator,
@@ -65,7 +68,7 @@ import {
   type FolderRow,
   type SubscriptionRow,
 } from '@/lib/folders';
-import { toggleFolderExpanded, useExpandedFolders } from '@/lib/sidebar-expanded';
+import { setFoldersExpanded, toggleFolderExpanded, useExpandedFolders } from '@/lib/sidebar-expanded';
 import { cn } from '@/lib/utils';
 
 type DragData =
@@ -195,20 +198,32 @@ export function FolderTree({
   // feed you are currently reading, which stays put so it never vanishes from
   // under you as you mark its last item read, and a failing feed, which
   // usually has nothing unread and would hide its warning too (#29).
+  // A filter (#46) shows only the feeds that match, read or not, each inside
+  // its folders, which open for it. The saved expand state is not touched, so
+  // clearing the filter puts the tree back as it was.
+  const [filter, setFilter] = useState('');
+  const query = filter.trim().toLowerCase();
   const feedVisible = (s: SubscriptionRow) =>
-    !hideRead ||
-    (countByFeed.get(s.feedId) ?? 0) > 0 ||
-    s.feedId === activeFeedId ||
-    s.lastError !== null;
+    query
+      ? feedMatches(s, query)
+      : !hideRead ||
+        (countByFeed.get(s.feedId) ?? 0) > 0 ||
+        s.feedId === activeFeedId ||
+        s.lastError !== null;
   const feedsIn = (folderId: string | null) =>
     subs.filter((s) => s.folderId === folderId && feedVisible(s)).sort(byFeed);
   // A folder is shown while it (or a child folder) still has a visible feed, or
   // it is the folder currently in view.
   const folderHasVisible = (id: string): boolean =>
-    !hideRead ||
-    id === activeFolderId ||
+    (!query && (!hideRead || id === activeFolderId)) ||
     feedsIn(id).length > 0 ||
     folders.some((c) => c.parentId === id && feedsIn(c.id).length > 0);
+  const openFolders = query ? new Set(folders.map((f) => f.id)) : expanded;
+  const noMatches = query !== '' && !folders.some((f) => folderHasVisible(f.id)) && feedsIn(null).length === 0;
+  // Collapse all / expand all (#46): Alt-click on a chevron, or the folder menu.
+  const setAllExpanded = (open: boolean) => setFoldersExpanded(folders.map((f) => f.id), open);
+  const anyExpanded = folders.some((f) => expanded.has(f.id));
+  const allExpanded = folders.every((f) => expanded.has(f.id));
   const childrenOf = (id: string) =>
     folders.filter((f) => f.parentId === id && folderHasVisible(f.id)).sort(byFolder);
   const rootFolders = folders
@@ -219,7 +234,7 @@ export function FolderTree({
   const allRoots = folders.filter((f) => f.parentId === null).sort(byFolderName);
   // Unread only hid every feed: say why the tree is empty (#35).
   const allCaughtUp =
-    hideRead && subs.length > 0 && rootFolders.length === 0 && feedsIn(null).length === 0;
+    !query && hideRead && subs.length > 0 && rootFolders.length === 0 && feedsIn(null).length === 0;
 
   const toggle = toggleFolderExpanded;
 
@@ -300,6 +315,10 @@ export function FolderTree({
   return (
     <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
       <div className="mt-1 space-y-0.5 text-sm">
+        {subs.length >= FILTER_MIN_FEEDS && <FeedFilter value={filter} onChange={setFilter} />}
+        {noMatches && (
+          <p className="px-2 py-1.5 text-sm text-muted-foreground">No feeds match “{filter.trim()}”.</p>
+        )}
 
         {/* Root folders (each collapsible, holding its feeds and child folders) */}
         <SortableContext
@@ -312,14 +331,17 @@ export function FolderTree({
               folder={folder}
               reorder={reorder}
               depth={0}
-              expanded={expanded.has(folder.id)}
+              expanded={openFolders.has(folder.id)}
               onToggle={() => toggle(folder.id)}
+              onSetAllExpanded={setAllExpanded}
+              anyExpanded={anyExpanded}
+              allExpanded={allExpanded}
               isActive={activeFolderId === folder.id}
               onSelect={() => onSelectFolder(folder.id)}
               childFolders={childrenOf(folder.id)}
               feeds={feedsIn(folder.id)}
               feedsInChild={feedsIn}
-              expandedSet={expanded}
+              expandedSet={openFolders}
               onToggleChild={toggle}
               activeFeedId={activeFeedId}
               onSelectFeed={onSelectFeed}
@@ -414,6 +436,45 @@ export function FolderTree({
   );
 }
 
+/** With fewer feeds than this, the whole list fits on screen, so no filter. */
+const FILTER_MIN_FEEDS = 10;
+
+/** The feed filter above the tree (#46). Escape clears it. */
+function FeedFilter({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="relative mb-1 px-1">
+      <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          // With text in it, Escape only clears the filter, and must not also
+          // reach the page shortcuts (which close the reader).
+          if (e.key === 'Escape' && value) {
+            e.stopPropagation();
+            onChange('');
+          }
+        }}
+        placeholder="Filter feeds"
+        aria-label="Filter feeds"
+        className="h-7 w-full rounded-md border border-input bg-background pr-7 pl-7 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      />
+      {value && (
+        <button
+          type="button"
+          onClick={() => onChange('')}
+          aria-label="Clear the filter"
+          title="Clear the filter (Esc)"
+          className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <X className="size-3.5" />
+        </button>
+      )}
+    </div>
+  );
+}
+
 function RootZone({ children }: { children: React.ReactNode }) {
   const { setNodeRef, isOver } = useDroppable({
     id: 'zone:root',
@@ -436,6 +497,10 @@ interface FolderNodeProps {
   depth: number;
   expanded: boolean;
   onToggle: () => void;
+  /** Expand or collapse every folder (#46). */
+  onSetAllExpanded: (open: boolean) => void;
+  anyExpanded: boolean;
+  allExpanded: boolean;
   isActive: boolean;
   onSelect: () => void;
   childFolders: FolderRow[];
@@ -496,9 +561,13 @@ function FolderNode(props: FolderNodeProps) {
         style={{ paddingLeft: `${0.5 + depth * 0.75}rem` }}
       >
         <button
-          onClick={props.onToggle}
+          onClick={(e) => (e.altKey ? props.onSetAllExpanded(!expanded) : props.onToggle())}
           aria-label={expanded ? 'Collapse folder' : 'Expand folder'}
-          title={expanded ? 'Collapse folder' : 'Expand folder'}
+          title={
+            expanded
+              ? 'Collapse folder (Alt-click: collapse all folders)'
+              : 'Expand folder (Alt-click: expand all folders)'
+          }
           className="shrink-0 rounded text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
@@ -560,6 +629,13 @@ function FolderNode(props: FolderNodeProps) {
                 hasChildren={props.hasChildren(folder.id)}
                 onMove={(parentId) => props.onMove(folder.id, parentId)}
               />
+              <DropdownMenuSeparator />
+              <DropdownMenuItem disabled={props.allExpanded} onSelect={() => props.onSetAllExpanded(true)}>
+                Expand all folders
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={!props.anyExpanded} onSelect={() => props.onSetAllExpanded(false)}>
+                Collapse all folders
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem className="text-destructive" onSelect={() => props.onDelete(folder)}>
                 Delete folder
