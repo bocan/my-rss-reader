@@ -212,6 +212,17 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
       .limit(1);
     if (!current) return reply.code(404).send(notFound);
 
+    // The poll interval is on the shared feed, so it changes the feed for every
+    // subscriber. Only an admin may set it (#38). The first account is always
+    // an admin, so a single-user install keeps full control.
+    if (input.fetchIntervalSec !== undefined && request.user!.role !== 'admin') {
+      return reply.code(403).send({
+        error: 'Forbidden',
+        message: 'Only an administrator can change how often a feed is polled',
+        statusCode: 403,
+      });
+    }
+
     // Validate the destination folder before any write. null moves to root.
     if (input.folderId != null) {
       const [target] = await db
@@ -243,7 +254,7 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
         await tx.update(subscriptions).set(changes).where(eq(subscriptions.id, id));
       }
       // The poll interval lives on the shared feed, so this affects everyone
-      // subscribed to it (the dialog copy says so).
+      // subscribed to it (admins only, checked above).
       if (input.fetchIntervalSec !== undefined) {
         await tx
           .update(feeds)

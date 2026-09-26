@@ -39,8 +39,9 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-function renderDialog(row = sub, onOpenChange = vi.fn()) {
+function renderDialog(row = sub, onOpenChange = vi.fn(), role: 'admin' | 'user' = 'user') {
   const qc = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
+  qc.setQueryData(['auth', 'me'], { id: 'u1', role });
   qc.setQueryData(['folders'], { items: [] });
   qc.setQueryData(['feeds'], { items: [row] });
   qc.setQueryData(['profile'], { blogrollEnabled: false });
@@ -145,6 +146,52 @@ test('Save with the URL unchanged does not call the change-URL endpoint', async 
   fireEvent.click(screen.getByRole('button', { name: 'Save' }));
   await waitFor(() => expect(fetchMock).toHaveBeenCalled());
   expect(bodiesByUrl().some((c) => c.url.endsWith('/url'))).toBe(false);
+});
+
+// #38: the poll interval is shared by every subscriber.
+
+test('an admin sees the shared effect under the field, and a changed interval is sent', async () => {
+  const onOpenChange = renderDialog({ ...sub, fetchIntervalSec: 1800 }, vi.fn(), 'admin');
+  const field = screen.getByRole('spinbutton', { name: /Poll every/ });
+  expect(field).toHaveAccessibleDescription('Applies to everyone subscribed to this feed.');
+  expect(field).not.toHaveAttribute('readonly');
+
+  fireEvent.change(field, { target: { value: '60' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).toMatchObject({ fetchIntervalSec: 3600 });
+});
+
+test('an admin who does not touch the interval does not send it', async () => {
+  const onOpenChange = renderDialog({ ...sub, fetchIntervalSec: 1800 }, vi.fn(), 'admin');
+  fireEvent.click(screen.getByRole('radio', { name: /^Skim/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).not.toHaveProperty('fetchIntervalSec');
+});
+
+test('a clear of the interval by an admin sends null, for the app default', async () => {
+  const onOpenChange = renderDialog({ ...sub, fetchIntervalSec: 1800 }, vi.fn(), 'admin');
+  fireEvent.change(screen.getByRole('spinbutton', { name: /Poll every/ }), {
+    target: { value: '' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).toMatchObject({ fetchIntervalSec: null });
+});
+
+test('a non-admin sees the interval read-only, and Save never sends it', async () => {
+  const onOpenChange = renderDialog({ ...sub, fetchIntervalSec: 1800 });
+  const field = screen.getByRole('spinbutton', { name: /Poll every/ });
+  expect(field).toHaveAttribute('readonly');
+  expect(field).toHaveValue(30);
+  expect(field).toHaveAccessibleDescription(
+    'Set by an admin. It applies to everyone subscribed to this feed.',
+  );
+
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).not.toHaveProperty('fetchIntervalSec');
 });
 
 test('a feed hidden from All items shows the box unticked', () => {

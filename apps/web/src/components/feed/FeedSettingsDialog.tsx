@@ -23,6 +23,7 @@ import {
 } from '@/lib/folders';
 import { ARTICLE_VIEW_LABELS } from '@/lib/article-view';
 import { ATTENTION_EFFECTS, ATTENTION_LABELS } from '@/lib/attention';
+import { useSession } from '@/lib/auth';
 import { useProfile } from '@/lib/profile';
 import { cn } from '@/lib/utils';
 
@@ -57,9 +58,12 @@ export function FeedSettingsDialog({
   const [hideFromAll, setHideFromAll] = useState(sub.hideFromAll);
   const [inBlogroll, setInBlogroll] = useState(sub.inBlogroll);
   const [attention, setAttention] = useState<AttentionTier>(sub.attention);
-  const [intervalMin, setIntervalMin] = useState<string>(
-    sub.fetchIntervalSec != null ? String(Math.round(sub.fetchIntervalSec / 60)) : '',
-  );
+  const { data: me } = useSession();
+  // #38: the interval is on the shared feed. Only an admin may change it.
+  const canSetInterval = me?.role === 'admin';
+  const initialMin =
+    sub.fetchIntervalSec != null ? String(Math.round(sub.fetchIntervalSec / 60)) : '';
+  const [intervalMin, setIntervalMin] = useState<string>(initialMin);
 
   const newUrl = url.trim();
   const urlChanged = newUrl !== sub.feedUrl;
@@ -83,6 +87,9 @@ export function FeedSettingsDialog({
       }
     }
     const trimmed = name.trim();
+    // Send the interval only when it changed, so a Save of other settings never
+    // rewrites the value that everyone subscribed to this feed shares.
+    const intervalChanged = canSetInterval && intervalMin.trim() !== initialMin;
     const min = intervalMin.trim() === '' ? null : Math.max(1, Math.round(Number(intervalMin)));
     update.mutate(
       {
@@ -94,7 +101,7 @@ export function FeedSettingsDialog({
         hideFromAll,
         inBlogroll,
         attention,
-        fetchIntervalSec: min == null ? null : min * 60,
+        ...(intervalChanged ? { fetchIntervalSec: min == null ? null : min * 60 } : {}),
       },
       {
         onSuccess: () => {
@@ -208,11 +215,18 @@ export function FeedSettingsDialog({
                 type="number"
                 min={1}
                 max={1440}
-                className={inputClass}
+                className={cn(inputClass, !canSetInterval && 'cursor-not-allowed opacity-70')}
                 value={intervalMin}
                 onChange={(e) => setIntervalMin(e.target.value)}
                 placeholder="App default"
+                readOnly={!canSetInterval}
+                aria-describedby="poll-interval-note"
               />
+              <span id="poll-interval-note" className="block text-xs text-muted-foreground">
+                {canSetInterval
+                  ? 'Applies to everyone subscribed to this feed.'
+                  : 'Set by an admin. It applies to everyone subscribed to this feed.'}
+              </span>
             </label>
           </div>
 
@@ -307,9 +321,6 @@ export function FeedSettingsDialog({
               Last fetched {relativeTime(sub.lastFetchedAt)} · no errors.
             </p>
           )}
-          <p className="text-xs text-muted-foreground">
-            The poll interval is shared by everyone subscribed to this feed.
-          </p>
 
           {update.isError && (
             <p className="text-sm text-destructive">Could not save. Try again.</p>
