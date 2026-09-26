@@ -18,6 +18,7 @@ async function loadSettings(userId: string): Promise<Settings> {
     theme: row.theme as Settings['theme'],
     density: row.density as Settings['density'],
     defaultViewMode: row.defaultViewMode as Settings['defaultViewMode'],
+    defaultSortOrder: row.defaultSortOrder as Settings['defaultSortOrder'],
     defaultArticleView: row.defaultArticleView as Settings['defaultArticleView'],
     markReadOnScroll: row.markReadOnScroll,
     markReadOnOpen: row.markReadOnOpen,

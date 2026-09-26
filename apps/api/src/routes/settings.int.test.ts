@@ -125,6 +125,24 @@ test('PATCH /feeds/:id sets and clears the per-feed view override', async () => 
   expect(row!.viewMode).toBeNull();
 });
 
+test('sort order: a user default, and a saved order per feed and per folder (#31)', async () => {
+  const user = await seedUser();
+  const sub = await seedSubscription(user.id, (await seedFeed()).id);
+  const folder = await seedFolder(user.id);
+  const cookie = await loginAs(user);
+  const patch = (url: string, payload: Record<string, unknown>) =>
+    app.inject({ method: 'PATCH', url, headers: { cookie }, payload });
+
+  expect((await getSettings(cookie)).json().defaultSortOrder).toBe('newest');
+  expect((await putSettings(cookie, { defaultSortOrder: 'oldest' })).json().defaultSortOrder).toBe('oldest');
+  expect((await putSettings(cookie, { defaultSortOrder: 'random' })).statusCode).toBe(400);
+
+  expect((await patch(`/api/feeds/${sub.id}`, { sortOrder: 'oldest' })).json().sortOrder).toBe('oldest');
+  expect((await patch(`/api/feeds/${sub.id}`, { sortOrder: null })).json().sortOrder).toBeNull();
+  expect((await patch(`/api/folders/${folder.id}`, { sortOrder: 'oldest' })).json().sortOrder).toBe('oldest');
+  expect((await patch(`/api/folders/${folder.id}`, { sortOrder: 'sideways' })).statusCode).toBe(400);
+});
+
 test('PATCH /feeds rejects an out-of-enum viewMode', async () => {
   const user = await seedUser();
   const feed = await seedFeed();

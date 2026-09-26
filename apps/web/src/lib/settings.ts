@@ -75,7 +75,9 @@ export function useSettings(): {
   });
 
   return {
-    settings: query.data ?? DEFAULT_SETTINGS,
+    // Defaults under the data: a query cache persisted by an older build can
+    // lack a newer field (defaultSortOrder, #31) until the refetch lands.
+    settings: { ...DEFAULT_SETTINGS, ...query.data },
     update: mutation.mutate,
     // The mirror seed is stamped 0 (initialDataUpdatedAt), so any later stamp
     // is a server response or a write the user made.

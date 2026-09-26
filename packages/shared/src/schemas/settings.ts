@@ -1,10 +1,12 @@
 import { z } from 'zod';
-import { DEFAULT_ARTICLE_VIEWS, DENSITIES, THEME_SETTINGS, VIEW_MODES } from '../types.js';
+import { DEFAULT_ARTICLE_VIEWS, DENSITIES, SORT_ORDERS, THEME_SETTINGS, VIEW_MODES } from '../types.js';
 
 export const settingsSchema = z.object({
   theme: z.enum(THEME_SETTINGS),
   density: z.enum(DENSITIES),
   defaultViewMode: z.enum(VIEW_MODES),
+  /** Article order for All items and every feed or folder with none saved (#31). */
+  defaultSortOrder: z.enum(SORT_ORDERS),
   defaultArticleView: z.enum(DEFAULT_ARTICLE_VIEWS),
   markReadOnScroll: z.boolean(),
   /** Mark an article read when it opens (true), or only by hand (#24). */
@@ -25,6 +27,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'auto',
   density: 'comfortable',
   defaultViewMode: 'cards',
+  defaultSortOrder: 'newest',
   defaultArticleView: 'auto',
   markReadOnScroll: false,
   markReadOnOpen: true,

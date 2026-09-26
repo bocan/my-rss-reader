@@ -141,6 +141,13 @@
       "when": 1790411110543,
       "tag": "0019_clear_arclight",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790411819026,
+      "tag": "0020_workable_red_skull",
+      "breakpoints": true
     }
   ]
 }

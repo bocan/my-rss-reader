@@ -2,6 +2,7 @@ import {
   DEFAULT_ARTICLE_VIEWS,
   DENSITIES,
   SHARE_VISIBILITIES,
+  SORT_ORDERS,
   VIEW_MODES,
   type Density,
   type ImportOpmlResult,
@@ -24,6 +25,7 @@ import { useResetViews } from '@/lib/folders';
 import { useProfile, useUpdateProfile } from '@/lib/profile';
 import { useInstallPrompt } from '@/lib/pwa';
 import { useSettings } from '@/lib/settings';
+import { SORT_LABELS } from '@/lib/sort-order';
 import { cn } from '@/lib/utils';
 
 const inputClass =
@@ -519,6 +521,13 @@ export function SettingsPage() {
             onChange={(v) => set('defaultViewMode', v)}
           />
           <ResetViewsRow />
+          <Segmented
+            label="Default article order"
+            value={settings.defaultSortOrder}
+            options={SORT_ORDERS}
+            labels={SORT_LABELS}
+            onChange={(v) => set('defaultSortOrder', v)}
+          />
           <Segmented
             label="Density"
             value={settings.density}

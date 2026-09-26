@@ -27,6 +27,7 @@ import { FeedProblemsDialog } from '@/components/feed/FeedProblemsDialog';
 import { ArticleStepper } from '@/components/reader/ArticleStepper';
 import { BrowseSurface } from '@/components/reader/BrowseSurface';
 import { ListColumn } from '@/components/reader/ListColumn';
+import { SortToggle } from '@/components/reader/SortToggle';
 import { ViewSwitcher } from '@/components/reader/ViewSwitcher';
 import { ReadingPane } from '@/components/reading-pane/ReadingPane';
 import { ShortcutsOverlay } from '@/components/shortcuts/ShortcutsOverlay';
@@ -49,7 +50,7 @@ import { useArticleSurface } from '@/hooks/use-article-surface';
 import { useArticleToggles } from '@/hooks/use-article-toggles';
 import type { ArticleFilters, ArticleListItem } from '@/hooks/use-articles';
 import { useLeaveGoneFeed } from '@/hooks/use-leave-gone-feed';
-import { useListView, type ViewScope } from '@/hooks/use-list-view';
+import { useListView, useSortOrder, type SortScope, type ViewScope } from '@/hooks/use-list-view';
 import { useShortcuts } from '@/hooks/use-shortcuts';
 import { useSidebar } from '@/hooks/use-sidebar';
 import { announce } from '@/lib/announce';
@@ -70,10 +71,11 @@ import {
 import { useProfile } from '@/lib/profile';
 import { useExpandedFolders } from '@/lib/sidebar-expanded';
 import { useSettings } from '@/lib/settings';
+import { SORT_LABELS } from '@/lib/sort-order';
 import { useUnreadOnly } from '@/lib/unread-only';
 import type { ShortcutContextName } from '@/lib/shortcuts/registry';
 import { cn } from '@/lib/utils';
-import type { ViewMode } from '@rss/shared';
+import type { SortOrder, ViewMode } from '@rss/shared';
 
 /** Reactively tracks a media query. */
 function useMediaQuery(query: string): boolean {
@@ -200,6 +202,21 @@ export function ReaderPage() {
   });
   const isBrowse = view === 'cards' || view === 'magazine';
 
+  // Article order (#31): the same model as the layout. A feed or folder shows
+  // its saved order, else the default, which a pick on All items sets.
+  const sortScope: SortScope = currentSub
+    ? { kind: 'feed', subscriptionId: currentSub.subscriptionId, saved: currentSub.sortOrder ?? null }
+    : currentFolder
+      ? { kind: 'folder', folderId: currentFolder.id, saved: currentFolder.sortOrder ?? null }
+      : isAllItems
+        ? { kind: 'all' }
+        : { kind: 'other' };
+  const [sort, setSort] = useSortOrder(sortScope, scopeKey, settings.defaultSortOrder, {
+    feed: (id, sortOrder) => updateSub.mutate({ id, sortOrder }),
+    folder: (id, sortOrder) => updateFolder.mutate({ id, sortOrder }),
+    default: (defaultSortOrder) => updateSettings({ defaultSortOrder }),
+  });
+
   const [searchInput, setSearchInput] = useState('');
   // Phones (below sm) show the search box only after the Search tab is used,
   // and while it holds a query.
@@ -216,11 +233,12 @@ export function ReaderPage() {
     if (isSearching) setCommunityOpen(false);
   }, [isSearching]);
   const effectiveFilters = useMemo(() => {
-    let f = filters;
+    // Search orders by relevance, so the saved sort does not apply there (#31).
+    let f: ArticleFilters = { ...filters, sort: debouncedQ ? 'newest' : sort };
     if (unreadOnly) f = { ...f, unread: true };
     if (debouncedQ) f = { ...f, q: debouncedQ };
     return f;
-  }, [filters, unreadOnly, debouncedQ]);
+  }, [filters, sort, unreadOnly, debouncedQ]);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedId = searchParams.get('article');
@@ -685,6 +703,11 @@ export function ReaderPage() {
         >
           {unreadOnly ? <CircleDot /> : <Circle />}
         </Button>
+        {!isSearching && (
+          <div className="hidden sm:flex">
+            <SortToggle sort={sort} onChange={setSort} />
+          </div>
+        )}
         <div className="hidden sm:flex">
           <ViewSwitcher view={view} onChange={setView} />
         </div>
@@ -715,6 +738,16 @@ export function ReaderPage() {
       >
         Unread only
       </DropdownMenuCheckboxItem>
+      {!isSearching && (
+        <>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>Order</DropdownMenuLabel>
+          <DropdownMenuRadioGroup value={sort} onValueChange={(v) => setSort(v as SortOrder)}>
+            <DropdownMenuRadioItem value="newest">{SORT_LABELS.newest}</DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="oldest">{SORT_LABELS.oldest}</DropdownMenuRadioItem>
+          </DropdownMenuRadioGroup>
+        </>
+      )}
       <DropdownMenuSeparator />
       <DropdownMenuLabel>View</DropdownMenuLabel>
       <DropdownMenuRadioGroup value={view} onValueChange={(v) => setView(v as ViewMode)}>

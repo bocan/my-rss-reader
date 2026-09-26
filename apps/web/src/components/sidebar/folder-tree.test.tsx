@@ -19,6 +19,7 @@ const sub: SubscriptionRow = {
   folderId: null,
   position: 0,
   viewMode: null,
+  sortOrder: null,
   articleView: null,
   hideFromAll: false,
   inBlogroll: false,

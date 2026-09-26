@@ -227,7 +227,9 @@ export function useArticleSurface(
     retry: () => void refetch(),
     newCount,
     showNew: () => {
-      rootRef.current?.scrollTo({ top: 0 });
+      // Newest first puts them at the top. Oldest first puts them at the end,
+      // so the reader keeps their place.
+      if (filters.sort === 'newest') rootRef.current?.scrollTo({ top: 0 });
       // The refetch brings a new asOf, which starts the count again at 0.
       void refetch();
     },

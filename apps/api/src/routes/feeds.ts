@@ -35,6 +35,7 @@ const subscriptionColumns = {
   folderId: subscriptions.folderId,
   position: subscriptions.position,
   viewMode: subscriptions.viewMode,
+  sortOrder: subscriptions.sortOrder,
   articleView: subscriptions.articleView,
   hideFromAll: subscriptions.hideFromAll,
   inBlogroll: subscriptions.inBlogroll,
@@ -233,6 +234,7 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
       if (input.title !== undefined) changes.customTitle = input.title;
       if (input.folderId !== undefined) changes.folderId = input.folderId;
       if (input.viewMode !== undefined) changes.viewMode = input.viewMode;
+      if (input.sortOrder !== undefined) changes.sortOrder = input.sortOrder;
       if (input.articleView !== undefined) changes.articleView = input.articleView;
       if (input.hideFromAll !== undefined) changes.hideFromAll = input.hideFromAll;
       if (input.inBlogroll !== undefined) changes.inBlogroll = input.inBlogroll;
@@ -382,6 +384,7 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
           folderId,
           customTitle: input.title,
           viewMode: input.viewMode,
+          sortOrder: input.sortOrder,
           articleView: input.articleView,
           hideFromAll: input.hideFromAll,
           inBlogroll: input.inBlogroll,
@@ -497,6 +500,7 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
       if (input.name !== undefined) changes.name = input.name;
       if (input.parentId !== undefined) changes.parentId = input.parentId;
       if (input.viewMode !== undefined) changes.viewMode = input.viewMode;
+      if (input.sortOrder !== undefined) changes.sortOrder = input.sortOrder;
       if (Object.keys(changes).length > 0) {
         await tx.update(folders).set(changes).where(eq(folders.id, id));
       }

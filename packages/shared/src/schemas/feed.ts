@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ARTICLE_VIEWS, ATTENTION_TIERS, VIEW_MODES } from '../types.js';
+import { ARTICLE_VIEWS, ATTENTION_TIERS, SORT_ORDERS, VIEW_MODES } from '../types.js';
 
 export const subscribeSchema = z.object({
   url: z.url(),
@@ -15,6 +15,8 @@ export const updateSubscriptionSchema = z.object({
   position: z.number().int().nonnegative().optional(),
   /** Per-feed list-view override (SPEC-011). null clears it (inherit default). */
   viewMode: z.enum(VIEW_MODES).nullable().optional(),
+  /** Per-feed sort order (#31). null clears it (inherit default). */
+  sortOrder: z.enum(SORT_ORDERS).nullable().optional(),
   /** Per-feed article-view override (SPEC-018). null clears it. */
   articleView: z.enum(ARTICLE_VIEWS).nullable().optional(),
   /** Exclude this feed from the All-items list and its unread total (SPEC-018). */
@@ -41,6 +43,7 @@ export const restoreSubscriptionSchema = z.object({
   title: z.string().min(1).max(200).nullable(),
   position: z.number().int().nonnegative(),
   viewMode: z.enum(VIEW_MODES).nullable(),
+  sortOrder: z.enum(SORT_ORDERS).nullable().default(null),
   articleView: z.enum(ARTICLE_VIEWS).nullable(),
   hideFromAll: z.boolean(),
   inBlogroll: z.boolean(),
@@ -67,6 +70,8 @@ export const updateFolderSchema = z.object({
   position: z.number().int().nonnegative().optional(),
   /** List layout for the folder view. null clears it (use the user default). */
   viewMode: z.enum(VIEW_MODES).nullable().optional(),
+  /** Sort order for the folder view (#31). null clears it. */
+  sortOrder: z.enum(SORT_ORDERS).nullable().optional(),
 });
 export type UpdateFolderInput = z.infer<typeof updateFolderSchema>;
 

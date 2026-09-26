@@ -1,7 +1,7 @@
-import type { ViewMode } from '@rss/shared';
+import type { SortOrder, ViewMode } from '@rss/shared';
 import { act, renderHook } from '@testing-library/react';
 import { expect, test, vi } from 'vitest';
-import { useListView, type ViewScope } from './use-list-view';
+import { useListView, useSortOrder, type SortScope, type ViewScope } from './use-list-view';
 
 type Props = { scope: ViewScope; scopeKey: string; defaultView: ViewMode };
 
@@ -69,4 +69,21 @@ test('picking the view already shown saves nothing', () => {
   const { result, save } = setup({ scope: feed(null), scopeKey: 'f', defaultView: 'cards' });
   act(() => result.current[1]('cards'));
   expect(save.feed).not.toHaveBeenCalled();
+});
+
+// #31: the article order follows the same rule.
+test('sort order: saved per feed, else the default, and All items sets the default', () => {
+  const save = { feed: vi.fn(), folder: vi.fn(), default: vi.fn() };
+  const run = (scope: SortScope, fallback: SortOrder) =>
+    renderHook(() => useSortOrder(scope, 'k', fallback, save)).result;
+
+  expect(run({ kind: 'feed', subscriptionId: 's1', saved: 'oldest' }, 'newest').current[0]).toBe('oldest');
+  const unsaved = run({ kind: 'folder', folderId: 'd1', saved: null }, 'oldest');
+  expect(unsaved.current[0]).toBe('oldest');
+  act(() => unsaved.current[1]('newest'));
+  expect(save.folder).toHaveBeenCalledWith('d1', 'newest');
+
+  const all = run({ kind: 'all' }, 'newest');
+  act(() => all.current[1]('oldest'));
+  expect(save.default).toHaveBeenCalledWith('oldest');
 });

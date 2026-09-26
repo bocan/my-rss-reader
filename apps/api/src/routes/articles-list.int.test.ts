@@ -73,6 +73,25 @@ test('oldest sort is the reverse of newest', async () => {
   expect(oldest).toEqual([...newest].reverse());
 });
 
+test('an oldest-first keyset walk has no dupes or gaps (#31)', async () => {
+  const { cookie, ids } = await userWithArticles(5);
+  const walked: string[] = [];
+  let cursor: string | null = null;
+  let pages = 0;
+  do {
+    const page = await list(
+      app,
+      cookie,
+      `?sort=oldest&limit=2${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
+    );
+    walked.push(...page.items.map((a: { id: string }) => a.id));
+    cursor = page.nextCursor;
+    pages++;
+  } while (cursor && pages < 20);
+
+  expect(walked).toEqual([...ids].reverse()); // seeded newest first
+});
+
 test('a null-publishedAt article appears exactly once', async () => {
   const user = await seedUser();
   const feed = await seedFeed();

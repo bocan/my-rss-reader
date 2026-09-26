@@ -3,6 +3,7 @@ import {
   type ArticleView,
   type AttentionTier,
   type RestoreSubscriptionInput,
+  type SortOrder,
   type ViewMode,
   type WebSubState,
 } from '@rss/shared';
@@ -20,6 +21,8 @@ export interface FolderRow {
   position: number;
   /** Saved list layout for the folder view; null uses the user default. */
   viewMode: ViewMode | null;
+  /** Saved article order for the folder view; null uses the user default (#31). */
+  sortOrder: SortOrder | null;
   createdAt: string;
 }
 
@@ -34,6 +37,8 @@ export interface SubscriptionRow {
   folderId: string | null;
   position: number;
   viewMode: ViewMode | null;
+  /** Saved article order for this feed; null uses the user default (#31). */
+  sortOrder: SortOrder | null;
   articleView: ArticleView | null;
   hideFromAll: boolean;
   inBlogroll: boolean;
@@ -124,6 +129,7 @@ export function useUpdateFolder() {
       parentId?: string | null;
       position?: number;
       viewMode?: ViewMode | null;
+      sortOrder?: SortOrder | null;
     }) => api<FolderRow>(`/folders/${id}`, { method: 'PATCH', body }),
     onMutate: async ({ id, ...patch }): Promise<TreeCtx> => {
       const ctx = await snapshotTree(qc);
@@ -195,6 +201,7 @@ export function useUpdateSubscription({ inlineError = false } = {}) {
       title?: string | null;
       position?: number;
       viewMode?: ViewMode | null;
+      sortOrder?: SortOrder | null;
       articleView?: ArticleView | null;
       hideFromAll?: boolean;
       inBlogroll?: boolean;
@@ -208,6 +215,7 @@ export function useUpdateSubscription({ inlineError = false } = {}) {
         ...(patch.folderId !== undefined ? { folderId: patch.folderId } : {}),
         ...(patch.title !== undefined ? { customTitle: patch.title } : {}),
         ...(patch.viewMode !== undefined ? { viewMode: patch.viewMode } : {}),
+        ...(patch.sortOrder !== undefined ? { sortOrder: patch.sortOrder } : {}),
         ...(patch.articleView !== undefined ? { articleView: patch.articleView } : {}),
         ...(patch.hideFromAll !== undefined ? { hideFromAll: patch.hideFromAll } : {}),
         ...(patch.inBlogroll !== undefined ? { inBlogroll: patch.inBlogroll } : {}),
@@ -333,6 +341,7 @@ export function restoreBody(s: SubscriptionRow): RestoreSubscriptionInput {
     title: s.customTitle,
     position: s.position,
     viewMode: s.viewMode,
+    sortOrder: s.sortOrder,
     articleView: s.articleView,
     hideFromAll: s.hideFromAll,
     inBlogroll: s.inBlogroll,
