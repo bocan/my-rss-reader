@@ -52,6 +52,7 @@ import {
 import { useProfile } from '@/lib/profile';
 import { useExpandedFolders } from '@/lib/sidebar-expanded';
 import { useSettings } from '@/lib/settings';
+import { useUnreadOnly } from '@/lib/unread-only';
 import type { ArticleDetail } from '@rss/shared';
 import type { ShortcutContextName } from '@/lib/shortcuts/registry';
 import { cn } from '@/lib/utils';
@@ -107,21 +108,8 @@ export function ReaderPage() {
   }, [feedSort]);
 
   // "Unread only": hides read articles from the lists and read-empty feeds from
-  // the sidebar. A global toggle (not per-scope), persisted locally.
-  const [unreadOnly, setUnreadOnly] = useState<boolean>(() => {
-    try {
-      return window.localStorage.getItem('reader:unread-only') === 'true';
-    } catch {
-      return false;
-    }
-  });
-  useEffect(() => {
-    try {
-      window.localStorage.setItem('reader:unread-only', String(unreadOnly));
-    } catch {
-      // display preference only
-    }
-  }, [unreadOnly]);
+  // the sidebar. A global toggle (not per-scope), the same value as Settings.
+  const [unreadOnly, setUnreadOnly] = useUnreadOnly();
 
   const { data: feedsData, isLoading } = useSubscriptions();
   // Stable identity so downstream useMemos (feedMeta, feedOrder) do not churn.
@@ -607,13 +595,10 @@ export function ReaderPage() {
               ? 'Showing unread only — click to show all'
               : 'Show unread only'
           }
-          onClick={() =>
-            setUnreadOnly((v) => {
-              const next = !v;
-              announce(next ? 'Showing unread only' : 'Showing all articles');
-              return next;
-            })
-          }
+          onClick={() => {
+            setUnreadOnly(!unreadOnly);
+            announce(unreadOnly ? 'Showing all articles' : 'Showing unread only');
+          }}
         >
           {unreadOnly ? <CircleDot /> : <Circle />}
         </Button>

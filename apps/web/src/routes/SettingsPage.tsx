@@ -541,7 +541,7 @@ export function SettingsPage() {
           />
           <Toggle
             label="Show unread only"
-            hint="Hide already-read articles from lists by default."
+            hint="Hide read articles, and feeds with nothing unread. The same as the toolbar button."
             checked={settings.showUnreadOnly}
             onChange={(v) => set('showUnreadOnly', v)}
           />

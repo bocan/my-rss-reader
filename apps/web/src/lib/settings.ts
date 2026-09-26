@@ -30,7 +30,12 @@ function writeCache(s: Settings): void {
  * (initialDataUpdatedAt: 0 forces an immediate background refetch to reconcile),
  * and updates optimistically with rollback.
  */
-export function useSettings(): { settings: Settings; update: (patch: Partial<Settings>) => void } {
+export function useSettings(): {
+  settings: Settings;
+  update: (patch: Partial<Settings>) => void;
+  /** True once the server's values arrived (not only the local mirror). */
+  synced: boolean;
+} {
   const qc = useQueryClient();
 
   const query = useQuery({
@@ -69,5 +74,11 @@ export function useSettings(): { settings: Settings; update: (patch: Partial<Set
     },
   });
 
-  return { settings: query.data ?? DEFAULT_SETTINGS, update: mutation.mutate };
+  return {
+    settings: query.data ?? DEFAULT_SETTINGS,
+    update: mutation.mutate,
+    // The mirror seed is stamped 0 (initialDataUpdatedAt), so any later stamp
+    // is a server response or a write the user made.
+    synced: query.dataUpdatedAt > 0,
+  };
 }
