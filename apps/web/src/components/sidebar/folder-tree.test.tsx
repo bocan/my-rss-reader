@@ -98,6 +98,70 @@ test('"Rename" from a feed menu shows a focused input that stays open', async ()
   expect(screen.getByDisplayValue('Dave Rupert')).toHaveFocus();
 });
 
+// #43: a click away keeps the new name. Only Escape throws it away.
+describe('inline rename', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({}) }) as Response);
+    vi.stubGlobal('fetch', fetchMock);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  async function startRename() {
+    renderTree();
+    const trigger = screen.getByRole('button', { name: 'Feed actions for Dave Rupert' });
+    act(() => trigger.focus());
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Rename' }));
+    await act(() => new Promise((r) => setTimeout(r, 20)));
+    return screen.getByDisplayValue('Dave Rupert');
+  }
+  const patches = () => fetchMock.mock.calls.filter(([, init]) => init?.method === 'PATCH');
+
+  test('a blur saves a changed name', async () => {
+    const input = await startRename();
+    fireEvent.change(input, { target: { value: 'Dave' } });
+    fireEvent.blur(input);
+    await waitFor(() => expect(patches()).toHaveLength(1));
+    expect(String(patches()[0]![0])).toBe('/api/feeds/s1');
+    expect(JSON.parse(patches()[0]![1].body)).toEqual({ title: 'Dave' });
+    expect(screen.queryByDisplayValue('Dave')).toBeNull();
+  });
+
+  test('Escape throws the new name away, and the blur after it does not save', async () => {
+    const input = await startRename();
+    fireEvent.change(input, { target: { value: 'Dave' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    fireEvent.blur(input);
+    await act(() => new Promise((r) => setTimeout(r, 20)));
+    expect(patches()).toHaveLength(0);
+    expect(screen.getByRole('button', { name: 'Dave Rupert' })).toBeInTheDocument();
+  });
+
+  test('Enter saves once, even when a blur follows', async () => {
+    const input = await startRename();
+    fireEvent.change(input, { target: { value: 'Dave' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    fireEvent.blur(input);
+    await waitFor(() => expect(patches()).toHaveLength(1));
+  });
+
+  test('a blur with the name unchanged saves nothing', async () => {
+    fireEvent.blur(await startRename());
+    await act(() => new Promise((r) => setTimeout(r, 20)));
+    expect(patches()).toHaveLength(0);
+    expect(screen.queryByDisplayValue('Dave Rupert')).toBeNull();
+  });
+
+  test('a blur with the name cleared saves nothing', async () => {
+    const input = await startRename();
+    fireEvent.change(input, { target: { value: '  ' } });
+    fireEvent.blur(input);
+    await act(() => new Promise((r) => setTimeout(r, 20)));
+    expect(patches()).toHaveLength(0);
+  });
+});
+
 // #25: folder badges.
 
 test('folders show their unread count, collapsed or not, and hide a zero', () => {

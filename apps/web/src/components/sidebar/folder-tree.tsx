@@ -937,9 +937,22 @@ function InlineInput({
   onCancel: () => void;
 }) {
   const [value, setValue] = useState(defaultValue);
+  // Enter or Escape closes the input, and the unmount can then fire a blur.
+  // Only the first of these may act.
+  const done = useRef(false);
+  const finish = (act: () => void) => {
+    if (done.current) return;
+    done.current = true;
+    act();
+  };
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') onSubmit(value);
-    if (e.key === 'Escape') onCancel();
+    if (e.key === 'Enter') finish(() => onSubmit(value));
+    if (e.key === 'Escape') finish(onCancel);
+  };
+  // #43: a click away keeps a new name. Only Escape throws it away.
+  const onBlur = () => {
+    const changed = value.trim() !== '' && value.trim() !== defaultValue.trim();
+    finish(changed ? () => onSubmit(value) : onCancel);
   };
   return (
     <input
@@ -948,7 +961,7 @@ function InlineInput({
       placeholder={placeholder}
       onChange={(e) => setValue(e.target.value)}
       onKeyDown={onKeyDown}
-      onBlur={onCancel}
+      onBlur={onBlur}
       className="h-6 min-w-0 flex-1 rounded border border-input bg-background px-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     />
   );
