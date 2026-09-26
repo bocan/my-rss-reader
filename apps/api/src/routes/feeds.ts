@@ -246,11 +246,15 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
           .set({ fetchIntervalSec: input.fetchIntervalSec })
           .where(eq(feeds.id, current.feedId));
       }
-      // Renormalize the scope it left, then place it in its destination.
+      // Renormalize the scope it left, then place it in its destination. Only on
+      // a move: with no position, placeSubscription appends, so a rename would
+      // send the feed to the bottom of a manually ordered folder (#27).
       if (newFolderId !== oldFolderId) {
         await renormalizeSubscriptionScope(tx, userId, oldFolderId);
       }
-      await placeSubscription(tx, userId, id, newFolderId, input.position);
+      if (newFolderId !== oldFolderId || input.position !== undefined) {
+        await placeSubscription(tx, userId, id, newFolderId, input.position);
+      }
     });
 
     return (await subscriptionRow(id, userId))!;

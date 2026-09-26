@@ -280,6 +280,20 @@ test('reordering subscriptions renormalizes both the old and new scope', async (
   expect(dest[0]!.position).toBe(0);
 });
 
+test('a rename or attention change does not move the subscription (#27)', async () => {
+  const user = await seedUser();
+  const subs = [];
+  for (const position of [0, 1, 2]) {
+    subs.push(await seedSubscription(user.id, (await seedFeed()).id, { position }));
+  }
+  const cookie = await loginAs(user);
+
+  await patchFeed(cookie, subs[0]!.id, { title: 'Renamed' });
+  await patchFeed(cookie, subs[1]!.id, { attention: 'precious' });
+
+  expect((await subsInFolder(user.id, null)).map((s) => s.id)).toEqual(subs.map((s) => s.id));
+});
+
 test("patching another user's subscription is a 404", async () => {
   const userA = await seedUser();
   const userB = await seedUser();

@@ -1,7 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowDownAZ,
-  ArrowDownWideNarrow,
   ChevronDown,
   ChevronLeft,
   Circle,
@@ -30,6 +28,7 @@ import { ListColumn } from '@/components/reader/ListColumn';
 import { ViewSwitcher } from '@/components/reader/ViewSwitcher';
 import { ReadingPane } from '@/components/reading-pane/ReadingPane';
 import { ShortcutsOverlay } from '@/components/shortcuts/ShortcutsOverlay';
+import { FeedSortMenu } from '@/components/sidebar/feed-sort-menu';
 import { FolderTree } from '@/components/sidebar/folder-tree';
 import { SubscribeDialog } from '@/components/subscribe-dialog';
 import { Button } from '@/components/ui/button';
@@ -57,7 +56,7 @@ import { useUnreadCounts } from '@/lib/articles';
 import { OLDER_THAN, olderThan, useMarkAllRead } from '@/lib/mark-all-read';
 import { useSession } from '@/lib/auth';
 import { useCommunityShares } from '@/lib/community';
-import { orderedVisibleFeedIds, type FeedSort } from '@/lib/feed-order';
+import { isFeedSort, orderedVisibleFeedIds, type FeedSort } from '@/lib/feed-order';
 import {
   useFolders,
   useRefreshFeeds,
@@ -107,10 +106,11 @@ export function ReaderPage() {
   // sidebar but phones otherwise cannot reach.
   const [mobileStep, setMobileStep] = useState<'feeds' | 'list'>('feeds');
 
-  // Sidebar feed ordering (folders are always alphabetical). Persisted locally.
+  // Sidebar ordering: by name, by unread, or manual (#27). Persisted locally.
   const [feedSort, setFeedSort] = useState<FeedSort>(() => {
     try {
-      return window.localStorage.getItem('reader:feed-sort') === 'unread' ? 'unread' : 'name';
+      const saved = window.localStorage.getItem('reader:feed-sort');
+      return isFeedSort(saved) ? saved : 'name';
     } catch {
       return 'name';
     }
@@ -473,20 +473,7 @@ export function ReaderPage() {
           Feeds
         </span>
         <div className="flex items-center gap-0.5">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-6"
-            aria-label={feedSort === 'name' ? 'Sort feeds by unread' : 'Sort feeds by name'}
-            title={feedSort === 'name' ? 'Sorted by name — click to sort by unread' : 'Sorted by unread — click to sort by name'}
-            onClick={() => setFeedSort((s) => (s === 'name' ? 'unread' : 'name'))}
-          >
-            {feedSort === 'name' ? (
-              <ArrowDownAZ className="size-3.5" />
-            ) : (
-              <ArrowDownWideNarrow className="size-3.5" />
-            )}
-          </Button>
+          <FeedSortMenu sort={feedSort} onChange={setFeedSort} />
           <Button
             variant="ghost"
             size="icon"

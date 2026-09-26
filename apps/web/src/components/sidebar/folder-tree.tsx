@@ -8,7 +8,13 @@ import {
   useSensors,
   type DragEndEvent,
 } from '@dnd-kit/core';
-import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+  type SortingStrategy,
+} from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import {
   AlertTriangle,
@@ -30,7 +36,13 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useMarkAllRead } from '@/lib/mark-all-read';
-import { byFolderName, makeFeedComparator, type FeedSort } from '@/lib/feed-order';
+import {
+  canReorder,
+  dropIndex,
+  makeFeedComparator,
+  makeFolderComparator,
+  type FeedSort,
+} from '@/lib/feed-order';
 import {
   useCreateFolder,
   useDeleteFolder,
@@ -46,9 +58,13 @@ import { toggleFolderExpanded, useExpandedFolders } from '@/lib/sidebar-expanded
 import { cn } from '@/lib/utils';
 
 type DragData =
-  | { type: 'feed'; subscriptionId: string; folderId: string | null; index: number }
-  | { type: 'folder'; folderId: string; parentId: string | null; index: number }
+  | { type: 'feed'; subscriptionId: string; folderId: string | null }
+  | { type: 'folder'; folderId: string; parentId: string | null }
   | { type: 'dropzone'; folderId: string | null };
+
+/** Outside manual order, rows do not make room while you drag: a drop there
+ *  only moves a feed to another folder, and never reorders (#27). */
+const noShift: SortingStrategy = () => null;
 
 /**
  * When a press becomes a drag (#21). A mouse drags after 4 px of travel. A
@@ -119,11 +135,15 @@ export function FolderTree({
     setTimeout(() => setSettingsSub(sub), 0);
   };
 
-  // Folders are always alphabetical. Feeds follow the sort mode (by name, or by
-  // unread count). Because counts come from a live query, marking read re-sorts
-  // on the next render for free. Shared with the keyboard layer via feed-order so
-  // next/prev-feed steps through the exact order shown here.
+  // Feeds follow the sort mode (by name, by unread count, or manual). Folders
+  // are alphabetical except in manual mode. Because counts come from a live
+  // query, marking read re-sorts on the next render for free. Shared with the
+  // keyboard layer via feed-order so next/prev-feed steps through the exact
+  // order shown here.
   const byFeed = makeFeedComparator(sort, countByFeed);
+  const byFolder = makeFolderComparator(sort);
+  const reorder = canReorder(sort);
+  const strategy = reorder ? verticalListSortingStrategy : noShift;
 
   // In hide-read mode a feed is shown only if it has unread items - except the
   // feed you are currently reading, which stays put so it never vanishes from
@@ -140,10 +160,10 @@ export function FolderTree({
     feedsIn(id).length > 0 ||
     folders.some((c) => c.parentId === id && feedsIn(c.id).length > 0);
   const childrenOf = (id: string) =>
-    folders.filter((f) => f.parentId === id && folderHasVisible(f.id)).sort(byFolderName);
+    folders.filter((f) => f.parentId === id && folderHasVisible(f.id)).sort(byFolder);
   const rootFolders = folders
     .filter((f) => f.parentId === null && folderHasVisible(f.id))
-    .sort(byFolderName);
+    .sort(byFolder);
   const hasChildren = (id: string) => folders.some((f) => f.parentId === id);
 
   const toggle = toggleFolderExpanded;
@@ -167,19 +187,24 @@ export function FolderTree({
     // Failures surface as toasts from the mutations' meta (lib/queryClient.ts).
 
     if (a.type === 'feed') {
-      let folderId: string | null;
+      // A feed row, a folder row, or a folder body: the drop names the folder.
+      const folderId = o.folderId;
       let position: number | undefined;
       if (o.type === 'feed') {
-        folderId = o.folderId;
-        position = o.index;
-      } else if (o.type === 'folder') {
-        folderId = o.folderId; // dropped onto a folder row: move into it
-        position = undefined;
-      } else {
-        folderId = o.folderId;
-        position = undefined;
+        if (o.subscriptionId === a.subscriptionId) return;
+        // Only manual order places the feed at the row it was dropped on.
+        // Otherwise the sort decides where it shows, so only a move counts.
+        if (reorder) {
+          const scope = subs
+            .filter((s) => s.folderId === folderId)
+            .sort(byFeed)
+            .map((s) => s.subscriptionId);
+          position = dropIndex(scope, a.subscriptionId, o.subscriptionId);
+        } else if (folderId === a.folderId) {
+          return;
+        }
       }
-      if (folderId === a.folderId && position === a.index) return;
+      if (folderId === a.folderId && position === undefined) return;
       updateSub.mutate({ id: a.subscriptionId, folderId, position });
       return;
     }
@@ -187,10 +212,14 @@ export function FolderTree({
     if (a.type === 'folder') {
       if (o.type === 'folder') {
         const target = folders.find((f) => f.id === o.folderId);
-        if (!target) return;
+        if (!target || target.id === a.folderId) return;
         if (o.parentId === a.parentId) {
-          if (o.index === a.index) return;
-          updateFolder.mutate({ id: a.folderId, position: o.index });
+          if (!reorder) return;
+          const scope = folders
+            .filter((f) => f.parentId === a.parentId)
+            .sort(byFolder)
+            .map((f) => f.id);
+          updateFolder.mutate({ id: a.folderId, position: dropIndex(scope, a.folderId, o.folderId) });
         } else if (canNest(a.folderId, target)) {
           updateFolder.mutate({ id: a.folderId, parentId: target.id });
         }
@@ -216,13 +245,13 @@ export function FolderTree({
         {/* Root folders (each collapsible, holding its feeds and child folders) */}
         <SortableContext
           items={rootFolders.map((f) => `folder:${f.id}`)}
-          strategy={verticalListSortingStrategy}
+          strategy={strategy}
         >
-          {rootFolders.map((folder, index) => (
+          {rootFolders.map((folder) => (
             <FolderNode
               key={folder.id}
               folder={folder}
-              index={index}
+              reorder={reorder}
               depth={0}
               expanded={expanded.has(folder.id)}
               onToggle={() => toggle(folder.id)}
@@ -258,13 +287,13 @@ export function FolderTree({
         <RootZone>
           <SortableContext
             items={feedsIn(null).map((s) => `feed:${s.subscriptionId}`)}
-            strategy={verticalListSortingStrategy}
+            strategy={strategy}
           >
-            {feedsIn(null).map((sub, index) => (
+            {feedsIn(null).map((sub) => (
               <FeedNode
                 key={sub.subscriptionId}
                 sub={sub}
-                index={index}
+                reorder={reorder}
                 depth={0}
                 isActive={activeFeedId === sub.feedId}
                 onSelect={() => onSelectFeed(sub.feedId)}
@@ -328,7 +357,8 @@ function RootZone({ children }: { children: React.ReactNode }) {
 
 interface FolderNodeProps {
   folder: FolderRow;
-  index: number;
+  /** Manual order: a drop reorders. Otherwise it only moves (#27). */
+  reorder: boolean;
   depth: number;
   expanded: boolean;
   onToggle: () => void;
@@ -355,16 +385,16 @@ interface FolderNodeProps {
 }
 
 function FolderNode(props: FolderNodeProps) {
-  const { folder, index, depth, expanded, editing } = props;
+  const { folder, reorder, depth, expanded, editing } = props;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: `folder:${folder.id}`,
     data: {
       type: 'folder',
       folderId: folder.id,
       parentId: folder.parentId,
-      index,
     } satisfies DragData,
   });
+  const strategy = reorder ? verticalListSortingStrategy : noShift;
 
   const isEditing = editing?.kind === 'folder' && editing.id === folder.id;
 
@@ -394,7 +424,7 @@ function FolderNode(props: FolderNodeProps) {
           {...listeners}
           className="cursor-grab rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label={`Drag folder ${folder.name}`}
-          title={`Drag to reorder ${folder.name}`}
+          title={reorder ? `Drag to reorder or move ${folder.name}` : `Drag to move ${folder.name}`}
         >
           <Folder className="size-4 shrink-0 text-muted-foreground" />
         </span>
@@ -439,14 +469,13 @@ function FolderNode(props: FolderNodeProps) {
         <FolderContents folderId={folder.id}>
           <SortableContext
             items={props.childFolders.map((f) => `folder:${f.id}`)}
-            strategy={verticalListSortingStrategy}
+            strategy={strategy}
           >
-            {props.childFolders.map((child, childIndex) => (
+            {props.childFolders.map((child) => (
               <FolderNode
                 {...props}
                 key={child.id}
                 folder={child}
-                index={childIndex}
                 depth={depth + 1}
                 expanded={props.expandedSet.has(child.id)}
                 onToggle={() => props.onToggleChild(child.id)}
@@ -458,13 +487,13 @@ function FolderNode(props: FolderNodeProps) {
 
           <SortableContext
             items={props.feeds.map((s) => `feed:${s.subscriptionId}`)}
-            strategy={verticalListSortingStrategy}
+            strategy={strategy}
           >
-            {props.feeds.map((sub, feedIndex) => (
+            {props.feeds.map((sub) => (
               <FeedNode
                 key={sub.subscriptionId}
                 sub={sub}
-                index={feedIndex}
+                reorder={reorder}
                 depth={depth + 1}
                 isActive={props.activeFeedId === sub.feedId}
                 onSelect={() => props.onSelectFeed(sub.feedId)}
@@ -503,7 +532,7 @@ function FolderContents({ folderId, children }: { folderId: string; children: Re
 
 interface FeedNodeProps {
   sub: SubscriptionRow;
-  index: number;
+  reorder: boolean;
   depth: number;
   isActive: boolean;
   onSelect: () => void;
@@ -519,7 +548,7 @@ interface FeedNodeProps {
 
 function FeedNode({
   sub,
-  index,
+  reorder,
   depth,
   isActive,
   onSelect,
@@ -539,7 +568,6 @@ function FeedNode({
         type: 'feed',
         subscriptionId: sub.subscriptionId,
         folderId: sub.folderId,
-        index,
       } satisfies DragData,
     });
 
@@ -591,7 +619,7 @@ function FeedNode({
         {...listeners}
         className="shrink-0 cursor-grab rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         aria-label={`Drag ${label}`}
-        title={`Drag to reorder or move ${label}`}
+        title={reorder ? `Drag to reorder or move ${label}` : `Drag to move ${label} to another folder`}
       >
         {sub.faviconUrl && sub.faviconUrl !== failedSrc ? (
           <img

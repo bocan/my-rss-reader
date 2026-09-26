@@ -7,6 +7,7 @@ import type {
 } from '@rss/shared';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { api } from './api';
+import { placeAt } from './feed-order';
 import { notify } from './notify';
 
 export interface FolderRow {
@@ -105,9 +106,22 @@ export function useUpdateFolder() {
     }) => api<FolderRow>(`/folders/${id}`, { method: 'PATCH', body }),
     onMutate: async ({ id, ...patch }): Promise<TreeCtx> => {
       const ctx = await snapshotTree(qc);
-      qc.setQueryData<FoldersData>(['folders'], (d) =>
-        d ? { items: d.items.map((f) => (f.id === id ? { ...f, ...patch } : f)) } : d,
-      );
+      const moves = patch.parentId !== undefined || patch.position !== undefined;
+      qc.setQueryData<FoldersData>(['folders'], (d) => {
+        if (!d) return d;
+        if (!moves) return { items: d.items.map((f) => (f.id === id ? { ...f, ...patch } : f)) };
+        // Mirror the server's placement, so manual order (#27) shows the drop at once.
+        const parentId =
+          patch.parentId !== undefined ? patch.parentId : d.items.find((f) => f.id === id)?.parentId;
+        return {
+          items: placeAt(d.items, {
+            isMoved: (f) => f.id === id,
+            inScope: (f) => f.parentId === parentId,
+            index: patch.position,
+            move: (f) => ({ ...f, ...patch }),
+          }),
+        };
+      });
       return ctx;
     },
     onError: (_e, _v, ctx) => restoreTree(qc, ctx),
@@ -168,30 +182,34 @@ export function useUpdateSubscription({ inlineError = false } = {}) {
     }) => api<SubscriptionRow>(`/feeds/${id}`, { method: 'PATCH', body }),
     onMutate: async ({ id, ...patch }): Promise<TreeCtx> => {
       const ctx = await snapshotTree(qc);
-      qc.setQueryData<FeedsData>(['feeds'], (d) =>
-        d
-          ? {
-              items: d.items.map((s) =>
-                s.subscriptionId === id
-                  ? {
-                      ...s,
-                      ...(patch.folderId !== undefined ? { folderId: patch.folderId } : {}),
-                      ...(patch.title !== undefined ? { customTitle: patch.title } : {}),
-                      ...(patch.position !== undefined ? { position: patch.position } : {}),
-                      ...(patch.viewMode !== undefined ? { viewMode: patch.viewMode } : {}),
-                      ...(patch.articleView !== undefined ? { articleView: patch.articleView } : {}),
-                      ...(patch.hideFromAll !== undefined ? { hideFromAll: patch.hideFromAll } : {}),
-                      ...(patch.inBlogroll !== undefined ? { inBlogroll: patch.inBlogroll } : {}),
-                      ...(patch.attention !== undefined ? { attention: patch.attention } : {}),
-                      ...(patch.fetchIntervalSec !== undefined
-                        ? { fetchIntervalSec: patch.fetchIntervalSec }
-                        : {}),
-                    }
-                  : s,
-              ),
-            }
-          : d,
-      );
+      const apply = (s: SubscriptionRow): SubscriptionRow => ({
+        ...s,
+        ...(patch.folderId !== undefined ? { folderId: patch.folderId } : {}),
+        ...(patch.title !== undefined ? { customTitle: patch.title } : {}),
+        ...(patch.viewMode !== undefined ? { viewMode: patch.viewMode } : {}),
+        ...(patch.articleView !== undefined ? { articleView: patch.articleView } : {}),
+        ...(patch.hideFromAll !== undefined ? { hideFromAll: patch.hideFromAll } : {}),
+        ...(patch.inBlogroll !== undefined ? { inBlogroll: patch.inBlogroll } : {}),
+        ...(patch.attention !== undefined ? { attention: patch.attention } : {}),
+        ...(patch.fetchIntervalSec !== undefined ? { fetchIntervalSec: patch.fetchIntervalSec } : {}),
+      });
+      qc.setQueryData<FeedsData>(['feeds'], (d) => {
+        if (!d) return d;
+        const current = d.items.find((s) => s.subscriptionId === id);
+        const folderId = patch.folderId !== undefined ? patch.folderId : current?.folderId;
+        // Mirror the server: only a move re-places the row (#27).
+        if (current && (folderId !== current.folderId || patch.position !== undefined)) {
+          return {
+            items: placeAt(d.items, {
+              isMoved: (s) => s.subscriptionId === id,
+              inScope: (s) => s.folderId === folderId,
+              index: patch.position,
+              move: apply,
+            }),
+          };
+        }
+        return { items: d.items.map((s) => (s.subscriptionId === id ? apply(s) : s)) };
+      });
       return ctx;
     },
     onError: (_e, _v, ctx) => restoreTree(qc, ctx),

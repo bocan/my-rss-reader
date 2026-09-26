@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import type { FeedSort } from '@/lib/feed-order';
 import type { SubscriptionRow } from '@/lib/folders';
 import { FolderTree } from './folder-tree';
 
@@ -30,7 +31,7 @@ const sub: SubscriptionRow = {
   unreadCount: 3,
 };
 
-function renderTree() {
+function renderTree(sort: FeedSort = 'name') {
   const qc = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
   qc.setQueryData(['folders'], { items: [] });
   qc.setQueryData(['feeds'], { items: [sub] });
@@ -40,11 +41,29 @@ function renderTree() {
         onSelectFeed={vi.fn()}
         onSelectFolder={vi.fn()}
         countByFeed={new Map([['f1', 3]])}
-        sort="name"
+        sort={sort}
       />
     </QueryClientProvider>,
   );
 }
+
+// #27: the drag handle says what a drop will do in each sort mode.
+
+test('only manual order offers "reorder" on the drag handle', () => {
+  renderTree('name');
+  expect(screen.getByLabelText('Drag Dave Rupert')).toHaveAttribute(
+    'title',
+    'Drag to move Dave Rupert to another folder',
+  );
+});
+
+test('manual order says a drag reorders', () => {
+  renderTree('manual');
+  expect(screen.getByLabelText('Drag Dave Rupert')).toHaveAttribute(
+    'title',
+    'Drag to reorder or move Dave Rupert',
+  );
+});
 
 test('"Mark all read" fires even when the pointer moves a few px during the click', () => {
   renderTree();
