@@ -7,6 +7,7 @@ import { notify } from '@/lib/notify';
 import { ApiRequestError } from '@/lib/api';
 import { useSubscribe } from '@/lib/feeds';
 import { useCreateFolder, useFolders } from '@/lib/folders';
+import { isSubscribableUrl, normalizeSubscribeInput } from '@/lib/subscribe-input';
 import { cn } from '@/lib/utils';
 
 interface SubscribeDialogProps {
@@ -93,7 +94,14 @@ export function SubscribeDialog({ open, onOpenChange, onSubscribed }: SubscribeD
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setCandidates(null);
-    void submit(url.trim());
+    // Handles and bare domains become URLs here (SPEC-023). The server then
+    // finds the feed, including a Mastodon or Bluesky profile's own.
+    const target = normalizeSubscribeInput(url);
+    if (!isSubscribableUrl(target)) {
+      setError('Enter a web address, a feed address, or a handle such as @user@mastodon.social.');
+      return;
+    }
+    void submit(target);
   }
 
   const busy = subscribe.isPending || createFolder.isPending;
@@ -106,16 +114,32 @@ export function SubscribeDialog({ open, onOpenChange, onSubscribed }: SubscribeD
         </DialogHeader>
 
         <form onSubmit={onSubmit} className="space-y-3">
-          <input
-            autoFocus
-            type="url"
-            required
-            aria-label="Site or feed URL"
-            placeholder="https://example.com or a feed URL"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            className={inputClass}
-          />
+          <div className="space-y-1">
+            {/* Text, not type="url": the browser would refuse @user@host and
+                example.com before onSubmit can turn them into URLs. */}
+            <input
+              autoFocus
+              type="text"
+              inputMode="url"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              required
+              aria-label="Site, feed, or profile URL"
+              aria-describedby="subscribe-hint"
+              placeholder="Site, feed, or profile URL"
+              value={url}
+              onChange={(e) => {
+                setUrl(e.target.value);
+                setError(null);
+              }}
+              className={inputClass}
+            />
+            <p id="subscribe-hint" className="text-xs text-muted-foreground">
+              Works with blogs, podcasts, YouTube channels, Mastodon and Bluesky profiles
+              (@user@instance works too).
+            </p>
+          </div>
 
           <label className="block space-y-1">
             <span className="text-sm">Add to folder</span>

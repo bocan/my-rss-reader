@@ -35,7 +35,9 @@ const {
   feedArticleRows,
   normalizeFeedUrl,
   resolveFavicon,
+  socialFeedProbes,
 } = await import('./feed-fetch.js');
+const { request } = await import('undici');
 
 const RSS = (title = 'My Feed') =>
   `<?xml version="1.0"?><rss version="2.0"><channel><title>${title}</title>` +
@@ -107,6 +109,122 @@ describe('discoverFeedCandidates', () => {
   test('returns empty for an unreachable host (no throw)', async () => {
     const out = await discoverFeedCandidates('https://down.example/');
     expect(out).toEqual([]);
+  });
+});
+
+// SPEC-023: social profiles are feeds too.
+describe('socialFeedProbes', () => {
+  test.each([
+    ['https://bsky.app/profile/somebody.bsky.social', 'https://bsky.app/profile/somebody.bsky.social/rss'],
+    ['https://bsky.app/profile/somebody.bsky.social/', 'https://bsky.app/profile/somebody.bsky.social/rss'],
+    [
+      'https://bsky.app/profile/did:plc:z72i7hdynmk6r22z27h6tvur',
+      'https://bsky.app/profile/did:plc:z72i7hdynmk6r22z27h6tvur/rss',
+    ],
+    ['https://hachyderm.io/@someone', 'https://hachyderm.io/@someone.rss'],
+    ['https://hachyderm.io/@someone/', 'https://hachyderm.io/@someone.rss'],
+    ['https://Social.Example.ORG/@Some_One', 'https://social.example.org/@Some_One.rss'],
+    // Medium serves its own feed path; its profile page is 403 to non-browsers.
+    ['https://medium.com/@writer', 'https://medium.com/feed/@writer'],
+    ['https://www.medium.com/@writer/', 'https://medium.com/feed/@writer'],
+  ])('%s -> %s', (input, probe) => {
+    expect(socialFeedProbes(input)).toEqual([probe]);
+  });
+
+  test.each([
+    'https://hachyderm.io/@someone/posts',
+    'https://hachyderm.io/@someone@mastodon.social',
+    'https://bsky.app/profile/x/feed',
+    'https://bsky.app/profile/x/post/abc',
+    'https://bsky.app/',
+    'https://medium.com/some-publication',
+    'https://blog.example/',
+    'https://blog.example/about',
+    'ftp://host/@user',
+    'not a url',
+    '',
+  ])('no probe for %s', (input) => {
+    expect(socialFeedProbes(input)).toEqual([]);
+  });
+});
+
+describe('discoverFeedCandidates with social profiles', () => {
+  const requested = () => vi.mocked(request).mock.calls.map(([u]) => String(u));
+  // A block body: a function returned from beforeEach runs as a teardown.
+  beforeEach(() => {
+    vi.mocked(request).mockClear();
+  });
+
+  test('a Bluesky profile discovers exactly its /rss feed', async () => {
+    const feed = 'https://bsky.app/profile/somebody.bsky.social/rss';
+    responses.set(feed, { headers: { 'content-type': 'application/rss+xml' }, body: RSS('@somebody.bsky.social') });
+    const out = await discoverFeedCandidates('https://bsky.app/profile/somebody.bsky.social');
+    expect(out).toEqual([{ feedUrl: feed, title: '@somebody.bsky.social' }]);
+  });
+
+  test('a Mastodon profile discovers <profile>.rss with one request, and never fetches the HTML', async () => {
+    responses.set('https://hachyderm.io/@someone.rss', { body: RSS('Someone') });
+    responses.set('https://hachyderm.io/@someone', html('<html>big profile page</html>'));
+    const out = await discoverFeedCandidates('https://hachyderm.io/@someone');
+    expect(out).toEqual([{ feedUrl: 'https://hachyderm.io/@someone.rss', title: 'Someone' }]);
+    expect(requested()).toEqual(['https://hachyderm.io/@someone.rss']);
+  });
+
+  test('a /@user URL whose .rss 404s falls back to generic discovery', async () => {
+    responses.set('https://writing.example/@writer.rss', { statusCode: 404, body: 'Not found' });
+    responses.set(
+      'https://writing.example/@writer',
+      html('<link rel="alternate" type="application/rss+xml" title="RSS" href="https://writing.example/feed/@writer">'),
+    );
+    const out = await discoverFeedCandidates('https://writing.example/@writer');
+    expect(out).toEqual([{ feedUrl: 'https://writing.example/feed/@writer', title: 'RSS' }]);
+  });
+
+  test('a Medium profile finds medium.com/feed/@user, without the 403 profile page', async () => {
+    responses.set('https://medium.com/feed/@writer', { body: RSS('Stories by Writer on Medium') });
+    responses.set('https://medium.com/@writer', { statusCode: 403, body: '<html>blocked</html>' });
+    const out = await discoverFeedCandidates('https://medium.com/@writer');
+    expect(out).toEqual([
+      { feedUrl: 'https://medium.com/feed/@writer', title: 'Stories by Writer on Medium' },
+    ]);
+    expect(requested()).toEqual(['https://medium.com/feed/@writer']);
+  });
+
+  test('a probe that answers with HTML, not a feed, also falls back', async () => {
+    responses.set('https://misskey.example/@user.rss', html('<html>app shell</html>'));
+    responses.set(
+      'https://misskey.example/@user',
+      html('<link rel="alternate" type="application/atom+xml" href="/@user.atom">'),
+    );
+    const out = await discoverFeedCandidates('https://misskey.example/@user');
+    expect(out).toEqual([{ feedUrl: 'https://misskey.example/@user.atom', title: null }]);
+  });
+
+  test('a YouTube channel page resolves through its <link rel="alternate"> (regression pin)', async () => {
+    const page = 'https://www.youtube.com/@SomeChannel';
+    // The probe is tried first (the path is /@handle) and misses.
+    responses.set('https://www.youtube.com/@SomeChannel.rss', { statusCode: 404 });
+    responses.set(
+      page,
+      html(
+        '<html><head><link rel="alternate" type="application/rss+xml" title="RSS" ' +
+          'href="https://www.youtube.com/feeds/videos.xml?channel_id=UC123"></head></html>',
+      ),
+    );
+    const out = await discoverFeedCandidates(page);
+    expect(out).toEqual([
+      { feedUrl: 'https://www.youtube.com/feeds/videos.xml?channel_id=UC123', title: 'RSS' },
+    ]);
+  });
+
+  test('a YouTube /channel/ URL makes no probe at all', async () => {
+    const page = 'https://www.youtube.com/channel/UC123';
+    responses.set(
+      page,
+      html('<link rel="alternate" type="application/rss+xml" href="https://www.youtube.com/feeds/videos.xml?channel_id=UC123">'),
+    );
+    await discoverFeedCandidates(page);
+    expect(requested()[0]).toBe(page);
   });
 });
 
