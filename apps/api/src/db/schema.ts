@@ -80,6 +80,7 @@ export const userSettings = pgTable('user_settings', {
   defaultViewMode: text().notNull().default('cards'),
   defaultArticleView: text().notNull().default('auto'),
   markReadOnScroll: boolean().notNull().default(false),
+  markReadOnOpen: boolean().notNull().default(true),
   showUnreadOnly: boolean().notNull().default(false),
   updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });

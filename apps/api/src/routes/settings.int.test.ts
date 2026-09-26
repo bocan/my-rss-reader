@@ -60,6 +60,15 @@ test('PUT lazily creates the row, then upserts on the next call', async () => {
   expect(row2!.updatedAt.getTime()).toBeGreaterThan(firstUpdatedAt); // bumped
 });
 
+test('markReadOnOpen defaults on and persists when turned off (#24)', async () => {
+  const cookie = await loginAs(await seedUser());
+  expect((await getSettings(cookie)).json().markReadOnOpen).toBe(true);
+
+  expect((await putSettings(cookie, { markReadOnOpen: false })).json().markReadOnOpen).toBe(false);
+  expect((await getSettings(cookie)).json().markReadOnOpen).toBe(false);
+  expect((await putSettings(cookie, { markReadOnOpen: 'no' })).statusCode).toBe(400);
+});
+
 test('an empty PUT body is a no-op that still returns the settings', async () => {
   const cookie = await loginAs(await seedUser());
   await putSettings(cookie, { theme: 'daylight' });

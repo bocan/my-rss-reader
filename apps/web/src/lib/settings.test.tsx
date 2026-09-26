@@ -13,6 +13,7 @@ const SERVER: Settings = {
   defaultViewMode: 'magazine',
   defaultArticleView: 'readable',
   markReadOnScroll: true,
+  markReadOnOpen: true,
   showUnreadOnly: false,
 };
 

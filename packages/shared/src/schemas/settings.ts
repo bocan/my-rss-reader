@@ -7,6 +7,8 @@ export const settingsSchema = z.object({
   defaultViewMode: z.enum(VIEW_MODES),
   defaultArticleView: z.enum(DEFAULT_ARTICLE_VIEWS),
   markReadOnScroll: z.boolean(),
+  /** Mark an article read when it opens (true), or only by hand (#24). */
+  markReadOnOpen: z.boolean(),
   showUnreadOnly: z.boolean(),
 });
 export type Settings = z.infer<typeof settingsSchema>;
@@ -25,5 +27,6 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultViewMode: 'cards',
   defaultArticleView: 'auto',
   markReadOnScroll: false,
+  markReadOnOpen: true,
   showUnreadOnly: false,
 };

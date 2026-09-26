@@ -1,6 +1,6 @@
 import { ARTICLE_VIEWS, type ArticleDetail, type ArticleView } from '@rss/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, ExternalLink, Rss, Star } from 'lucide-react';
+import { Download, ExternalLink, Mail, MailOpen, Rss, Star } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ARTICLE_VIEW_LABELS, resolveAutoView } from '@/lib/article-view';
 import { Button } from '@/components/ui/button';
@@ -80,16 +80,24 @@ export function ReadingPane({
     onSuccess: (data) => queryClient.setQueryData(['article', articleId], data),
   });
 
-  // Mark read on open, exactly once per article (SPEC-011 can swap this seam for
-  // a scroll-based trigger later). The ref guards against re-render re-fires.
+  // Mark read on open, exactly once per opening, unless the user marks by hand
+  // (settings.markReadOnOpen, #24). The ref guards against re-render re-fires,
+  // so an article marked unread here stays unread while it stays open; the
+  // pane is keyed by article, so opening it again starts fresh.
   const toggle = useToggleArticleState(articleId);
   const markedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (article && !article.read && !markedRef.current.has(article.id)) {
-      markedRef.current.add(article.id);
-      toggle.mutate({ read: true });
-    }
-  }, [article, toggle]);
+    if (!settings.markReadOnOpen || !article || markedRef.current.has(article.id)) return;
+    // Recorded on first sight even when already read, so a later Mark unread
+    // (button, u, m) is never undone by this effect.
+    markedRef.current.add(article.id);
+    if (!article.read) toggle.mutate({ read: true });
+  }, [article, toggle, settings.markReadOnOpen]);
+  const toggleRead = () => {
+    if (!article) return;
+    markedRef.current.add(article.id);
+    toggle.mutate({ read: !article.read });
+  };
 
   if (articleQuery.isLoading) {
     return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
@@ -171,6 +179,15 @@ export function ReadingPane({
             )}
           </div>
           <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={article.read ? 'Mark unread' : 'Mark read'}
+              title={article.read ? 'Read. Mark unread (u)' : 'Unread. Mark read (m)'}
+              onClick={toggleRead}
+            >
+              {article.read ? <MailOpen className="size-4" /> : <Mail className="size-4 text-primary" />}
+            </Button>
             <SharePopover key={article.id} article={article} />
             <Button
               variant="ghost"

@@ -534,6 +534,12 @@ export function SettingsPage() {
             onChange={(v) => set('defaultArticleView', v)}
           />
           <Toggle
+            label="Mark read when opened"
+            hint="Off: articles stay unread until you mark them (the envelope button, m, or u)."
+            checked={settings.markReadOnOpen}
+            onChange={(v) => set('markReadOnOpen', v)}
+          />
+          <Toggle
             label="Mark read on scroll"
             hint="Mark an article read when it scrolls off the top of the list."
             checked={settings.markReadOnScroll}

@@ -20,6 +20,7 @@ async function loadSettings(userId: string): Promise<Settings> {
     defaultViewMode: row.defaultViewMode as Settings['defaultViewMode'],
     defaultArticleView: row.defaultArticleView as Settings['defaultArticleView'],
     markReadOnScroll: row.markReadOnScroll,
+    markReadOnOpen: row.markReadOnOpen,
     showUnreadOnly: row.showUnreadOnly,
   };
 }
