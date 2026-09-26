@@ -55,6 +55,8 @@ test('orders the switcher Feed, Extracted, Web', () => {
     .map((b) => b.textContent)
     .filter((t) => ['Feed', 'Extracted', 'Web'].includes(t ?? ''));
   expect(names).toEqual(['Feed', 'Extracted', 'Web']);
+  // #48: the same name as in Settings and the feed dialog.
+  expect(screen.getByRole('group', { name: 'Article view' })).toBeInTheDocument();
 });
 
 test('auto picks Feed for a #fragment item and says it chose', () => {

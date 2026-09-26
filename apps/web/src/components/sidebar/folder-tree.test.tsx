@@ -335,6 +335,13 @@ describe('feed filter and collapse all', () => {
   });
 });
 
+// #48: double-click renames a feed, as it does a folder.
+test('double-click on a feed starts a rename', () => {
+  renderTree();
+  fireEvent.doubleClick(screen.getByRole('button', { name: 'Dave Rupert' }));
+  expect(screen.getByDisplayValue('Dave Rupert')).toHaveFocus();
+});
+
 // #25: folder badges.
 
 test('folders show their unread count, collapsed or not, and hide a zero', () => {
@@ -429,6 +436,15 @@ describe('subfolders', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => expect(sent('POST')).toBeDefined());
     expect(sent('POST')).toEqual({ url: '/api/folders', body: { name: 'Rust', parentId: 'd1' } });
+  });
+
+  // #48: a folder has an Edit dialog, as a feed does.
+  test('"Edit…" in the folder menu opens the folder settings', async () => {
+    renderFolders();
+    openMenu('News');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Edit…' }));
+    expect(await screen.findByRole('dialog', { name: 'Folder settings' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('News');
   });
 
   test('a subfolder cannot have its own subfolder', () => {

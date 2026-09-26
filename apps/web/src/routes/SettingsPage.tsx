@@ -10,7 +10,6 @@ import {
   type Settings,
   type ShareVisibility,
   type UpdateProfileInput,
-  type ViewMode,
 } from '@rss/shared';
 import { ChevronLeft, Download, Smartphone } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
@@ -30,6 +29,7 @@ import { READING_SIZE_LABELS, READING_WIDTH_LABELS } from '@/lib/reading-format'
 import { useSettings } from '@/lib/settings';
 import { SORT_LABELS } from '@/lib/sort-order';
 import { cn } from '@/lib/utils';
+import { VIEW_LABELS } from '@/lib/view-labels';
 
 const inputClass =
   'h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
@@ -193,11 +193,6 @@ function AccountSection() {
   );
 }
 
-const VIEW_LABEL: Record<ViewMode, string> = {
-  list: 'List',
-  cards: 'Cards',
-  magazine: 'Magazine',
-};
 const DENSITY_LABEL: Record<Density, string> = {
   comfortable: 'Comfortable',
   compact: 'Compact',
@@ -517,7 +512,7 @@ export function SettingsPage() {
             label="Default list view"
             value={settings.defaultViewMode}
             options={VIEW_MODES}
-            labels={VIEW_LABEL}
+            labels={VIEW_LABELS}
             onChange={(v) => set('defaultViewMode', v)}
           />
           <ResetViewsRow />

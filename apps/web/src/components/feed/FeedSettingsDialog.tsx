@@ -25,12 +25,12 @@ import { ARTICLE_VIEW_LABELS } from '@/lib/article-view';
 import { ATTENTION_EFFECTS, ATTENTION_LABELS } from '@/lib/attention';
 import { useSession } from '@/lib/auth';
 import { useProfile } from '@/lib/profile';
+import { useSettings } from '@/lib/settings';
 import { cn } from '@/lib/utils';
+import { VIEW_LABELS } from '@/lib/view-labels';
 
 const inputClass =
   'h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
-
-const VIEW_LABEL: Record<ViewMode, string> = { list: 'List', cards: 'Cards', magazine: 'Magazine' };
 
 /** Consolidated feed editor (SPEC-018): URL, rename, folder, view overrides,
  *  hide, and the shared poll interval, all applied by one Save. */
@@ -46,6 +46,7 @@ export function FeedSettingsDialog({
   const { data: foldersData } = useFolders();
   const folders = foldersData?.items ?? [];
   const { data: profile } = useProfile();
+  const { settings } = useSettings();
   const update = useUpdateSubscription({ inlineError: true });
   const changeUrl = useChangeFeedUrl();
 
@@ -183,10 +184,10 @@ export function FeedSettingsDialog({
                 value={viewMode}
                 onChange={(e) => setViewMode(e.target.value)}
               >
-                <option value="">Default</option>
+                <option value="">Use default ({VIEW_LABELS[settings.defaultViewMode]})</option>
                 {VIEW_MODES.map((v) => (
                   <option key={v} value={v}>
-                    {VIEW_LABEL[v]}
+                    {VIEW_LABELS[v]}
                   </option>
                 ))}
               </select>
@@ -195,13 +196,16 @@ export function FeedSettingsDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <label className="block space-y-1">
-              <span className="text-sm">Opens in</span>
+              {/* #48: "Article view" everywhere: here, in Settings and on the pane. */}
+              <span className="text-sm">Article view</span>
               <select
                 className={inputClass}
                 value={articleView}
                 onChange={(e) => setArticleView(e.target.value)}
               >
-                <option value="">Default</option>
+                <option value="">
+                  Use default ({ARTICLE_VIEW_LABELS[settings.defaultArticleView]})
+                </option>
                 {ARTICLE_VIEWS.map((v) => (
                   <option key={v} value={v}>
                     {ARTICLE_VIEW_LABELS[v]}

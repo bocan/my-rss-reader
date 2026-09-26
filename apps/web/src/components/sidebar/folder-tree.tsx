@@ -31,6 +31,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { describeFeedError } from '@rss/shared';
 import { FeedProblem } from '@/components/feed/FeedProblem';
 import { FeedSettingsDialog } from '@/components/feed/FeedSettingsDialog';
+import { FolderSettingsDialog } from '@/components/sidebar/FolderSettingsDialog';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -182,6 +183,13 @@ export function FolderTree({
     // Let the menu finish closing (and its own focus handling) before the dialog
     // mounts, so the dialog's focus trap is not fought by the closing menu.
     setTimeout(() => setSettingsSub(sub), 0);
+  };
+  const [settingsFolder, setSettingsFolder] = useState<FolderRow | null>(null);
+  const openFolderSettings = (folder: FolderRow) => {
+    settingsTrigger.current = document.querySelector<HTMLElement>(
+      '[data-state="open"][aria-haspopup="menu"]',
+    );
+    setTimeout(() => setSettingsFolder(folder), 0);
   };
 
   // Feeds follow the sort mode (by name, by unread count, or manual). Folders
@@ -358,6 +366,7 @@ export function FolderTree({
                 }
               }}
               onMarkRead={(f) => markAll({ folderId: f.id }, f.name)}
+              onEdit={openFolderSettings}
               moveTargets={allRoots}
               hasChildren={hasChildren}
               onMove={(id, parentId) => updateFolder.mutate({ id, parentId })}
@@ -430,6 +439,13 @@ export function FolderTree({
           sub={settingsSub}
           restoreFocusRef={settingsTrigger}
           onOpenChange={(open) => !open && setSettingsSub(null)}
+        />
+      )}
+      {settingsFolder && (
+        <FolderSettingsDialog
+          folder={settingsFolder}
+          restoreFocusRef={settingsTrigger}
+          onOpenChange={(open) => !open && setSettingsFolder(null)}
         />
       )}
     </DndContext>
@@ -517,6 +533,8 @@ interface FolderNodeProps {
   submitEdit: (value: string) => void;
   onDelete: (folder: FolderRow) => void;
   onMarkRead: (folder: FolderRow) => void;
+  /** Open the folder settings dialog (#48). */
+  onEdit: (folder: FolderRow) => void;
   /** Root folders, for "Move to". */
   moveTargets: FolderRow[];
   hasChildren: (folderId: string) => boolean;
@@ -609,6 +627,7 @@ function FolderNode(props: FolderNodeProps) {
         <RowMenu label={`Folder actions for ${folder.name}`}>
           {(afterClose) => (
             <>
+              <DropdownMenuItem onSelect={() => props.onEdit(folder)}>Edit…</DropdownMenuItem>
               <DropdownMenuItem
                 onSelect={() => afterClose(() => props.setEditing({ kind: 'folder', id: folder.id }))}
               >
@@ -826,6 +845,8 @@ function FeedNode({
         <>
           <button
             onClick={onSelect}
+            // As on a folder (#48).
+            onDoubleClick={onRename}
             className={cn(
               'flex min-w-0 flex-1 items-center gap-1.5 truncate text-left',
               // Firehose feeds (SPEC-022) sit back; precious ones lean in.

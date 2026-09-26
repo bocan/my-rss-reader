@@ -1,3 +1,4 @@
+import { DEFAULT_SETTINGS } from '@rss/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
@@ -45,6 +46,7 @@ function renderDialog(row = sub, onOpenChange = vi.fn(), role: 'admin' | 'user' 
   qc.setQueryData(['folders'], { items: [] });
   qc.setQueryData(['feeds'], { items: [row] });
   qc.setQueryData(['profile'], { blogrollEnabled: false });
+  qc.setQueryData(['settings'], DEFAULT_SETTINGS);
   render(
     <QueryClientProvider client={qc}>
       <FeedSettingsDialog sub={row} onOpenChange={onOpenChange} />
@@ -192,6 +194,24 @@ test('a non-admin sees the interval read-only, and Save never sends it', async (
   fireEvent.click(screen.getByRole('button', { name: 'Save' }));
   await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
   expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).not.toHaveProperty('fetchIntervalSec');
+});
+
+// #48: one name, "Article view", and the empty choices name the default.
+test('the view selects say which default they use', () => {
+  const qc = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
+  qc.setQueryData(['auth', 'me'], { id: 'u1', role: 'user' });
+  qc.setQueryData(['folders'], { items: [] });
+  qc.setQueryData(['profile'], { blogrollEnabled: false });
+  qc.setQueryData(['settings'], { ...DEFAULT_SETTINGS, defaultArticleView: 'web', defaultViewMode: 'cards' });
+  render(
+    <QueryClientProvider client={qc}>
+      <FeedSettingsDialog sub={sub} onOpenChange={vi.fn()} />
+    </QueryClientProvider>,
+  );
+  const articleView = screen.getByRole('combobox', { name: 'Article view' });
+  expect(articleView).toHaveDisplayValue('Use default (Web)');
+  expect(screen.getByRole('combobox', { name: 'List view' })).toHaveDisplayValue('Use default (Cards)');
+  expect(screen.queryByText('Opens in')).toBeNull();
 });
 
 test('a feed hidden from All items shows the box unticked', () => {

@@ -157,7 +157,7 @@ export function ReadingPane({
 
           <div className="mt-3 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <div className="inline-flex rounded-md border p-0.5">
+              <div className="inline-flex rounded-md border p-0.5" role="group" aria-label="Article view">
                 {ARTICLE_VIEWS.map((v) => (
                   <button
                     key={v}
