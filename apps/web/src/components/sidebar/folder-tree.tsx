@@ -1,7 +1,8 @@
 import {
   DndContext,
   KeyboardSensor,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useDroppable,
   useSensor,
   useSensors,
@@ -48,6 +49,16 @@ type DragData =
   | { type: 'feed'; subscriptionId: string; folderId: string | null; index: number }
   | { type: 'folder'; folderId: string; parentId: string | null; index: number }
   | { type: 'dropzone'; folderId: string | null };
+
+/**
+ * When a press becomes a drag (#21). A mouse drags after 4 px of travel. A
+ * touch must be held still (5 px tolerance) for 250 ms first, so a swipe
+ * scrolls the list and never picks a row up.
+ */
+const DRAG_ACTIVATION = {
+  mouse: { distance: 4 },
+  touch: { delay: 250, tolerance: 5 },
+} as const;
 
 interface FolderTreeProps {
   activeFeedId?: string;
@@ -128,7 +139,8 @@ export function FolderTree({
   const toggle = toggleFolderExpanded;
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(MouseSensor, { activationConstraint: DRAG_ACTIVATION.mouse }),
+    useSensor(TouchSensor, { activationConstraint: DRAG_ACTIVATION.touch }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
@@ -544,8 +556,9 @@ function FeedNode({
         isDragging && 'opacity-50',
       )}
       title={sub.feedUrl}
-      // The whole row is a pointer drag surface: activation needs 4px of
-      // travel (sensor config above), so plain clicks still select/open.
+      // The whole row is a drag surface: a mouse needs 4px of travel and a
+      // touch a 250ms hold (DRAG_ACTIVATION), so clicks, taps, and swipes to
+      // scroll still select/open/scroll.
       // Suppressed while renaming, or selecting text in the inline input
       // would drag the row. Keyboard drag stays on the icon handle: it is
       // the registered activator node, so Enter/Space bubbling up from the
@@ -630,8 +643,12 @@ function FeedNode({
   );
 }
 
-/** Actions menu. Visible on hover AND on keyboard focus, never hover-only. */
+/**
+ * Actions menu. Visible on hover, on keyboard focus, and always on touch
+ * screens, which have no hover (#21). Never hover-only.
+ */
 function RowMenu({ label, children }: { label: string; children: React.ReactNode }) {
+  const stop = (e: React.SyntheticEvent) => e.stopPropagation();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -639,16 +656,21 @@ function RowMenu({ label, children }: { label: string; children: React.ReactNode
           variant="ghost"
           size="icon"
           aria-label={label}
-          className="size-6 shrink-0 opacity-0 focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+          className="size-6 shrink-0 opacity-0 focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 pointer-coarse:size-8 pointer-coarse:opacity-100"
         >
           <MoreHorizontal className="size-3.5" />
         </Button>
       </DropdownMenuTrigger>
-      {/* The menu is portalled, but React still bubbles its pointerdown up to
-          the row's drag listeners. A few px of travel during the click then
-          starts a drag, and dnd-kit swallows the click, so the item never
-          fires. Keep menu presses out of the drag sensor. */}
-      <DropdownMenuContent align="end" onPointerDown={(e) => e.stopPropagation()}>
+      {/* The menu is portalled, but React still bubbles its presses up to the
+          row's drag listeners. A few px of travel during the click then starts
+          a drag, and dnd-kit swallows the click, so the item never fires. Keep
+          menu presses out of the mouse and touch drag sensors. */}
+      <DropdownMenuContent
+        align="end"
+        onPointerDown={stop}
+        onMouseDown={stop}
+        onTouchStart={stop}
+      >
         {children}
       </DropdownMenuContent>
     </DropdownMenu>
