@@ -72,6 +72,7 @@ import { useSession } from '@/lib/auth';
 import { useCommunityShares } from '@/lib/community';
 import { ATTENTION_LABELS } from '@/lib/attention';
 import { emptyReason, nextUnreadFeed } from '@/lib/empty-state';
+import { unreadForScope } from '@/lib/scope-count';
 import { isFeedSort, orderedVisibleFeedIds, type FeedSort } from '@/lib/feed-order';
 import {
   problemFeeds,
@@ -379,11 +380,14 @@ export function ReaderPage() {
       }}
     />
   ) : undefined;
-  const unreadForView = filters.feedId
-    ? (countByFeed.get(filters.feedId) ?? 0)
-    : filters.folderId
-      ? (counts?.folders.find((f) => f.folderId === filters.folderId)?.unreadCount ?? 0)
-      : (counts?.total ?? 0);
+  // null: this scope has no unread count (Starred, Shared).
+  const unreadForView = unreadForScope(filters, {
+    byFeed: countByFeed,
+    byFolder: countByFolder,
+    total: counts?.total ?? 0,
+    mustRead: preciousUnread,
+  });
+  const hasUnread = (unreadForView ?? 0) > 0;
   const canMarkAll = !filters.starred && !filters.shared && !filters.attention && !communityOpen;
   const markAll = useMarkAllRead();
   // Undo on the toast replaces the old "more than 20?" confirm (#26).
@@ -448,6 +452,7 @@ export function ReaderPage() {
     const feedId = feedOrder[at === -1 && delta < 0 ? feedOrder.length - 1 : next];
     if (feedId) {
       clearArticle(); // same reset as clicking a feed: don't strand the open article
+      setCommunityOpen(false); // else the header still says "Community" (#39)
       endSearch();
       setFilters({ feedId, sort: 'newest' });
     }
@@ -475,7 +480,7 @@ export function ReaderPage() {
     markUnread: toggles.markUnread,
     toggleStar: toggles.toggleStar,
     toggleShared: toggles.toggleShared,
-    markAllRead: () => canMarkAll && unreadForView > 0 && markAllRead(),
+    markAllRead: () => canMarkAll && hasUnread && markAllRead(),
     refresh: () => {
       queryClient.invalidateQueries({ queryKey: ['articles'] });
       queryClient.invalidateQueries({ queryKey: ['counts'] });
@@ -683,7 +688,7 @@ export function ReaderPage() {
         {/* The scope stays in view while searching; the strip over the
             results says what the search covers (#33). */}
         {scopeLabel}
-        {unreadForView > 0 && !communityOpen && !filters.shared && (
+        {hasUnread && !communityOpen && (
           <span className="ml-2 text-xs font-normal text-muted-foreground">{unreadForView}</span>
         )}
         {/* #34: the filter is always in view, also on phones, where its
@@ -724,7 +729,7 @@ export function ReaderPage() {
             phoneSearchShown ? 'block w-full flex-1' : 'hidden',
           )}
         />
-        {canMarkAll && !isSearching && unreadForView > 0 && (
+        {canMarkAll && !isSearching && hasUnread && (
           <div className="hidden items-center sm:flex">
             <Button variant="ghost" size="sm" className="rounded-r-none pr-2" onClick={() => markAllRead()}>
               Mark all read
@@ -770,7 +775,7 @@ export function ReaderPage() {
   // the bar lives in AppShell's "More actions" menu (#22).
   const phoneMenu = (
     <>
-      {canMarkAll && !isSearching && unreadForView > 0 && (
+      {canMarkAll && !isSearching && hasUnread && (
         <>
           <DropdownMenuItem onSelect={() => markAllRead()}>Mark all read</DropdownMenuItem>
           {OLDER_THAN.map((o) => (
