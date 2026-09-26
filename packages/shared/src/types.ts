@@ -84,6 +84,12 @@ export function resolveTheme(setting: ThemeSetting, prefersDark: boolean): Theme
 export const ATTENTION_TIERS = ['firehose', 'normal', 'precious'] as const;
 export type AttentionTier = (typeof ATTENTION_TIERS)[number];
 
+/**
+ * Unread items on a firehose-tier subscription count as read after this many
+ * days (SPEC-022). Shared so the feed settings text names the same number.
+ */
+export const FIREHOSE_EXPIRY_DAYS = 14;
+
 /** WebSub subscriber states for a feed (SPEC-021). */
 export const WEBSUB_STATES = ['inactive', 'pending', 'active', 'denied'] as const;
 export type WebSubState = (typeof WEBSUB_STATES)[number];

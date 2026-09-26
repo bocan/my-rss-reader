@@ -70,6 +70,7 @@ import { useUnreadCounts } from '@/lib/articles';
 import { OLDER_THAN, olderThan, useMarkAllRead } from '@/lib/mark-all-read';
 import { useSession } from '@/lib/auth';
 import { useCommunityShares } from '@/lib/community';
+import { ATTENTION_LABELS } from '@/lib/attention';
 import { emptyReason, nextUnreadFeed } from '@/lib/empty-state';
 import { isFeedSort, orderedVisibleFeedIds, type FeedSort } from '@/lib/feed-order';
 import {
@@ -359,7 +360,7 @@ export function ReaderPage() {
       : filters.shared
         ? 'Shared'
         : filters.attention === 'precious'
-          ? 'Precious'
+          ? ATTENTION_LABELS.precious
           : filters.feedId
           ? (feedMeta[filters.feedId]?.name ?? 'Feed')
           : filters.folderId
@@ -545,7 +546,7 @@ export function ReaderPage() {
               }
             >
               <Gem className="size-4 text-primary" />
-              <span className="flex-1">Precious</span>
+              <span className="flex-1">{ATTENTION_LABELS.precious}</span>
               {preciousUnread > 0 && (
                 <span className="shrink-0 rounded-full bg-primary/15 px-1.5 py-0.5 text-xs font-medium tabular-nums text-primary">
                   {preciousUnread}

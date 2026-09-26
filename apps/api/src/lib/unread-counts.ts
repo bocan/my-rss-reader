@@ -1,13 +1,10 @@
+import { FIREHOSE_EXPIRY_DAYS } from '@rss/shared';
 import { sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
 
-/**
- * Unread items on a firehose-tier subscription quietly expire after this many
- * days (SPEC-022). Purely a query-time predicate: no state rows are ever
- * written, so the window is retroactive and reversible by re-tiering.
- * Interpolated as a bound parameter at every SQL site that uses it.
- */
-export const FIREHOSE_EXPIRY_DAYS = 14;
+// FIREHOSE_EXPIRY_DAYS (SPEC-022) is purely a query-time predicate: no state
+// rows are ever written, so the window is retroactive and reversible by
+// re-tiering. Interpolated as a bound parameter at every SQL site that uses it.
 
 /**
  * Per-feed unread counts for a user. A missing article_states row means unread,

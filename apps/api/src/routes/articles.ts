@@ -1,5 +1,6 @@
 import {
   articleQuerySchema,
+  FIREHOSE_EXPIRY_DAYS,
   markReadSchema,
   markUnreadSchema,
   newArticleCountQuerySchema,
@@ -23,7 +24,6 @@ import {
 } from '../lib/cursor.js';
 import { folderScopeIds, resolveSubscribedFeedIds } from '../lib/feed-scope.js';
 import { extractReadableHtml } from '../lib/readability.js';
-import { FIREHOSE_EXPIRY_DAYS } from '../lib/unread-counts.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

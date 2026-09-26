@@ -22,6 +22,7 @@ import {
   type SubscriptionRow,
 } from '@/lib/folders';
 import { ARTICLE_VIEW_LABELS } from '@/lib/article-view';
+import { ATTENTION_EFFECTS, ATTENTION_LABELS } from '@/lib/attention';
 import { useProfile } from '@/lib/profile';
 import { cn } from '@/lib/utils';
 
@@ -29,17 +30,6 @@ const inputClass =
   'h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
 const VIEW_LABEL: Record<ViewMode, string> = { list: 'List', cards: 'Cards', magazine: 'Magazine' };
-const ATTENTION_LABEL: Record<AttentionTier, string> = {
-  firehose: 'Firehose',
-  normal: 'Normal',
-  precious: 'Precious',
-};
-
-const ATTENTION_HINT: Record<AttentionTier, string> = {
-  firehose: 'No unread pressure: no badges, and items quietly expire after 14 days.',
-  normal: 'Counts and badges as usual.',
-  precious: 'Never miss a post: highlighted and pinned to the Precious shelf.',
-};
 
 /** Consolidated feed editor (SPEC-018): rename, folder, view overrides, hide,
  *  and the shared poll interval, saved in one PATCH. */
@@ -224,36 +214,43 @@ export function FeedSettingsDialog({
             </label>
           </div>
 
-          <label className="block space-y-1">
-            <span className="text-sm">Attention</span>
-            <select
-              className={inputClass}
-              value={attention}
-              onChange={(e) => setAttention(e.target.value as AttentionTier)}
-              title="How much unread pressure this feed may generate"
-            >
-              {ATTENTION_TIERS.map((tier) => (
-                <option key={tier} value={tier}>
-                  {ATTENTION_LABEL[tier]}
-                </option>
-              ))}
-            </select>
-            <span className="block text-xs text-muted-foreground">
-              {ATTENTION_HINT[attention]}
-            </span>
-          </label>
+          {/* #36: each level says what it does, next to "Show in All items",
+              which is a separate choice. */}
+          <fieldset className="space-y-2">
+            <legend className="text-sm">How much attention</legend>
+            {ATTENTION_TIERS.map((tier) => (
+              <label key={tier} className="flex items-start gap-2">
+                <input
+                  type="radio"
+                  name="attention"
+                  value={tier}
+                  checked={attention === tier}
+                  onChange={() => setAttention(tier)}
+                  className="mt-0.5 size-4 shrink-0 accent-primary"
+                />
+                <span>
+                  <span className="block text-sm">{ATTENTION_LABELS[tier]}</span>
+                  <span className="block text-xs text-muted-foreground">
+                    {ATTENTION_EFFECTS[tier]}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
 
           <label className="flex items-center justify-between gap-4">
             <span>
-              <span className="block text-sm">Hide from All Items</span>
+              <span className="block text-sm">Show in All items</span>
               <span className="block text-xs text-muted-foreground">
-                Keeps polling; still reachable by clicking the feed.
+                Off: this feed's articles are not in the All items list. The feed still updates,
+                and you read it from the sidebar. This is not the same as Skim, which keeps the
+                articles in All items but removes the count.
               </span>
             </span>
             <input
               type="checkbox"
-              checked={hideFromAll}
-              onChange={(e) => setHideFromAll(e.target.checked)}
+              checked={!hideFromAll}
+              onChange={(e) => setHideFromAll(!e.target.checked)}
               className="size-4 shrink-0 accent-primary"
             />
           </label>

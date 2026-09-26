@@ -758,7 +758,7 @@ function FeedNode({
               <span
                 className="size-1.5 shrink-0 rounded-full bg-primary"
                 aria-hidden="true"
-                title="Precious feed"
+                title="Must-read feed"
               />
             )}
             <span className="truncate">{label}</span>
