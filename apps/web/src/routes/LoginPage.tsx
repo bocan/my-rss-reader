@@ -97,6 +97,8 @@ export function LoginPage() {
                 type="password"
                 label="Password"
                 autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                // The server's rule (registerSchema), said before submit (#50).
+                {...(mode === 'register' ? { minLength: 8, hint: 'At least 8 characters.' } : {})}
               />
 
               {error && (
@@ -110,8 +112,13 @@ export function LoginPage() {
               </Button>
             </form>
 
-            {/* An invite link is register-only; hide the toggle to login-register. */}
-            {!inviteToken && (
+            {/* An invite link is register-only; hide the toggle to login-register.
+                On sign in, offer Register only when it can work (#50). */}
+            {!inviteToken && mode === 'login' && registrationMode === 'invite' ? (
+              <p className="mt-4 text-center text-sm text-muted-foreground">
+                Registration is by invite. Ask an admin for a link.
+              </p>
+            ) : !inviteToken && !(mode === 'login' && registrationMode === 'closed') && (
               <button
                 type="button"
                 className="mt-4 w-full text-center text-sm text-muted-foreground hover:text-foreground"
@@ -133,27 +140,43 @@ function Field({
   type = 'text',
   autoComplete,
   className,
+  minLength,
+  hint,
 }: {
   name: string;
   label: string;
   type?: string;
   autoComplete?: string;
   className?: string;
+  minLength?: number;
+  hint?: string;
 }) {
+  const hintId = hint ? `${name}-hint` : undefined;
   return (
-    <label className="block space-y-1">
-      <span className="text-sm font-medium">{label}</span>
-      <input
-        name={name}
-        type={type}
-        required
-        autoComplete={autoComplete}
-        className={cn(
-          'h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-          className,
-        )}
-      />
-    </label>
+    // The hint sits outside the label, so it describes the field and is not
+    // part of its name.
+    <div className="space-y-1">
+      <label className="block space-y-1">
+        <span className="text-sm font-medium">{label}</span>
+        <input
+          name={name}
+          type={type}
+          required
+          minLength={minLength}
+          aria-describedby={hintId}
+          autoComplete={autoComplete}
+          className={cn(
+            'h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            className,
+          )}
+        />
+      </label>
+      {hint && (
+        <p id={hintId} className="text-xs text-muted-foreground">
+          {hint}
+        </p>
+      )}
+    </div>
   );
 }
