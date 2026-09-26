@@ -93,10 +93,13 @@ test('POST /feeds/:id/refresh fetches that one feed and returns its new state', 
     expect(res.json()).toMatchObject({ subscriptionId: sub.id, lastError: null });
     expect(res.json().lastSuccessAt).not.toBeNull();
 
-    // Another user's subscription is not found.
+    // Another user's subscription is not found, and the feed is not fetched (#45).
+    const { request } = await import('undici');
+    const fetchesBefore = vi.mocked(request).mock.calls.length;
     const other = await loginAs(await seedUser());
     const denied = await app.inject({ method: 'POST', url: `/api/feeds/${sub.id}/refresh`, headers: { cookie: other } });
     expect(denied.statusCode).toBe(404);
+    expect(vi.mocked(request).mock.calls.length).toBe(fetchesBefore);
   } finally {
     await app.close();
   }

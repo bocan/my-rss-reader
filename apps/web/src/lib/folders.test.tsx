@@ -73,6 +73,25 @@ test('a retry puts the new state in the list, and a toast says it still fails', 
   toast.dismiss();
 });
 
+// #45: "Refresh this feed" on a feed that was fine says so, not "working again".
+test('a refresh of a healthy feed says it fetched it, and a new failure says it failed', async () => {
+  const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => sub('a', 0) }) as Response);
+  vi.stubGlobal('fetch', fetchMock);
+  qc.setQueryData(['feeds'], { items: [{ ...sub('a', 0), lastError: null }] });
+  render(<Toaster />);
+  const { result } = renderHook(() => useRefreshFeed(), { wrapper });
+
+  act(() => result.current.mutate('a'));
+  expect(await screen.findByText('Fetched a.')).toBeInTheDocument();
+
+  fetchMock.mockImplementation(
+    async () => ({ ok: true, status: 200, json: async () => ({ ...sub('a', 0), lastError: 'HTTP 404' }) }) as Response,
+  );
+  act(() => result.current.mutate('a'));
+  expect(await screen.findByText('a failed: The feed is not at this address any more.')).toBeInTheDocument();
+  toast.dismiss();
+});
+
 // #42: the r key and the refresh button share this, so both say the result.
 test('fetch all feeds says how many it fetched, and a second press while it runs does nothing', async () => {
   let finish: (r: Response) => void = () => {};

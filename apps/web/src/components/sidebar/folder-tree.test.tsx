@@ -162,6 +162,73 @@ describe('inline rename', () => {
   });
 });
 
+// #45: Move to, Open website and Refresh this feed in the feed menu.
+describe('feed menu actions', () => {
+  const folder = (id: string, name: string, parentId: string | null = null) => ({
+    id, userId: 'u1', name, parentId, position: 0, viewMode: null, createdAt: '',
+  });
+  let fetchMock: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => sub }) as Response);
+    vi.stubGlobal('fetch', fetchMock);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  function renderFeed(row: SubscriptionRow) {
+    const qc = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
+    qc.setQueryData(['folders'], {
+      items: [folder('d1', 'Tech'), folder('d2', 'CSS', 'd1'), folder('d3', 'News')],
+    });
+    qc.setQueryData(['feeds'], { items: [row] });
+    render(
+      <QueryClientProvider client={qc}>
+        <FolderTree onSelectFeed={vi.fn()} onSelectFolder={vi.fn()} countByFeed={new Map()} sort="name" />
+      </QueryClientProvider>,
+    );
+    const trigger = screen.getByRole('button', { name: 'Feed actions for Dave Rupert' });
+    act(() => trigger.focus());
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+  }
+  const call = (method: string) => {
+    const c = fetchMock.mock.calls.find(([, init]) => init?.method === method);
+    return c && { url: String(c[0]), body: c[1].body && JSON.parse(c[1].body) };
+  };
+
+  test('"Move to" lists subfolders indented under their parent, and moves the feed', async () => {
+    renderFeed(sub);
+    fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Move to' }), { key: 'ArrowRight' });
+    const items = await screen.findAllByRole('menuitem');
+    const names = items.map((i) => i.textContent);
+    expect(names).toEqual(expect.arrayContaining(['No folder', 'News', 'Tech', 'CSS']));
+    expect(names.indexOf('CSS')).toBe(names.indexOf('Tech') + 1);
+    expect(screen.getByRole('menuitem', { name: 'CSS' })).toHaveClass('pl-6');
+    // The feed is not in a folder yet, so "No folder" is where it is now.
+    expect(screen.getByRole('menuitem', { name: 'No folder' })).toHaveAttribute('aria-disabled', 'true');
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'CSS' }));
+    await waitFor(() => expect(call('PATCH')).toEqual({ url: '/api/feeds/s1', body: { folderId: 'd2' } }));
+  });
+
+  test('"Open website" opens the site in a new tab, and is absent with no site', () => {
+    renderFeed({ ...sub, siteUrl: 'https://daverupert.com/' });
+    const link = screen.getByRole('menuitem', { name: 'Open website' });
+    expect(link).toHaveAttribute('href', 'https://daverupert.com/');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+  });
+
+  test('no "Open website" when the feed has no site address', () => {
+    renderFeed(sub);
+    expect(screen.queryByRole('menuitem', { name: 'Open website' })).toBeNull();
+  });
+
+  test('"Refresh this feed" fetches only this feed', async () => {
+    renderFeed(sub);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Refresh this feed' }));
+    await waitFor(() => expect(call('POST')?.url).toBe('/api/feeds/s1/refresh'));
+  });
+});
+
 // #25: folder badges.
 
 test('folders show their unread count, collapsed or not, and hide a zero', () => {

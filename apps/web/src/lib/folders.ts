@@ -305,8 +305,8 @@ export function useFetchAllFeeds() {
 }
 
 /**
- * Fetch one feed now ("Retry now", #29). The row comes back with its new
- * error or none, and the toast says which.
+ * Fetch one feed now ("Retry now", #29, and "Refresh this feed", #45). The row
+ * comes back with its new error or none, and the toast says which.
  */
 export function useRefreshFeed() {
   const qc = useQueryClient();
@@ -315,16 +315,20 @@ export function useRefreshFeed() {
     mutationFn: (subscriptionId: string) =>
       api<SubscriptionRow>(`/feeds/${subscriptionId}/refresh`, { method: 'POST' }),
     onSuccess: (row) => {
+      const before = qc
+        .getQueryData<FeedsData>(['feeds'])
+        ?.items.find((s) => s.subscriptionId === row.subscriptionId);
       qc.setQueryData<FeedsData>(['feeds'], (d) =>
         d
           ? { items: d.items.map((s) => (s.subscriptionId === row.subscriptionId ? row : s)) }
           : d,
       );
       const name = row.customTitle ?? row.title ?? row.feedUrl;
+      const summary = row.lastError && describeFeedError(row.lastError).summary;
       if (row.lastError) {
-        notify.error(`${name} still fails: ${describeFeedError(row.lastError).summary}`);
+        notify.error(before?.lastError ? `${name} still fails: ${summary}` : `${name} failed: ${summary}`);
       } else {
-        notify.success(`${name} is working again.`);
+        notify.success(before?.lastError ? `${name} is working again.` : `Fetched ${name}.`);
       }
       // It may have brought new articles.
       qc.invalidateQueries({ queryKey: ['articles'] });

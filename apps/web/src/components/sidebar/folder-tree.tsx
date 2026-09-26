@@ -48,6 +48,7 @@ import {
   byFolderName,
   canReorder,
   dropIndex,
+  folderChoices,
   makeFeedComparator,
   makeFolderComparator,
   type FeedSort,
@@ -56,6 +57,7 @@ import {
   useCreateFolder,
   useDeleteFolder,
   useFolders,
+  useRefreshFeed,
   useSubscriptions,
   useUnsubscribe,
   useUpdateFolder,
@@ -784,6 +786,15 @@ function FeedNode({
           <>
             <DropdownMenuItem onSelect={onEditSettings}>Edit…</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => afterClose(onRename)}>Rename</DropdownMenuItem>
+            <FeedMoveToMenu sub={sub} />
+            {sub.siteUrl && (
+              <DropdownMenuItem asChild>
+                <a href={sub.siteUrl} target="_blank" rel="noopener noreferrer">
+                  Open website
+                </a>
+              </DropdownMenuItem>
+            )}
+            <RefreshFeedItem subscriptionId={sub.subscriptionId} />
             <DropdownMenuItem onSelect={onMarkRead}>Mark all read</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem className="text-destructive" onSelect={onUnsubscribe}>
@@ -794,6 +805,44 @@ function FeedNode({
       </RowMenu>
     </div>
   );
+}
+
+/**
+ * "Move to" for a feed (#45): the keyboard and touch way to file it, with
+ * subfolders indented under their parent. The menu content mounts only while
+ * open, so these hooks cost nothing on the other rows.
+ */
+function FeedMoveToMenu({ sub }: { sub: SubscriptionRow }) {
+  const { data } = useFolders();
+  const updateSub = useUpdateSubscription();
+  const choices = folderChoices(data?.items ?? []);
+  const move = (folderId: string | null) => updateSub.mutate({ id: sub.subscriptionId, folderId });
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger>Move to</DropdownMenuSubTrigger>
+      <DropdownMenuSubContent {...stopDrag}>
+        <DropdownMenuItem disabled={sub.folderId === null} onSelect={() => move(null)}>
+          No folder
+        </DropdownMenuItem>
+        {choices.map(({ folder, depth }) => (
+          <DropdownMenuItem
+            key={folder.id}
+            disabled={folder.id === sub.folderId}
+            className={depth ? 'pl-6' : undefined}
+            onSelect={() => move(folder.id)}
+          >
+            {folder.name}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
+  );
+}
+
+/** Fetch just this feed now (#45), the same call as "Retry now" (#29). */
+function RefreshFeedItem({ subscriptionId }: { subscriptionId: string }) {
+  const refresh = useRefreshFeed();
+  return <DropdownMenuItem onSelect={() => refresh.mutate(subscriptionId)}>Refresh this feed</DropdownMenuItem>;
 }
 
 /**
