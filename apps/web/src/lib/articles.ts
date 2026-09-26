@@ -143,17 +143,34 @@ async function snapshot(qc: QueryClient) {
   };
 }
 
-type Ctx = { prevArticles: [readonly unknown[], unknown][]; prevCounts: UnreadCounts | undefined };
+type Ctx = {
+  prevArticles: [readonly unknown[], unknown][];
+  prevCounts: UnreadCounts | undefined;
+  /** The open article's detail, which patchArticle also writes. */
+  prevDetail?: [readonly unknown[], ArticleDetail | undefined];
+};
 
 function restore(qc: QueryClient, ctx: Ctx | undefined) {
   if (!ctx) return;
   for (const [key, data] of ctx.prevArticles) qc.setQueryData(key, data);
   qc.setQueryData(['counts'], ctx.prevCounts);
+  if (ctx.prevDetail) qc.setQueryData(ctx.prevDetail[0], ctx.prevDetail[1]);
 }
 
 function reconcile(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ['articles'] });
   qc.invalidateQueries({ queryKey: ['counts'] });
+}
+
+/**
+ * After a single-article change (#19): refresh the counts, and let lists the
+ * reader is NOT looking at refetch the next time they show. The list on screen
+ * keeps its optimistic patch and is not refetched, so an item just read stays
+ * (shown as read) in an unread-only list until a scope change or refresh.
+ */
+function settleOne(qc: QueryClient) {
+  qc.invalidateQueries({ queryKey: ['counts'] });
+  qc.invalidateQueries({ queryKey: ['articles'], type: 'inactive' });
 }
 
 // Stable mutation keys so a rehydrated paused mutation can find its default
@@ -192,7 +209,11 @@ export function registerMutationDefaults(qc: QueryClient): void {
         body: { read, starred, shared, shareNote },
       }),
     onMutate: async ({ articleId, ...vars }: ToggleVars): Promise<Ctx> => {
-      const ctx = await snapshot(qc);
+      const detailKey = ['article', articleId] as const;
+      const ctx: Ctx = {
+        ...(await snapshot(qc)),
+        prevDetail: [detailKey, qc.getQueryData<ArticleDetail>(detailKey)],
+      };
       const state = currentState(qc, articleId);
       // Only a read change moves counts; starred never does.
       if (vars.read !== undefined && state && state.read !== vars.read) {
@@ -202,7 +223,7 @@ export function registerMutationDefaults(qc: QueryClient): void {
       return ctx;
     },
     onError: (_e: unknown, _v: ToggleVars, ctx: Ctx | undefined) => restore(qc, ctx),
-    onSettled: () => reconcile(qc),
+    onSettled: () => settleOne(qc),
   });
 
   qc.setMutationDefaults(MARK_READ_KEY, {
@@ -241,10 +262,10 @@ export function registerMutationDefaults(qc: QueryClient): void {
       return ctx;
     },
     onError: (_e: unknown, _v: MarkReadScope, ctx: Ctx | undefined) => restore(qc, ctx),
-    // A scroll batch leaves the list as it is: a refetch would drop the items
-    // just marked from an unread-only list and move it under the reader.
+    // A scroll batch leaves the list on screen as it is (see settleOne); a
+    // whole-scope mark refetches, so the list shows the server's truth.
     onSettled: (_d: unknown, _e: unknown, scope: MarkReadScope) =>
-      scope.articleIds ? qc.invalidateQueries({ queryKey: ['counts'] }) : reconcile(qc),
+      scope.articleIds ? settleOne(qc) : reconcile(qc),
   });
 }
 

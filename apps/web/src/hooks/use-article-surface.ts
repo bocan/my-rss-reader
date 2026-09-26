@@ -59,6 +59,10 @@ export function useArticleSurface(
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const focusedIdRef = useRef(focusedId);
   focusedIdRef.current = focusedId;
+  // Where the focused item last was, for when it drops out of the list (#19).
+  const lastIndexRef = useRef(-1);
+  const focusedIndex = focusedId ? items.findIndex((a) => a.id === focusedId) : -1;
+  if (focusedIndex !== -1) lastIndexRef.current = focusedIndex;
 
   const rootRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -137,7 +141,13 @@ export function useArticleSurface(
       const at = focusedIdRef.current
         ? list.findIndex((a) => a.id === focusedIdRef.current)
         : -1;
-      let next = at === -1 ? (delta > 0 ? 0 : list.length - 1) : at + delta;
+      let next: number;
+      if (at !== -1) next = at + delta;
+      else if (focusedIdRef.current && lastIndexRef.current >= 0) {
+        // The focused item left the list (e.g. a refetch dropped it): the item
+        // after it now sits at its old index, so step from there, not from 0.
+        next = delta > 0 ? lastIndexRef.current : lastIndexRef.current - 1;
+      } else next = delta > 0 ? 0 : list.length - 1;
 
       if (next >= list.length) {
         // Past the last loaded item: pull the next page so `j` keeps working.
