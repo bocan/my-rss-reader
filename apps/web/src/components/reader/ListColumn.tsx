@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { ArticleSurface } from '@/hooks/use-article-surface';
 import { useRowToggle } from '@/hooks/use-article-toggles';
 import type { ArticleListItem } from '@/hooks/use-articles';
@@ -12,15 +13,17 @@ export function ListColumn({
   feeds,
   selectedId,
   onSelect,
+  header,
 }: {
   surface: ArticleSurface;
   feeds: FeedMetaMap;
   selectedId: string | null;
   onSelect: (article: ArticleListItem) => void;
+  header?: ReactNode;
 }) {
   const onToggle = useRowToggle();
   return (
-    <ArticleScroller surface={surface}>
+    <ArticleScroller surface={surface} header={header}>
       <div className="animate-in fade-in duration-200 motion-reduce:animate-none">
         <ListView
           items={surface.items}

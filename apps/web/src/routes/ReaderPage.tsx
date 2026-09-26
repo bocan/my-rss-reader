@@ -27,6 +27,7 @@ import { FeedProblemsDialog } from '@/components/feed/FeedProblemsDialog';
 import { ArticleStepper } from '@/components/reader/ArticleStepper';
 import { BrowseSurface } from '@/components/reader/BrowseSurface';
 import { ListColumn } from '@/components/reader/ListColumn';
+import { SearchField, SearchScope } from '@/components/reader/Search';
 import { SortToggle } from '@/components/reader/SortToggle';
 import { ViewSwitcher } from '@/components/reader/ViewSwitcher';
 import { ReadingPane } from '@/components/reading-pane/ReadingPane';
@@ -228,6 +229,13 @@ export function ReaderPage() {
     return () => clearTimeout(timer);
   }, [searchInput]);
   const isSearching = debouncedQ.length > 0;
+  // Picking another scope ends a search (#33), so the header never keeps
+  // "Results for" over a list that is not a search.
+  const endSearch = () => {
+    setSearchInput('');
+    setDebouncedQ('');
+    setPhoneSearchOpen(false);
+  };
   // Searching always searches articles; leave community mode when a query starts.
   useEffect(() => {
     if (isSearching) setCommunityOpen(false);
@@ -267,8 +275,14 @@ export function ReaderPage() {
   const pickScope = (apply: () => void) => {
     clearArticle();
     setCommunityOpen(false);
+    endSearch();
     apply();
     goToList();
+  };
+  // The one scope change that keeps the query: widen it to every feed.
+  const searchAllFeeds = () => {
+    clearArticle();
+    setFilters({ sort: 'newest' });
   };
   // An unsubscribed feed in view falls back to All items (#16).
   const subscribedFeedIds = useMemo(
@@ -334,6 +348,19 @@ export function ReaderPage() {
           : filters.folderId
             ? (foldersData?.items.find((f) => f.id === filters.folderId)?.name ?? 'Folder')
             : 'All items';
+  const searchStrip = isSearching ? (
+    <SearchScope
+      query={debouncedQ}
+      scope={scopeLabel}
+      allFeeds={isAllItems}
+      unreadOnly={unreadOnly}
+      onSearchAll={searchAllFeeds}
+      onClear={() => {
+        endSearch();
+        searchRef.current?.focus();
+      }}
+    />
+  ) : undefined;
   const unreadForView = filters.feedId
     ? (countByFeed.get(filters.feedId) ?? 0)
     : filters.folderId
@@ -378,6 +405,7 @@ export function ReaderPage() {
     const feedId = feedOrder[at === -1 && delta < 0 ? feedOrder.length - 1 : next];
     if (feedId) {
       clearArticle(); // same reset as clicking a feed: don't strand the open article
+      endSearch();
       setFilters({ feedId, sort: 'newest' });
     }
   };
@@ -601,17 +629,11 @@ export function ReaderPage() {
           phoneSearchShown && 'hidden sm:inline',
         )}
       >
-        {isSearching ? (
-          <>
-            Results for <span className="text-muted-foreground">{`"${debouncedQ}"`}</span>
-          </>
-        ) : (
-          <>
-            {scopeLabel}
-            {unreadForView > 0 && !communityOpen && !filters.shared && (
-              <span className="ml-2 text-xs font-normal text-muted-foreground">{unreadForView}</span>
-            )}
-          </>
+        {/* The scope stays in view while searching; the strip over the
+            results says what the search covers (#33). */}
+        {scopeLabel}
+        {unreadForView > 0 && !communityOpen && !filters.shared && (
+          <span className="ml-2 text-xs font-normal text-muted-foreground">{unreadForView}</span>
         )}
       </span>
       <div className={cn('ml-auto flex items-center gap-2', phoneSearchShown && 'flex-1 sm:flex-none')}>
@@ -635,25 +657,13 @@ export function ReaderPage() {
             )}
           />
         </Button>
-        <input
+        <SearchField
           ref={searchRef}
-          type="search"
           value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          onBlur={() => {
-            if (!searchInput) setPhoneSearchOpen(false);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') {
-              setSearchInput('');
-              setPhoneSearchOpen(false);
-              e.currentTarget.blur();
-            }
-          }}
-          placeholder="Search"
-          aria-label="Search articles"
+          onChange={setSearchInput}
+          onLeave={() => setPhoneSearchOpen(false)}
           className={cn(
-            'h-8 min-w-0 rounded-md border border-input bg-background px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:block sm:w-44 sm:flex-none lg:w-56',
+            'min-w-0 sm:block sm:w-44 sm:flex-none lg:w-56',
             // Phones reach search from the bottom nav's Search tab.
             phoneSearchShown ? 'block w-full flex-1' : 'hidden',
           )}
@@ -821,6 +831,7 @@ export function ReaderPage() {
               onSelect={(a) => selectArticle(a.id)}
               onBack={clearArticle}
               stepper={stepper}
+              header={searchStrip}
             />
           ) : (
             <div className="grid h-full grid-cols-1 lg:grid-cols-[360px_minmax(0,1fr)]">
@@ -830,6 +841,7 @@ export function ReaderPage() {
                   feeds={feedMeta}
                   selectedId={selectedId}
                   onSelect={(a) => selectArticle(a.id)}
+                  header={searchStrip}
                 />
               </section>
               <article

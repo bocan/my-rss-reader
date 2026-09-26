@@ -29,6 +29,7 @@ export function BrowseSurface({
   onSelect,
   onBack,
   stepper,
+  header,
 }: {
   surface: ArticleSurface;
   feeds: FeedMetaMap;
@@ -38,6 +39,8 @@ export function BrowseSurface({
   onBack: () => void;
   /** Previous / Next controls for the open article (#23). */
   stepper?: ReactNode;
+  /** Above the grid, e.g. what a search covers (#33). */
+  header?: ReactNode;
 }) {
   const View = view === 'cards' ? CardsView : MagazineView;
   const reading = selectedId !== null;
@@ -47,7 +50,7 @@ export function BrowseSurface({
     <div className="relative flex h-full min-h-0 flex-col">
       {/* Grid stays mounted (just hidden) while reading, so returning restores
           scroll position and every loaded page. */}
-      <ArticleScroller surface={surface} className={cn(reading && 'hidden')}>
+      <ArticleScroller surface={surface} header={header} className={cn(reading && 'hidden')}>
         <div key={view} className="animate-in fade-in duration-200 motion-reduce:animate-none">
           <View
             items={surface.items}

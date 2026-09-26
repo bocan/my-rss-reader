@@ -14,10 +14,13 @@ import { cn } from '@/lib/utils';
 export function ArticleScroller({
   surface,
   className,
+  header,
   children,
 }: {
   surface: ArticleSurface;
   className?: string;
+  /** Above the results, e.g. what a search covers (#33). */
+  header?: ReactNode;
   children: ReactNode;
 }) {
   const { items, isLoading, isError, error, hasNextPage, isFetchingNextPage } = surface;
@@ -37,6 +40,8 @@ export function ArticleScroller({
           </Button>
         )}
       </div>
+
+      {header}
 
       {isLoading && (
         <div className="space-y-2 p-3">
