@@ -23,7 +23,7 @@ import {
   type SearchCursorPayload,
 } from '../lib/cursor.js';
 import { folderScopeIds, resolveSubscribedFeedIds } from '../lib/feed-scope.js';
-import { extractReadableHtml } from '../lib/readability.js';
+import { ensureReadableSnapshot } from '../lib/readable-snapshot.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -342,23 +342,10 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
     if (!query.refresh && detail.readableFetchedAt !== null) {
       return detail;
     }
-    // No source URL: nothing to extract. Stamp the attempt (so it caches and the
-    // client shows the "could not extract" fallback) rather than erroring, which
-    // the Simplified view would otherwise get stuck on.
-    if (!detail.url) {
-      const readableFetchedAt = new Date();
-      await db.update(articles).set({ readableFetchedAt }).where(eq(articles.id, id));
-      return { ...detail, readableFetchedAt };
-    }
-
-    const clean = await extractReadableHtml(detail.url);
-    const readableFetchedAt = new Date();
-    await db
-      .update(articles)
-      .set({ readableHtml: clean, readableFetchedAt })
-      .where(eq(articles.id, id));
-
-    return { ...detail, readableHtml: clean, readableFetchedAt };
+    // The same capture as on star (SPEC-024). With no source URL it stamps the
+    // attempt, so the view shows its fallback instead of hanging.
+    const snapshot = await ensureReadableSnapshot(id, { force: query.refresh });
+    return { ...detail, ...snapshot };
   });
 
   // Bulk mark-as-read across a feed, a folder's feeds, or All items, optionally
@@ -470,6 +457,15 @@ export async function articleRoutes(app: FastifyInstance): Promise<void> {
           ...(input.shareNote !== undefined ? { shareNote: input.shareNote } : {}),
         },
       });
+
+    // SPEC-024: a star or a share means "keep this". Take the readable copy
+    // now, while the page is alive. The reply does not wait (extraction can
+    // take 15 s), and a repeat star is free: an attempt already made is kept.
+    if (input.starred === true || input.shared === true) {
+      void ensureReadableSnapshot(id).catch((err: unknown) =>
+        request.log.warn({ err, articleId: id }, 'snapshot capture failed'),
+      );
+    }
 
     return reply.code(204).send();
   });
