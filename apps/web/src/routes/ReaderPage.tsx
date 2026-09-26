@@ -34,6 +34,7 @@ import { ArticleStepper } from '@/components/reader/ArticleStepper';
 import { BrowseSurface } from '@/components/reader/BrowseSurface';
 import { EmptyArticles, Kbd } from '@/components/reader/EmptyArticles';
 import { ListColumn } from '@/components/reader/ListColumn';
+import { SaveSearchButton } from '@/components/reader/SaveSearchButton';
 import { SearchField, SearchScope } from '@/components/reader/Search';
 import { SortToggle } from '@/components/reader/SortToggle';
 import { UnreadToggle } from '@/components/reader/UnreadToggle';
@@ -43,6 +44,7 @@ import { ShortcutsOverlay } from '@/components/shortcuts/ShortcutsOverlay';
 import { AddMenu } from '@/components/sidebar/add-menu';
 import { FeedSortMenu } from '@/components/sidebar/feed-sort-menu';
 import { FolderTree } from '@/components/sidebar/folder-tree';
+import { SavedSearchList } from '@/components/sidebar/saved-searches';
 import { SubscribeDialog } from '@/components/subscribe-dialog';
 import { Button } from '@/components/ui/button';
 import {
@@ -71,6 +73,14 @@ import { useCommunityShares } from '@/lib/community';
 import { ATTENTION_LABELS } from '@/lib/attention';
 import { emptyReason, nextUnreadFeed } from '@/lib/empty-state';
 import { unreadForScope } from '@/lib/scope-count';
+import {
+  canSaveSearch,
+  captureScope,
+  describeScope,
+  savedSearchFilters,
+  showsSavedSearch,
+  useSavedSearches,
+} from '@/lib/searches';
 import { isFeedSort, orderedVisibleFeedIds, type FeedSort } from '@/lib/feed-order';
 import {
   problemFeeds,
@@ -87,7 +97,7 @@ import { SORT_LABELS } from '@/lib/sort-order';
 import { useUnreadOnly } from '@/lib/unread-only';
 import type { ShortcutContextName } from '@/lib/shortcuts/registry';
 import { cn } from '@/lib/utils';
-import type { SortOrder, ViewMode } from '@rss/shared';
+import type { SavedSearchDto, SortOrder, ViewMode } from '@rss/shared';
 
 /** Reactively tracks a media query. */
 function useMediaQuery(query: string): boolean {
@@ -262,6 +272,10 @@ export function ReaderPage() {
     if (debouncedQ) f = { ...f, q: debouncedQ };
     return f;
   }, [filters, sort, unreadOnly, debouncedQ]);
+  // What the list shows: unread only by the global switch, or by the list's
+  // own filter (a saved search kept "unread only", SPEC-025). The labels
+  // that describe the list use this; the switch itself stays global.
+  const listUnreadOnly = unreadOnly || filters.unread === true;
 
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedId = searchParams.get('article');
@@ -311,6 +325,24 @@ export function ReaderPage() {
   const openCommunity = () => {
     clearArticle();
     setCommunityOpen(true);
+    goToList();
+  };
+
+  // Saved searches (SPEC-025). Opening one sets its scope and puts its query
+  // in the search box, so from there it is an ordinary search. The node is
+  // active while the box and the scope still match it: editing the query or
+  // picking another scope deselects it with no extra state.
+  const { data: savedSearchData } = useSavedSearches();
+  const activeSaved =
+    (!communityOpen &&
+      savedSearchData?.items.find((s) => showsSavedSearch(s, filters, searchInput))) ||
+    null;
+  const openSavedSearch = (s: SavedSearchDto) => {
+    clearArticle();
+    setCommunityOpen(false);
+    setFilters(savedSearchFilters(s));
+    setSearchInput(s.q);
+    setDebouncedQ(s.q);
     goToList();
   };
 
@@ -369,7 +401,7 @@ export function ReaderPage() {
       query={debouncedQ}
       scope={scopeLabel}
       allFeeds={isAllItems}
-      unreadOnly={unreadOnly}
+      unreadOnly={listUnreadOnly}
       onSearchAll={searchAllFeeds}
       onClear={() => {
         endSearch();
@@ -427,7 +459,7 @@ export function ReaderPage() {
         query: debouncedQ,
         scope: scopeLabel,
         allFeeds: isAllItems,
-        unreadOnly,
+        unreadOnly: listUnreadOnly,
         starred: Boolean(filters.starred),
         shared: Boolean(filters.shared),
         feed: currentSub,
@@ -512,7 +544,8 @@ export function ReaderPage() {
                 !filters.folderId &&
                 !filters.shared &&
                 !filters.attention &&
-                !communityOpen,
+                !communityOpen &&
+                !activeSaved,
             )}
             onClick={() => pickScope(() => setFilters({ sort: 'newest' }))}
           >
@@ -523,7 +556,7 @@ export function ReaderPage() {
         </li>
         <li>
           <button
-            className={navItem(Boolean(filters.starred) && !communityOpen)}
+            className={navItem(Boolean(filters.starred) && !communityOpen && !activeSaved)}
             onClick={() => pickScope(() => setFilters({ starred: true, sort: 'newest' }))}
           >
             <Star className="size-4" /> Starred
@@ -577,6 +610,8 @@ export function ReaderPage() {
       </ul>
       {problemsOpen && <FeedProblemsDialog onOpenChange={setProblemsOpen} />}
 
+      <SavedSearchList activeId={activeSaved?.id ?? null} onOpen={openSavedSearch} itemClass={navItem} />
+
       <div className="mt-4 flex items-center justify-between px-2">
         <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Feeds
@@ -605,8 +640,8 @@ export function ReaderPage() {
         </div>
       )}
       <FolderTree
-        activeFeedId={communityOpen ? undefined : filters.feedId}
-        activeFolderId={communityOpen ? undefined : filters.folderId}
+        activeFeedId={communityOpen || activeSaved ? undefined : filters.feedId}
+        activeFolderId={communityOpen || activeSaved ? undefined : filters.folderId}
         onSelectFeed={onSelectFeed}
         onSelectFolder={onSelectFolder}
         countByFeed={countByFeed}
@@ -688,7 +723,7 @@ export function ReaderPage() {
         )}
         {/* #34: the filter is always in view, also on phones, where its
             switch is in the "More actions" menu. */}
-        {unreadOnly && !communityOpen && (
+        {listUnreadOnly && !communityOpen && (
           <span className="ml-2 text-xs font-normal text-muted-foreground">· unread only</span>
         )}
       </span>
@@ -716,6 +751,17 @@ export function ReaderPage() {
             phoneSearchShown ? 'block w-full flex-1' : 'hidden',
           )}
         />
+        {isSearching && !communityOpen && canSaveSearch(filters) && (
+          <SaveSearchButton
+            query={debouncedQ}
+            scope={captureScope(filters, unreadOnly)}
+            scopeText={describeScope(captureScope(filters, unreadOnly), {
+              feed: filters.feedId ? feedMeta[filters.feedId]?.name : undefined,
+              folder: currentFolder?.name,
+            })}
+            savedAs={activeSaved?.name}
+          />
+        )}
         {canMarkAll && !isSearching && hasUnread && (
           <div className="hidden items-center sm:flex">
             <Button variant="ghost" size="sm" className="rounded-r-none pr-2" onClick={() => markAllRead()}>
