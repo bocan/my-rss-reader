@@ -1,5 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import {
+  AlertTriangle,
   ChevronDown,
   ChevronLeft,
   Circle,
@@ -22,6 +23,7 @@ import { AppShell } from '@/components/layout/AppShell';
 import { MobileNav } from '@/components/layout/MobileNav';
 import { mobileNavTab } from '@/components/layout/mobile-nav-tab';
 import { CommunityPane } from '@/components/community/CommunityPane';
+import { FeedProblemsDialog } from '@/components/feed/FeedProblemsDialog';
 import { ArticleStepper } from '@/components/reader/ArticleStepper';
 import { BrowseSurface } from '@/components/reader/BrowseSurface';
 import { ListColumn } from '@/components/reader/ListColumn';
@@ -58,6 +60,7 @@ import { useSession } from '@/lib/auth';
 import { useCommunityShares } from '@/lib/community';
 import { isFeedSort, orderedVisibleFeedIds, type FeedSort } from '@/lib/feed-order';
 import {
+  problemFeeds,
   useFolders,
   useRefreshFeeds,
   useSubscriptions,
@@ -155,6 +158,10 @@ export function ReaderPage() {
     [subs],
   );
   const preciousUnread = preciousFeedIds.reduce((n, id) => n + (countByFeed.get(id) ?? 0), 0);
+
+  // "Feeds with problems" (#29), shown only while one is failing.
+  const failingFeeds = problemFeeds(subs).length;
+  const [problemsOpen, setProblemsOpen] = useState(false);
 
   const [filters, setFilters] = useState<ArticleFilters>({ sort: 'newest' });
 
@@ -466,7 +473,20 @@ export function ReaderPage() {
             </button>
           </li>
         )}
+        {/* #29: only while something is broken. */}
+        {failingFeeds > 0 && (
+          <li>
+            <button className={navItem(false)} onClick={() => setProblemsOpen(true)}>
+              <AlertTriangle className="size-4 text-destructive" />
+              <span className="flex-1">Feeds with problems</span>
+              <span className="shrink-0 rounded-full bg-destructive/15 px-1.5 py-0.5 text-xs font-medium tabular-nums text-destructive">
+                {failingFeeds}
+              </span>
+            </button>
+          </li>
+        )}
       </ul>
+      {problemsOpen && <FeedProblemsDialog onOpenChange={setProblemsOpen} />}
 
       <div className="mt-4 flex items-center justify-between px-2">
         <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">

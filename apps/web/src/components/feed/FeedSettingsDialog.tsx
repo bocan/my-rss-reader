@@ -1,6 +1,7 @@
 import {
   ARTICLE_VIEWS,
   ATTENTION_TIERS,
+  describeFeedError,
   VIEW_MODES,
   type ArticleView,
   type AttentionTier,
@@ -9,6 +10,7 @@ import {
 import { Check, Copy } from 'lucide-react';
 import { useState, type FormEvent, type RefObject } from 'react';
 import { FolderOptions } from '@/components/feed/folder-options';
+import { relativeTime } from '@/lib/relative-time';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { notify } from '@/lib/notify';
@@ -38,17 +40,6 @@ const ATTENTION_HINT: Record<AttentionTier, string> = {
   normal: 'Counts and badges as usual.',
   precious: 'Never miss a post: highlighted and pinned to the Precious shelf.',
 };
-
-function relativeTime(iso: string | null): string {
-  if (!iso) return 'never';
-  const secs = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
-  if (secs < 60) return 'just now';
-  const mins = Math.round(secs / 60);
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
-}
 
 /** Consolidated feed editor (SPEC-018): rename, folder, view overrides, hide,
  *  and the shared poll interval, saved in one PATCH. */
@@ -308,8 +299,9 @@ export function FeedSettingsDialog({
 
           {sub.lastError ? (
             <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-              <span className="font-medium">This feed failed to update</span> (last tried{' '}
-              {relativeTime(sub.lastFetchedAt)}): {sub.lastError}
+              <span className="font-medium">{describeFeedError(sub.lastError).summary}</span> Last
+              tried {relativeTime(sub.lastFetchedAt)}, last worked {relativeTime(sub.lastSuccessAt)}:{' '}
+              {sub.lastError}
             </p>
           ) : (
             <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">

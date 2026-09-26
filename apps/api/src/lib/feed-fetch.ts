@@ -1,5 +1,5 @@
 import type { IncomingHttpHeaders } from 'node:http';
-import type { FeedCandidate } from '@rss/shared';
+import { transientRetryDelaySec, type FeedCandidate } from '@rss/shared';
 import { eq, sql } from 'drizzle-orm';
 import { parse } from 'node-html-parser';
 import Parser from 'rss-parser';
@@ -454,9 +454,10 @@ export async function fetchAndStoreFeed(feed: FeedRow): Promise<void> {
     // A 304 is a successful fetch: it must clear a stale error too, or one
     // transient failure (e.g. DNS on wake) sticks until the feed next changes.
     if (result.status === 'not-modified') {
+      const now = new Date();
       await db
         .update(feeds)
-        .set({ lastFetchedAt: new Date(), lastError: null, failureCount: 0 })
+        .set({ lastFetchedAt: now, lastSuccessAt: now, lastError: null, failureCount: 0, retryAt: null })
         .where(eq(feeds.id, feed.id));
       return;
     }
@@ -501,8 +502,10 @@ export async function fetchAndStoreFeed(feed: FeedRow): Promise<void> {
         etag: result.etag ?? feed.etag,
         lastModified: result.lastModified ?? feed.lastModified,
         lastFetchedAt: new Date(),
+        lastSuccessAt: new Date(),
         lastError: null,
         failureCount: 0,
+        retryAt: null,
         updatedAt: new Date(),
         ...(faviconUrl !== undefined ? { faviconUrl } : {}),
         ...websubChanges,
@@ -512,12 +515,16 @@ export async function fetchAndStoreFeed(feed: FeedRow): Promise<void> {
     await storeNewArticles(feed.id, feedArticleRows(feed.id, parsed));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    // A short network problem gets an early retry (#29), so a feed that failed
+    // while the network was down recovers in minutes, not a full interval.
+    const delay = transientRetryDelaySec(message, feed.failureCount + 1);
     await db
       .update(feeds)
       .set({
         lastFetchedAt: new Date(),
         lastError: message,
         failureCount: sql`${feeds.failureCount} + 1`,
+        retryAt: delay === null ? null : new Date(Date.now() + delay * 1000),
       })
       .where(eq(feeds.id, feed.id));
   }

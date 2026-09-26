@@ -111,6 +111,20 @@ test('the poller honors coalesce(feed override, app default)', async () => {
   expect(dueIds).not.toContain(overridden.id);
 });
 
+test('a due early retry makes a feed due before its interval (#29)', async () => {
+  const justNow = new Date(Date.now() - 60 * 1000);
+  const retryDue = await seedFeed({ fetchIntervalSec: 3600, lastFetchedAt: justNow, retryAt: justNow });
+  const retryLater = await seedFeed({
+    fetchIntervalSec: 3600,
+    lastFetchedAt: justNow,
+    retryAt: new Date(Date.now() + 60 * 1000),
+  });
+
+  const dueIds = (await findDueFeeds()).map((f) => f.id);
+  expect(dueIds).toContain(retryDue.id);
+  expect(dueIds).not.toContain(retryLater.id);
+});
+
 test('admin default poll interval round-trips', async () => {
   const cookie = await loginAs(await seedUser({ role: 'admin' }));
   const patched = await app.inject({

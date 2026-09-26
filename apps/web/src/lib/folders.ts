@@ -1,9 +1,10 @@
-import type {
-  ArticleView,
-  AttentionTier,
-  RestoreSubscriptionInput,
-  ViewMode,
-  WebSubState,
+import {
+  describeFeedError,
+  type ArticleView,
+  type AttentionTier,
+  type RestoreSubscriptionInput,
+  type ViewMode,
+  type WebSubState,
 } from '@rss/shared';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { api } from './api';
@@ -43,8 +44,18 @@ export interface SubscriptionRow {
   fetchIntervalSec: number | null;
   lastFetchedAt: string | null;
   lastError: string | null;
+  /** The last fetch that worked; null if none has (#29). */
+  lastSuccessAt: string | null;
   unreadCount: number;
 }
+
+/** Subscriptions whose last fetch failed, by name (#29). */
+export const problemFeeds = (subs: readonly SubscriptionRow[]) =>
+  subs
+    .filter((s) => s.lastError)
+    .sort((a, b) =>
+      (a.customTitle ?? a.title ?? a.feedUrl).localeCompare(b.customTitle ?? b.title ?? b.feedUrl),
+    );
 
 type FoldersData = { items: FolderRow[] };
 type FeedsData = { items: SubscriptionRow[] };
@@ -254,6 +265,35 @@ export function useRefreshFeeds() {
     mutationFn: () => api<{ refreshed: number }>('/feeds/refresh', { method: 'POST' }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['feeds'] });
+      qc.invalidateQueries({ queryKey: ['articles'] });
+      qc.invalidateQueries({ queryKey: ['counts'] });
+    },
+  });
+}
+
+/**
+ * Fetch one feed now ("Retry now", #29). The row comes back with its new
+ * error or none, and the toast says which.
+ */
+export function useRefreshFeed() {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: { errorMessage: 'Could not fetch the feed.' },
+    mutationFn: (subscriptionId: string) =>
+      api<SubscriptionRow>(`/feeds/${subscriptionId}/refresh`, { method: 'POST' }),
+    onSuccess: (row) => {
+      qc.setQueryData<FeedsData>(['feeds'], (d) =>
+        d
+          ? { items: d.items.map((s) => (s.subscriptionId === row.subscriptionId ? row : s)) }
+          : d,
+      );
+      const name = row.customTitle ?? row.title ?? row.feedUrl;
+      if (row.lastError) {
+        notify.error(`${name} still fails: ${describeFeedError(row.lastError).summary}`);
+      } else {
+        notify.success(`${name} is working again.`);
+      }
+      // It may have brought new articles.
       qc.invalidateQueries({ queryKey: ['articles'] });
       qc.invalidateQueries({ queryKey: ['counts'] });
     },

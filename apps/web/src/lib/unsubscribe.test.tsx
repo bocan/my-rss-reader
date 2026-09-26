@@ -28,6 +28,7 @@ const sub: SubscriptionRow = {
   fetchIntervalSec: null,
   lastFetchedAt: null,
   lastError: null,
+  lastSuccessAt: null,
   unreadCount: 4,
 };
 

@@ -23,30 +23,35 @@ import { getUnreadCountsByFeed } from '../lib/unread-counts.js';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const notFound = { error: 'NotFound', message: 'Not found', statusCode: 404 } as const;
 
+/** The GET /feeds columns for one subscription (without its unread count). */
+const subscriptionColumns = {
+  subscriptionId: subscriptions.id,
+  feedId: feeds.id,
+  title: feeds.title,
+  customTitle: subscriptions.customTitle,
+  feedUrl: feeds.feedUrl,
+  siteUrl: feeds.siteUrl,
+  faviconUrl: feeds.faviconUrl,
+  folderId: subscriptions.folderId,
+  position: subscriptions.position,
+  viewMode: subscriptions.viewMode,
+  articleView: subscriptions.articleView,
+  hideFromAll: subscriptions.hideFromAll,
+  inBlogroll: subscriptions.inBlogroll,
+  attention: subscriptions.attention,
+  fetchIntervalSec: feeds.fetchIntervalSec,
+  websubState: feeds.websubState,
+  websubLeaseExpiresAt: feeds.websubLeaseExpiresAt,
+  lastFetchedAt: feeds.lastFetchedAt,
+  lastError: feeds.lastError,
+  // #29: how long a broken feed has been broken.
+  lastSuccessAt: feeds.lastSuccessAt,
+};
+
 /** The GET /feeds row shape for one subscription, including its unread count. */
 async function subscriptionRow(subscriptionId: string, userId: string) {
   const [row] = await db
-    .select({
-      subscriptionId: subscriptions.id,
-      feedId: feeds.id,
-      title: feeds.title,
-      customTitle: subscriptions.customTitle,
-      feedUrl: feeds.feedUrl,
-      siteUrl: feeds.siteUrl,
-      faviconUrl: feeds.faviconUrl,
-      folderId: subscriptions.folderId,
-      position: subscriptions.position,
-      viewMode: subscriptions.viewMode,
-      articleView: subscriptions.articleView,
-      hideFromAll: subscriptions.hideFromAll,
-      inBlogroll: subscriptions.inBlogroll,
-      attention: subscriptions.attention,
-      fetchIntervalSec: feeds.fetchIntervalSec,
-      websubState: feeds.websubState,
-      websubLeaseExpiresAt: feeds.websubLeaseExpiresAt,
-      lastFetchedAt: feeds.lastFetchedAt,
-      lastError: feeds.lastError,
-    })
+    .select(subscriptionColumns)
     .from(subscriptions)
     .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
     .where(eq(subscriptions.id, subscriptionId))
@@ -63,27 +68,7 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
   // List the current user's subscriptions with feed metadata.
   app.get('/feeds', auth, async (request) => {
     const rows = await db
-      .select({
-        subscriptionId: subscriptions.id,
-        feedId: feeds.id,
-        title: feeds.title,
-        customTitle: subscriptions.customTitle,
-        feedUrl: feeds.feedUrl,
-        siteUrl: feeds.siteUrl,
-        faviconUrl: feeds.faviconUrl,
-        folderId: subscriptions.folderId,
-        position: subscriptions.position,
-        viewMode: subscriptions.viewMode,
-        articleView: subscriptions.articleView,
-        hideFromAll: subscriptions.hideFromAll,
-        inBlogroll: subscriptions.inBlogroll,
-        attention: subscriptions.attention,
-        fetchIntervalSec: feeds.fetchIntervalSec,
-        websubState: feeds.websubState,
-        websubLeaseExpiresAt: feeds.websubLeaseExpiresAt,
-        lastFetchedAt: feeds.lastFetchedAt,
-        lastError: feeds.lastError,
-      })
+      .select(subscriptionColumns)
       .from(subscriptions)
       .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
       .where(eq(subscriptions.userId, request.user!.id))
@@ -119,6 +104,23 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
     };
     await Promise.all(Array.from({ length: Math.min(8, feedRows.length) }, worker));
     return { refreshed: feedRows.length };
+  });
+
+  // Fetch one of the caller's feeds right now ("Retry now", #29). Returns the
+  // subscription row afterwards, with the new error or none.
+  app.post('/feeds/:id/refresh', auth, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const userId = request.user!.id;
+    if (!UUID_RE.test(id)) return reply.code(404).send(notFound);
+    const [row] = await db
+      .select({ feed: feeds })
+      .from(subscriptions)
+      .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
+      .where(and(eq(subscriptions.id, id), eq(subscriptions.userId, userId)))
+      .limit(1);
+    if (!row) return reply.code(404).send(notFound);
+    await fetchAndStoreFeed(row.feed); // records errors on the row, never throws
+    return (await subscriptionRow(id, userId))!;
   });
 
   // Discover feed candidates for a URL (feed or homepage). Writes nothing.

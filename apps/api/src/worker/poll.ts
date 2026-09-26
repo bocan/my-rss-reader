@@ -15,6 +15,7 @@ import {
  * the feed's own fetchIntervalSec, or the app-wide default when it is null
  * (SPEC-018). A feed with an active WebSub lease is floored to a lazy
  * integrity-check cadence instead (SPEC-021): pushes carry the realtime load.
+ * A feed with a due `retryAt` (a transient failure, #29) is due at once.
  */
 export async function findDueFeeds(): Promise<FeedRow[]> {
   const { defaultPollIntervalSec } = await getAppSettings();
@@ -24,6 +25,8 @@ export async function findDueFeeds(): Promise<FeedRow[]> {
     .where(
       or(
         isNull(feeds.lastFetchedAt),
+        // An early retry after a transient failure (#29).
+        lte(feeds.retryAt, sql`now()`),
         lte(
           feeds.lastFetchedAt,
           sql`now() - make_interval(secs => greatest(

@@ -149,6 +149,12 @@ export const feeds = pgTable('feeds', {
   lastFetchedAt: timestamp({ withTimezone: true }),
   lastError: text(),
   failureCount: integer().notNull().default(0),
+  // The last fetch that worked (lastFetchedAt also moves on a failure), so the
+  // UI can say how long a feed has been broken (#29).
+  lastSuccessAt: timestamp({ withTimezone: true }),
+  // An early retry after a transient failure (#29): the worker polls the feed
+  // at this time, even before its normal interval. Cleared by any fetch.
+  retryAt: timestamp({ withTimezone: true }),
   // Poll interval override for this global feed (SPEC-018). null = inherit the
   // app-wide default (app_settings.defaultPollIntervalSec).
   fetchIntervalSec: integer(),

@@ -26,6 +26,8 @@ import {
   Rss,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { describeFeedError } from '@rss/shared';
+import { FeedProblem } from '@/components/feed/FeedProblem';
 import { FeedSettingsDialog } from '@/components/feed/FeedSettingsDialog';
 import { Button } from '@/components/ui/button';
 import {
@@ -38,6 +40,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { folderDrop, HAS_CHILDREN_MESSAGE } from '@/lib/folder-drop';
 import { useMarkAllRead } from '@/lib/mark-all-read';
 import { notify } from '@/lib/notify';
@@ -181,9 +184,13 @@ export function FolderTree({
 
   // In hide-read mode a feed is shown only if it has unread items - except the
   // feed you are currently reading, which stays put so it never vanishes from
-  // under you as you mark its last item read.
+  // under you as you mark its last item read, and a failing feed, which
+  // usually has nothing unread and would hide its warning too (#29).
   const feedVisible = (s: SubscriptionRow) =>
-    !hideRead || (countByFeed.get(s.feedId) ?? 0) > 0 || s.feedId === activeFeedId;
+    !hideRead ||
+    (countByFeed.get(s.feedId) ?? 0) > 0 ||
+    s.feedId === activeFeedId ||
+    s.lastError !== null;
   const feedsIn = (folderId: string | null) =>
     subs.filter((s) => s.folderId === folderId && feedVisible(s)).sort(byFeed);
   // A folder is shown while it (or a child folder) still has a visible feed, or
@@ -740,15 +747,7 @@ function FeedNode({
             )}
             <span className="truncate">{label}</span>
           </button>
-          {sub.lastError && (
-            <span
-              className="shrink-0 text-destructive"
-              title={`This feed failed to update: ${sub.lastError}`}
-              aria-label={`Feed error: ${sub.lastError}`}
-            >
-              <AlertTriangle className="size-3.5" />
-            </span>
-          )}
+          {sub.lastError && <FeedErrorButton sub={sub} onEdit={onEditSettings} />}
           {unread > 0 && sub.attention !== 'firehose' && (
             <span
               className={cn(
@@ -778,6 +777,39 @@ function FeedNode({
         )}
       </RowMenu>
     </div>
+  );
+}
+
+/**
+ * The red triangle on a failing feed (#29). A click or a tap opens why it
+ * fails and the fixes, so mouse and touch users alike can read it without a
+ * hover tooltip or the Edit dialog.
+ */
+function FeedErrorButton({ sub, onEdit }: { sub: SubscriptionRow; onEdit: () => void }) {
+  const [open, setOpen] = useState(false);
+  const { summary } = describeFeedError(sub.lastError ?? '');
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="shrink-0 rounded text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:p-1.5"
+          aria-label={`Feed problem: ${summary}`}
+          title={summary}
+        >
+          <AlertTriangle className="size-3.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent {...stopDrag}>
+        <FeedProblem
+          sub={sub}
+          onEdit={() => {
+            setOpen(false);
+            onEdit();
+          }}
+        />
+      </PopoverContent>
+    </Popover>
   );
 }
 

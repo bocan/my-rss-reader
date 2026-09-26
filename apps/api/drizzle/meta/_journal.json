@@ -134,6 +134,13 @@
       "when": 1790386418333,
       "tag": "0018_tired_nextwave",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790411110543,
+      "tag": "0019_clear_arclight",
+      "breakpoints": true
     }
   ]
 }

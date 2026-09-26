@@ -1,8 +1,16 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, renderHook } from '@testing-library/react';
+import { act, render, renderHook, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
+import { toast } from 'sonner';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { useUpdateFolder, useUpdateSubscription, type FolderRow, type SubscriptionRow } from './folders';
+import { Toaster } from '@/components/ui/sonner';
+import {
+  useRefreshFeed,
+  useUpdateFolder,
+  useUpdateSubscription,
+  type FolderRow,
+  type SubscriptionRow,
+} from './folders';
 
 // #27: in manual order a drop must show at once, so the optimistic update
 // renumbers the whole scope, as the server does.
@@ -45,6 +53,23 @@ test('a rename does not move the feed', async () => {
     expect(qc.getQueryData<{ items: SubscriptionRow[] }>(['feeds'])!.items[0]!.customTitle).toBe('Renamed'),
   );
   expect(order()).toEqual(['a', 'b', 'c']);
+});
+
+// #29: "Retry now" replaces the row and says how it went.
+test('a retry puts the new state in the list, and a toast says it still fails', async () => {
+  const still = { ...sub('a', 0), lastError: 'HTTP 404' };
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => ({ ok: true, status: 200, json: async () => still }) as Response),
+  );
+  qc.setQueryData(['feeds'], { items: [{ ...sub('a', 0), lastError: 'read ECONNRESET' }, sub('b', 1)] });
+  render(<Toaster />);
+  const { result } = renderHook(() => useRefreshFeed(), { wrapper });
+
+  act(() => result.current.mutate('a'));
+  expect(await screen.findByText('a still fails: The feed is not at this address any more.')).toBeInTheDocument();
+  expect(qc.getQueryData<{ items: SubscriptionRow[] }>(['feeds'])!.items[0]!.lastError).toBe('HTTP 404');
+  toast.dismiss();
 });
 
 test('a folder moved to index 0 takes the top of its parent scope', async () => {

@@ -28,6 +28,7 @@ const sub: SubscriptionRow = {
   fetchIntervalSec: null,
   lastFetchedAt: null,
   lastError: null,
+  lastSuccessAt: null,
   unreadCount: 3,
 };
 
@@ -224,6 +225,56 @@ describe('subfolders', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Delete folder' }));
     await waitFor(() => expect(sent('DELETE')?.url).toBe('/api/folders/d2'));
     expect(confirm).toHaveBeenCalledWith('Delete folder "CSS"? Its feeds move out, not away.');
+  });
+});
+
+// #29: broken feeds.
+
+describe('a failing feed', () => {
+  const broken = { ...sub, lastError: 'getaddrinfo EAI_AGAIN daverupert.com' };
+  let fetchMock: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => broken }) as Response);
+    vi.stubGlobal('fetch', fetchMock);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  function renderBroken(hideRead: boolean) {
+    const qc = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
+    qc.setQueryData(['folders'], { items: [] });
+    qc.setQueryData(['feeds'], { items: [broken] });
+    render(
+      <QueryClientProvider client={qc}>
+        <FolderTree
+          onSelectFeed={vi.fn()}
+          onSelectFolder={vi.fn()}
+          countByFeed={new Map([['f1', 0]])}
+          sort="name"
+          hideRead={hideRead}
+        />
+      </QueryClientProvider>,
+    );
+  }
+
+  test('stays visible in unread-only mode, with nothing unread', () => {
+    renderBroken(true);
+    expect(screen.getByRole('button', { name: 'Dave Rupert' })).toBeInTheDocument();
+  });
+
+  test('its warning opens on a click, says why in plain words, and can retry', async () => {
+    renderBroken(false);
+    const warning = screen.getByRole('button', {
+      name: 'Feed problem: Could not look up the site. This is often a short network problem.',
+    });
+    act(() => warning.focus());
+    fireEvent.click(warning);
+
+    expect(await screen.findByText('getaddrinfo EAI_AGAIN daverupert.com')).toBeInTheDocument();
+    expect(screen.getByText('Last tried never. Last worked never.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry now' }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith('/api/feeds/s1/refresh', expect.objectContaining({ method: 'POST' })),
+    );
   });
 });
 
