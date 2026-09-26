@@ -5,6 +5,7 @@ import { Link } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { announce } from '@/lib/announce';
+import { notify } from '@/lib/notify';
 import { useToggleArticleState } from '@/lib/articles';
 import { useProfile } from '@/lib/profile';
 import { cn } from '@/lib/utils';
@@ -28,7 +29,7 @@ export function SharePopover({ article }: { article: ArticleDetail }) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
-      announce('Could not copy the link');
+      notify.error('Could not copy the link. Your browser blocked the clipboard.');
     }
   };
 
@@ -47,8 +48,10 @@ export function SharePopover({ article }: { article: ArticleDetail }) {
   const saveNote = () => {
     const trimmed = note.trim();
     if (trimmed === (article.shareNote ?? '')) return;
-    toggle.mutate({ shareNote: trimmed || null });
-    announce('Note saved');
+    toggle.mutate(
+      { shareNote: trimmed || null },
+      { onSuccess: () => notify.success('Note saved.') },
+    );
   };
 
   const itemClass =

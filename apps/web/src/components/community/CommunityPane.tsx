@@ -4,7 +4,7 @@ import { ExternalLink, Rss, Users } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { formatWhen } from '@/components/reader/article-row';
 import { Button } from '@/components/ui/button';
-import { announce } from '@/lib/announce';
+import { notify } from '@/lib/notify';
 import { useCommunityShares } from '@/lib/community';
 import { useSubscribe } from '@/lib/feeds';
 
@@ -72,10 +72,9 @@ function ShareRow({ share }: { share: CommunityShare }) {
       { url: share.feed.feedUrl },
       {
         onSuccess: () => {
-          announce(`Subscribed to ${share.feed.title ?? share.feed.feedUrl}`);
+          notify.success(`Subscribed to ${share.feed.title ?? share.feed.feedUrl}.`);
           queryClient.invalidateQueries({ queryKey: ['community'] });
         },
-        onError: () => announce('Could not subscribe'),
       },
     );
   };

@@ -46,6 +46,7 @@ export function useSettings(): { settings: Settings; update: (patch: Partial<Set
   });
 
   const mutation = useMutation({
+    meta: { errorMessage: 'Could not save your preferences.' },
     mutationFn: (patch: Partial<Settings>) =>
       api<Settings>('/settings', { method: 'PUT', body: patch }),
     onMutate: async (patch) => {

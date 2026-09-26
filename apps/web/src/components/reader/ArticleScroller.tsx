@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
+import { Button } from '@/components/ui/button';
 import type { ArticleSurface } from '@/hooks/use-article-surface';
+import { errorText } from '@/lib/notify';
 import { cn } from '@/lib/utils';
 
 /**
@@ -30,8 +32,13 @@ export function ArticleScroller({
       )}
 
       {isError && (
-        <div className="p-6 text-center text-sm text-destructive">
-          {error instanceof Error ? error.message : 'Failed to load articles'}
+        <div className="flex flex-col items-center gap-3 p-6 text-center text-sm">
+          <p className="text-destructive">
+            {errorText(error, 'Could not load the articles.')}
+          </p>
+          <Button size="sm" variant="outline" onClick={surface.retry}>
+            Try again
+          </Button>
         </div>
       )}
 

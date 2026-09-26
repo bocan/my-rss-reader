@@ -16,7 +16,7 @@ import { Link } from 'react-router';
 import { AppShell } from '@/components/layout/AppShell';
 import { ThemeTiles } from '@/components/theme/ThemePicker';
 import { Button } from '@/components/ui/button';
-import { announce } from '@/lib/announce';
+import { notify } from '@/lib/notify';
 import { api, ApiRequestError } from '@/lib/api';
 import { ARTICLE_VIEW_LABELS } from '@/lib/article-view';
 import { useChangePassword, useSession, useUpdateAccount } from '@/lib/auth';
@@ -273,7 +273,7 @@ function ResetViewsRow() {
   const onReset = () => {
     if (!confirm('Reset every feed and folder to the default list view?')) return;
     reset.mutate(undefined, {
-      onSuccess: () => announce('All feeds and folders now use the default list view.'),
+      onSuccess: () => notify.success('All feeds and folders now use the default list view.'),
     });
   };
   return (
@@ -336,7 +336,7 @@ function SharingSection() {
         blogrollEnabled,
       },
       {
-        onSuccess: () => announce('Sharing settings saved'),
+        onSuccess: () => notify.success('Sharing settings saved.'),
         onError: (err) => setError(errorMessage(err, 'Could not save sharing settings')),
       },
     );
@@ -464,6 +464,7 @@ export function SettingsPage() {
   const [showFailures, setShowFailures] = useState(false);
 
   const importOpml = useMutation({
+    meta: { inlineError: true },
     mutationFn: (opml: string) =>
       api<ImportOpmlResult>('/opml/import', { method: 'POST', body: { opml } }),
     onSuccess: (data) => {

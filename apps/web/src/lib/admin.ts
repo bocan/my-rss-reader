@@ -20,6 +20,7 @@ export function useAdminUsers() {
 export function useUpdateUser() {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorMessage: 'Could not update the user.' },
     mutationFn: ({ id, ...patch }: { id: string } & UpdateUserInput) =>
       api<AdminUser>(`/admin/users/${id}`, { method: 'PATCH', body: patch }),
     onSuccess: () => qc.invalidateQueries({ queryKey: USERS_KEY }),
@@ -29,6 +30,7 @@ export function useUpdateUser() {
 export function useDeleteUser() {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorMessage: 'Could not delete the user.' },
     mutationFn: (id: string) => api<void>(`/admin/users/${id}`, { method: 'DELETE' }),
     onSuccess: () => qc.invalidateQueries({ queryKey: USERS_KEY }),
   });
@@ -41,6 +43,7 @@ export function useInvites() {
 export function useCreateInvite() {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorMessage: 'Could not create the invite.' },
     mutationFn: (input: CreateInviteInput) =>
       api<InviteDto>('/admin/invites', { method: 'POST', body: input }),
     onSuccess: () => qc.invalidateQueries({ queryKey: INVITES_KEY }),
@@ -50,6 +53,7 @@ export function useCreateInvite() {
 export function useDeleteInvite() {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorMessage: 'Could not revoke the invite.' },
     mutationFn: (id: string) => api<void>(`/admin/invites/${id}`, { method: 'DELETE' }),
     onSuccess: () => qc.invalidateQueries({ queryKey: INVITES_KEY }),
   });
@@ -65,6 +69,7 @@ export function useAdminSettings() {
 export function useUpdateAdminSettings() {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorMessage: 'Could not save the instance settings.' },
     mutationFn: (patch: { registrationMode?: RegistrationMode; defaultPollIntervalSec?: number }) =>
       api<AppSettingsDto>('/admin/settings', { method: 'PATCH', body: patch }),
     onSuccess: (data) => qc.setQueryData(SETTINGS_KEY, data),

@@ -75,6 +75,7 @@ function reconcileTree(qc: QueryClient) {
 export function useCreateFolder() {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorMessage: 'Could not create the folder.' },
     mutationFn: (name: string) =>
       api<FolderRow>('/folders', { method: 'POST', body: { name } }),
     onSettled: () => reconcileTree(qc),
@@ -84,6 +85,7 @@ export function useCreateFolder() {
 export function useUpdateFolder() {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorMessage: 'Could not update the folder.' },
     mutationFn: ({
       id,
       ...body
@@ -109,6 +111,7 @@ export function useUpdateFolder() {
 export function useDeleteFolder() {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorMessage: 'Could not delete the folder.' },
     mutationFn: (id: string) => api<void>(`/folders/${id}`, { method: 'DELETE' }),
     onMutate: async (id): Promise<TreeCtx> => {
       const ctx = await snapshotTree(qc);
@@ -136,9 +139,11 @@ export function useDeleteFolder() {
   });
 }
 
-export function useUpdateSubscription() {
+/** `inlineError`: the caller shows failures itself (the feed settings form). */
+export function useUpdateSubscription({ inlineError = false } = {}) {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorMessage: 'Could not update the feed.', inlineError },
     mutationFn: ({
       id,
       ...body
@@ -198,6 +203,7 @@ export function useUpdateSubscription() {
 export function useResetViews() {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorMessage: 'Could not reset the views.' },
     mutationFn: () => api<void>('/settings/reset-views', { method: 'POST' }),
     onSuccess: () => {
       qc.setQueryData<FeedsData>(['feeds'], (d) =>
@@ -215,6 +221,7 @@ export function useResetViews() {
 export function useRefreshFeeds() {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorMessage: 'Could not fetch the feeds.' },
     mutationFn: () => api<{ refreshed: number }>('/feeds/refresh', { method: 'POST' }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['feeds'] });
@@ -228,6 +235,8 @@ export function useRefreshFeeds() {
 export function useChangeFeedUrl() {
   const qc = useQueryClient();
   return useMutation({
+    // The feed settings dialog shows URL errors next to the field.
+    meta: { inlineError: true },
     mutationFn: ({ id, feedUrl }: { id: string; feedUrl: string }) =>
       api<SubscriptionRow>(`/feeds/${id}/url`, { method: 'PATCH', body: { feedUrl } }),
     onSuccess: () => {
@@ -241,6 +250,7 @@ export function useChangeFeedUrl() {
 export function useUnsubscribe() {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorMessage: 'Could not unsubscribe.' },
     mutationFn: (subscriptionId: string) =>
       api<void>(`/feeds/${subscriptionId}`, { method: 'DELETE' }),
     onMutate: async (subscriptionId): Promise<TreeCtx> => {

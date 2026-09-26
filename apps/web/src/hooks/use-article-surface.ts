@@ -17,6 +17,8 @@ export interface ArticleSurface {
   isLoading: boolean;
   isError: boolean;
   error: unknown;
+  /** Refetch the list after a load error. */
+  retry: () => void;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   focusedId: string | null;
@@ -34,8 +36,16 @@ export function useArticleSurface(
   filters: ArticleFilters,
   onFocusedChange?: (article: ArticleListItem) => void,
 ): ArticleSurface {
-  const { data, isLoading, isError, error, fetchNextPage, hasNextPage, isFetchingNextPage } =
-    useArticles(filters);
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useArticles(filters);
 
   const items = useMemo(() => data?.pages.flatMap((p) => p.items) ?? [], [data]);
   // Server time of the first page: nothing stored after it is on screen.
@@ -126,6 +136,7 @@ export function useArticleSurface(
     isLoading,
     isError,
     error,
+    retry: () => void refetch(),
     hasNextPage,
     isFetchingNextPage,
     focusedId,

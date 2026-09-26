@@ -67,6 +67,8 @@ export function ReadingPane({ articleId }: { articleId: string }) {
   }, [readableQuery.data, articleId, queryClient]);
 
   const refresh = useMutation({
+    // The Extracted view shows its own "could not extract" state.
+    meta: { inlineError: true },
     mutationFn: () => api<ArticleDetail>(`/articles/${articleId}/readable?refresh=true`),
     onSuccess: (data) => queryClient.setQueryData(['article', articleId], data),
   });

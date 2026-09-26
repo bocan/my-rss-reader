@@ -85,7 +85,6 @@ export function FolderTree({
   const [editing, setEditing] = useState<{ kind: 'folder' | 'feed'; id: string } | null>(null);
   const [settingsSub, setSettingsSub] = useState<SubscriptionRow | null>(null);
   const [creating, setCreating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   // The row-menu button that opened the feed-settings dialog, so focus returns
   // to it on close. Captured while the menu is still open (the menu item that was
   // clicked is gone by the time the dialog closes).
@@ -143,7 +142,7 @@ export function FolderTree({
     const a = active.data.current as DragData | undefined;
     const o = over.data.current as DragData | undefined;
     if (!a || !o) return;
-    setError(null);
+    // Failures surface as toasts from the mutations' meta (lib/queryClient.ts).
 
     if (a.type === 'feed') {
       let folderId: string | null;
@@ -159,10 +158,7 @@ export function FolderTree({
         position = undefined;
       }
       if (folderId === a.folderId && position === a.index) return;
-      updateSub.mutate(
-        { id: a.subscriptionId, folderId, position },
-        { onError: () => setError('Could not move that feed.') },
-      );
+      updateSub.mutate({ id: a.subscriptionId, folderId, position });
       return;
     }
 
@@ -172,21 +168,12 @@ export function FolderTree({
         if (!target) return;
         if (o.parentId === a.parentId) {
           if (o.index === a.index) return;
-          updateFolder.mutate(
-            { id: a.folderId, position: o.index },
-            { onError: () => setError('Could not reorder that folder.') },
-          );
+          updateFolder.mutate({ id: a.folderId, position: o.index });
         } else if (canNest(a.folderId, target)) {
-          updateFolder.mutate(
-            { id: a.folderId, parentId: target.id },
-            { onError: () => setError('Could not move that folder.') },
-          );
+          updateFolder.mutate({ id: a.folderId, parentId: target.id });
         }
       } else if (o.type === 'dropzone' && o.folderId === null && a.parentId !== null) {
-        updateFolder.mutate(
-          { id: a.folderId, parentId: null },
-          { onError: () => setError('Could not move that folder.') },
-        );
+        updateFolder.mutate({ id: a.folderId, parentId: null });
       }
     }
   }
@@ -203,7 +190,6 @@ export function FolderTree({
   return (
     <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
       <div className="mt-1 space-y-0.5 text-sm">
-        {error && <p className="px-2 py-1 text-xs text-destructive">{error}</p>}
 
         {/* Root folders (each collapsible, holding its feeds and child folders) */}
         <SortableContext
@@ -233,9 +219,7 @@ export function FolderTree({
               submitEdit={submitEdit}
               onDelete={() => {
                 if (confirm(`Delete folder "${folder.name}"? Its feeds move out, not away.`)) {
-                  deleteFolder.mutate(folder.id, {
-                    onError: () => setError('Could not delete that folder.'),
-                  });
+                  deleteFolder.mutate(folder.id);
                 }
               }}
               onMarkRead={() => markRead.mutate({ folderId: folder.id })}

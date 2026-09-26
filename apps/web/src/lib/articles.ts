@@ -1,5 +1,10 @@
 import type { ArticleDetail, Paginated, UnreadCounts } from '@rss/shared';
-import { useMutation, useQuery, type QueryClient } from '@tanstack/react-query';
+import {
+  useMutation,
+  useQuery,
+  type MutateOptions,
+  type QueryClient,
+} from '@tanstack/react-query';
 import type { ArticleListItem } from '@/hooks/use-articles';
 import { api } from './api';
 
@@ -173,6 +178,7 @@ type MarkReadScope = { feedId?: string; folderId?: string; before?: string; fetc
  */
 export function registerMutationDefaults(qc: QueryClient): void {
   qc.setMutationDefaults(TOGGLE_STATE_KEY, {
+    meta: { errorMessage: 'Could not update the article.' },
     mutationFn: ({ articleId, read, starred, shared, shareNote }: ToggleVars) =>
       api<void>(`/articles/${articleId}/state`, {
         method: 'PATCH',
@@ -193,6 +199,7 @@ export function registerMutationDefaults(qc: QueryClient): void {
   });
 
   qc.setMutationDefaults(MARK_READ_KEY, {
+    meta: { errorMessage: 'Could not mark the articles as read.' },
     mutationFn: (scope: MarkReadScope) =>
       api<void>('/articles/mark-read', { method: 'POST', body: scope }),
     onMutate: async (scope: MarkReadScope): Promise<Ctx> => {
@@ -231,7 +238,8 @@ export function useToggleArticleState(articleId: string) {
   const m = useMutation<void, Error, ToggleVars, Ctx>({ mutationKey: TOGGLE_STATE_KEY });
   return {
     isPending: m.isPending,
-    mutate: (vars: TogglePatch) => m.mutate({ articleId, ...vars }),
+    mutate: (vars: TogglePatch, opts?: MutateOptions<void, Error, ToggleVars, Ctx>) =>
+      m.mutate({ articleId, ...vars }, opts),
     mutateAsync: (vars: TogglePatch) => m.mutateAsync({ articleId, ...vars }),
   };
 }

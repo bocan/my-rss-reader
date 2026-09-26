@@ -36,6 +36,7 @@ import { useListView, type ViewScope } from '@/hooks/use-list-view';
 import { useShortcuts } from '@/hooks/use-shortcuts';
 import { useSidebar } from '@/hooks/use-sidebar';
 import { announce } from '@/lib/announce';
+import { notify } from '@/lib/notify';
 import { useMarkRead, useToggleArticleState, useUnreadCounts } from '@/lib/articles';
 import { useSession } from '@/lib/auth';
 import { useCommunityShares } from '@/lib/community';
@@ -273,14 +274,20 @@ export function ReaderPage() {
     if (unreadForView > 20 && !window.confirm(`Mark ${unreadForView} articles as read?`)) return;
     // Only what this list could have shown: nothing stored after it loaded.
     const fetchedBefore = surface.asOf ?? undefined;
+    const n = unreadForView;
+    const label = scopeLabel;
     markRead.mutate(
       filters.feedId
         ? { feedId: filters.feedId, fetchedBefore }
         : filters.folderId
           ? { folderId: filters.folderId, fetchedBefore }
           : { fetchedBefore },
+      // Confirm only once the server agreed; a failure toasts via the cache.
+      {
+        onSuccess: () =>
+          notify.success(`Marked ${n} ${n === 1 ? 'article' : 'articles'} as read in ${label}.`),
+      },
     );
-    announce(`Marked ${unreadForView} ${unreadForView === 1 ? 'article' : 'articles'} as read in ${scopeLabel}`);
   }
 
   // --- Keyboard layer (SPEC-008) ---------------------------------------
@@ -553,8 +560,8 @@ export function ReaderPage() {
           onClick={() => {
             announce('Fetching all feeds');
             refreshFeeds.mutate(undefined, {
-              onSuccess: () => announce('Feeds updated'),
-              onError: () => announce('Could not fetch feeds'),
+              onSuccess: ({ refreshed }) =>
+                notify.success(`Fetched ${refreshed} ${refreshed === 1 ? 'feed' : 'feeds'}.`),
             });
           }}
         >

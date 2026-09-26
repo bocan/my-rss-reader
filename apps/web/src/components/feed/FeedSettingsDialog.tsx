@@ -10,7 +10,7 @@ import { Check, Copy } from 'lucide-react';
 import { useState, type FormEvent, type RefObject } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { announce } from '@/lib/announce';
+import { notify } from '@/lib/notify';
 import { ApiRequestError } from '@/lib/api';
 import {
   useChangeFeedUrl,
@@ -63,7 +63,7 @@ export function FeedSettingsDialog({
   const { data: foldersData } = useFolders();
   const folders = foldersData?.items ?? [];
   const { data: profile } = useProfile();
-  const update = useUpdateSubscription();
+  const update = useUpdateSubscription({ inlineError: true });
   const changeUrl = useChangeFeedUrl();
 
   const [url, setUrl] = useState(sub.feedUrl);
@@ -97,7 +97,7 @@ export function FeedSettingsDialog({
       },
       {
         onSuccess: () => {
-          announce('Feed settings saved');
+          notify.success('Feed settings saved.');
           onOpenChange(false);
         },
       },

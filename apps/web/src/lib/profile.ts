@@ -11,6 +11,8 @@ export function useProfile() {
 export function useUpdateProfile() {
   const qc = useQueryClient();
   return useMutation({
+    // Settings shows profile and sharing errors next to their forms.
+    meta: { inlineError: true },
     mutationFn: (input: UpdateProfileInput) =>
       api<ProfileDto>('/profile', { method: 'PUT', body: input }),
     onSuccess: (profile) => qc.setQueryData(['profile'], profile),
