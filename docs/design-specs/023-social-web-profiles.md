@@ -1,6 +1,6 @@
 # SPEC-023: Subscribe to social-web profiles (Mastodon, Bluesky, fediverse handles)
 
-- **Status:** Todo
+- **Status:** Done
 - **Phase:** 4
 - **Depends on:** SPEC-002 (Done)
 - **Estimated size:** S
@@ -162,21 +162,46 @@ All in `subscribe-dialog.tsx`:
 
 ## Acceptance criteria
 
-- [ ] Pasting `https://bsky.app/profile/somebody.bsky.social` discovers
+- [x] Pasting `https://bsky.app/profile/somebody.bsky.social` discovers
       exactly one candidate, `https://bsky.app/profile/somebody.bsky.social/rss`
       (mocked in tests), and subscribes cleanly end to end.
-- [ ] Pasting `https://hachyderm.io/@someone` discovers
+- [x] Pasting `https://hachyderm.io/@someone` discovers
       `https://hachyderm.io/@someone.rss` without fetching the profile
       HTML (assert one request in the mocked test).
-- [ ] Typing `@someone@hachyderm.io` (and `someone@hachyderm.io`) in the
+- [x] Typing `@someone@hachyderm.io` (and `someone@hachyderm.io`) in the
       dialog produces the same result as pasting the profile URL.
-- [ ] A `/@user`-shaped URL whose `.rss` probe 404s (Medium fixture) falls
-      back to generic discovery and still finds the real feed.
-- [ ] A YouTube channel page fixture resolves via the existing
+- [x] A `/@user`-shaped URL whose `.rss` probe 404s falls back to generic
+      discovery and still finds the real feed (a neutral fixture host; see
+      "As built" for Medium).
+- [x] A YouTube channel page fixture resolves via the existing
       `<link rel="alternate">` path (regression pin).
-- [ ] Plain blogs, direct feed URLs, and ambiguous-multi-feed homepages
+- [x] Plain blogs, direct feed URLs, and ambiguous-multi-feed homepages
       behave exactly as before (existing `feeds.int.test.ts` and
       `feed-fetch.test.ts` stay green).
+
+## As built
+
+Three differences from the plan above, all found while building it:
+
+- **Medium has its own matcher.** In 2026 Medium answers 403 to every
+  non-browser request for `medium.com/@user` (and for `@user.rss`), so the
+  generic `<link rel="alternate">` path this spec relied on never sees the
+  page. `socialFeedProbes` maps `medium.com/@user` straight to
+  `https://medium.com/feed/@user`, which Medium serves to anyone. The
+  fall-back test uses a neutral host instead.
+- **The dialog has no discover path.** `subscribe-dialog.tsx` only calls
+  `POST /api/feeds` (which runs discovery itself), so the helper runs once,
+  on submit. The input is now `type="text"` with `inputMode="url"`: a
+  `type="url"` field made the browser refuse `@user@host` and `example.com`
+  before the helper could run. The dialog shows its own message when the
+  normalized value is still not an http(s) URL.
+- **`feed://` URLs** (the scheme browsers use for feed links) become
+  `https://`. They used to reach the API and fail at fetch time.
+
+Live check (2026-09-26, discovery run against the real network):
+`hachyderm.io/@nova`, `mastodon.social/@Gargron`,
+`bsky.app/profile/jay.bsky.team`, `medium.com/@ev` and
+`youtube.com/@veritasium` each resolved to one real feed.
 
 ## Testing
 
