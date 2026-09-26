@@ -15,6 +15,7 @@ import { ChevronLeft, Download, Smartphone } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
 import { OpmlImportDescription, OpmlImportPanel } from '@/components/feed/OpmlImport';
+import { RulesSection } from '@/components/rules/RulesSection';
 import { AppShell } from '@/components/layout/AppShell';
 import { ThemeTiles } from '@/components/theme/ThemePicker';
 import { Button } from '@/components/ui/button';
@@ -570,6 +571,8 @@ export function SettingsPage() {
             onChange={(v) => set('showUnreadOnly', v)}
           />
         </section>
+
+        <RulesSection />
 
         {canInstall && (
           <section className="rounded-lg border p-4">

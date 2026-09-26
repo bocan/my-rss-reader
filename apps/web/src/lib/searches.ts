@@ -10,6 +10,8 @@ import { api } from './api';
  */
 
 const KEY = ['saved-searches'] as const;
+// onSettled starts the list reload and does not return it, so the caller's
+// onSuccess (e.g. closing the save popover) never waits for the reload.
 
 export function useSavedSearches() {
   return useQuery({
@@ -24,7 +26,7 @@ export function useCreateSavedSearch() {
     meta: { errorMessage: 'Could not save the search.' },
     mutationFn: (input: CreateSavedSearchInput) =>
       api<SavedSearchDto>('/searches', { method: 'POST', body: input }),
-    onSettled: () => qc.invalidateQueries({ queryKey: KEY }),
+    onSettled: () => void qc.invalidateQueries({ queryKey: KEY }),
   });
 }
 
@@ -40,7 +42,7 @@ export function useRenameSavedSearch() {
         d ? { items: d.items.map((s) => (s.id === id ? { ...s, name } : s)) } : d,
       );
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: KEY }),
+    onSettled: () => void qc.invalidateQueries({ queryKey: KEY }),
   });
 }
 
@@ -49,7 +51,7 @@ export function useDeleteSavedSearch() {
   return useMutation({
     meta: { errorMessage: 'Could not delete the search.' },
     mutationFn: (id: string) => api<void>(`/searches/${id}`, { method: 'DELETE' }),
-    onSettled: () => qc.invalidateQueries({ queryKey: KEY }),
+    onSettled: () => void qc.invalidateQueries({ queryKey: KEY }),
   });
 }
 
