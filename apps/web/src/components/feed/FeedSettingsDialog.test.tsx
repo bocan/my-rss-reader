@@ -39,16 +39,17 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-function renderDialog(row = sub) {
+function renderDialog(row = sub, onOpenChange = vi.fn()) {
   const qc = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
   qc.setQueryData(['folders'], { items: [] });
   qc.setQueryData(['feeds'], { items: [row] });
   qc.setQueryData(['profile'], { blogrollEnabled: false });
   render(
     <QueryClientProvider client={qc}>
-      <FeedSettingsDialog sub={row} onOpenChange={vi.fn()} />
+      <FeedSettingsDialog sub={row} onOpenChange={onOpenChange} />
     </QueryClientProvider>,
   );
+  return onOpenChange;
 }
 
 test('each level has a plain name and says what it does, with the 14-day rule', () => {
@@ -81,6 +82,69 @@ test('Skim and "Show in All items" off save as firehose and hideFromAll', async 
   const [url, init] = fetchMock.mock.calls[0]!;
   expect(String(url)).toContain('/feeds/s1');
   expect(JSON.parse(init.body)).toMatchObject({ attention: 'firehose', hideFromAll: true });
+});
+
+// #37: one Save applies a changed URL and the other settings.
+
+function bodiesByUrl() {
+  return fetchMock.mock.calls.map(([u, init]) => ({
+    url: String(u),
+    method: init?.method,
+    body: init?.body ? JSON.parse(init.body) : undefined,
+  }));
+}
+
+test('Save with a changed URL changes the URL first, then saves the other settings', async () => {
+  const onOpenChange = renderDialog();
+
+  expect(screen.queryByRole('button', { name: 'Change URL' })).toBeNull();
+  fireEvent.change(screen.getByRole('textbox', { name: 'Feed URL' }), {
+    target: { value: 'https://daverupert.com/atom.xml' },
+  });
+  expect(screen.getByText(/Save checks the new URL first/)).toBeInTheDocument();
+  fireEvent.change(screen.getByRole('textbox', { name: /^Name/ }), { target: { value: 'Dave' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+  await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  const calls = bodiesByUrl();
+  expect(calls[0]).toMatchObject({
+    url: expect.stringContaining('/feeds/s1/url'),
+    method: 'PATCH',
+    body: { feedUrl: 'https://daverupert.com/atom.xml' },
+  });
+  expect(calls[1]).toMatchObject({ method: 'PATCH', body: { title: 'Dave' } });
+  expect(calls[1]!.url).toMatch(/\/feeds\/s1$/);
+});
+
+test('a refused URL keeps the dialog open with the error, and saves nothing else', async () => {
+  fetchMock.mockImplementation(async () => ({
+    ok: false,
+    status: 422,
+    json: async () => ({ message: 'Could not fetch a valid feed at that URL: 404' }),
+  }));
+  const onOpenChange = renderDialog();
+
+  fireEvent.change(screen.getByRole('textbox', { name: 'Feed URL' }), {
+    target: { value: 'https://example.com/gone' },
+  });
+  fireEvent.change(screen.getByRole('textbox', { name: /^Name/ }), { target: { value: 'Dave' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+  const alert = await screen.findByRole('alert');
+  expect(alert).toHaveTextContent('Could not fetch a valid feed at that URL: 404');
+  expect(alert).toHaveTextContent('Your other changes are not saved yet.');
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(onOpenChange).not.toHaveBeenCalled();
+  // The edits are still in the form, ready for another try.
+  expect(screen.getByRole('textbox', { name: /^Name/ })).toHaveValue('Dave');
+  expect(screen.getByRole('textbox', { name: 'Feed URL' })).toHaveValue('https://example.com/gone');
+});
+
+test('Save with the URL unchanged does not call the change-URL endpoint', async () => {
+  renderDialog();
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  expect(bodiesByUrl().some((c) => c.url.endsWith('/url'))).toBe(false);
 });
 
 test('a feed hidden from All items shows the box unticked', () => {

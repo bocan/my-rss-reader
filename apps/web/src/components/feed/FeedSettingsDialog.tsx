@@ -31,8 +31,8 @@ const inputClass =
 
 const VIEW_LABEL: Record<ViewMode, string> = { list: 'List', cards: 'Cards', magazine: 'Magazine' };
 
-/** Consolidated feed editor (SPEC-018): rename, folder, view overrides, hide,
- *  and the shared poll interval, saved in one PATCH. */
+/** Consolidated feed editor (SPEC-018): URL, rename, folder, view overrides,
+ *  hide, and the shared poll interval, all applied by one Save. */
 export function FeedSettingsDialog({
   sub,
   restoreFocusRef,
@@ -61,8 +61,27 @@ export function FeedSettingsDialog({
     sub.fetchIntervalSec != null ? String(Math.round(sub.fetchIntervalSec / 60)) : '',
   );
 
-  function submit(e: FormEvent) {
+  const newUrl = url.trim();
+  const urlChanged = newUrl !== sub.feedUrl;
+  const saving = changeUrl.isPending || update.isPending;
+
+  /** #37: one Save does both. A changed URL goes first; if the server refuses
+   *  it, the dialog stays open with the error and nothing else is saved. */
+  async function submit(e: FormEvent) {
     e.preventDefault();
+    if (urlChanged) {
+      setUrlMsg(null);
+      try {
+        await changeUrl.mutateAsync({ id: sub.subscriptionId, feedUrl: newUrl });
+      } catch (err) {
+        setUrlMsg(
+          err instanceof ApiRequestError
+            ? (err.body?.message ?? err.message)
+            : 'Could not change the URL.',
+        );
+        return;
+      }
+    }
     const trimmed = name.trim();
     const min = intervalMin.trim() === '' ? null : Math.max(1, Math.round(Number(intervalMin)));
     update.mutate(
@@ -113,6 +132,10 @@ export function FeedSettingsDialog({
             <div className="flex items-center gap-2">
               <input
                 type="url"
+                required
+                aria-label="Feed URL"
+                aria-invalid={urlMsg ? true : undefined}
+                aria-describedby={urlChanged || urlMsg ? 'feed-url-note' : undefined}
                 value={url}
                 onChange={(e) => {
                   setUrl(e.target.value);
@@ -122,37 +145,16 @@ export function FeedSettingsDialog({
               />
               <CopyButton value={url} />
             </div>
-            {url.trim() !== sub.feedUrl && (
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={changeUrl.isPending || !url.trim()}
-                  onClick={() => {
-                    setUrlMsg(null);
-                    changeUrl.mutate(
-                      { id: sub.subscriptionId, feedUrl: url.trim() },
-                      {
-                        onSuccess: () => onOpenChange(false),
-                        onError: (err) =>
-                          setUrlMsg(
-                            err instanceof ApiRequestError
-                              ? (err.body?.message ?? err.message)
-                              : 'Could not change the URL.',
-                          ),
-                      },
-                    );
-                  }}
-                >
-                  {changeUrl.isPending ? 'Checking feed…' : 'Change URL'}
-                </Button>
-                <span className="text-xs text-muted-foreground">
-                  Re-points this subscription; the new URL is fetched to verify it.
-                </span>
-              </div>
+            {urlChanged && !urlMsg && (
+              <p id="feed-url-note" className="text-xs text-muted-foreground">
+                Save checks the new URL first, then moves this subscription to it.
+              </p>
             )}
-            {urlMsg && <p className="text-xs text-destructive">{urlMsg}</p>}
+            {urlMsg && (
+              <p id="feed-url-note" role="alert" className="text-xs text-destructive">
+                {urlMsg} Your other changes are not saved yet.
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -317,8 +319,8 @@ export function FeedSettingsDialog({
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={update.isPending} className={cn(update.isPending && 'opacity-70')}>
-              {update.isPending ? 'Saving…' : 'Save'}
+            <Button type="submit" disabled={saving} className={cn(saving && 'opacity-70')}>
+              {changeUrl.isPending ? 'Checking feed…' : update.isPending ? 'Saving…' : 'Save'}
             </Button>
           </div>
         </form>
