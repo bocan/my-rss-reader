@@ -1,6 +1,6 @@
 import { ARTICLE_VIEWS, type ArticleDetail, type ArticleView, type ReadingSize } from '@rss/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, ExternalLink, Mail, MailOpen, Rss, Star } from 'lucide-react';
+import { Download, ExternalLink, Landmark, Mail, MailOpen, Rss, Star } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ARTICLE_VIEW_LABELS, resolveAutoView } from '@/lib/article-view';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,7 @@ import { useOnlineStatus } from '@/lib/pwa';
 import { proseSizeClass, readingColumnClass } from '@/lib/reading-format';
 import { useSettings } from '@/lib/settings';
 import { cn } from '@/lib/utils';
+import { waybackUrl } from '@/lib/wayback';
 import { ArticleHtml } from './ArticleHtml';
 import { SharePopover } from './SharePopover';
 
@@ -167,6 +168,17 @@ export function ReadingPane({
                 <ExternalLink className="size-3.5" /> Open original
               </a>
             )}
+            {article.url && (
+              <a
+                href={waybackUrl(article.url)}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Find on the Wayback Machine"
+                className="inline-flex items-center gap-1 text-primary hover:underline"
+              >
+                <Landmark className="size-3.5" /> Wayback
+              </a>
+            )}
           </div>
 
           <div className="mt-3 flex items-center justify-between gap-2">
@@ -213,6 +225,12 @@ export function ReadingPane({
                 variant="ghost"
                 size="icon"
                 aria-label={article.starred ? 'Unstar' : 'Star'}
+                // SPEC-024: say what a star does, so the contract is found.
+                title={
+                  article.starred
+                    ? 'Starred: a readable copy is kept. Unstar (s)'
+                    : 'Star (keeps a readable copy) (s)'
+                }
                 onClick={() => toggle.mutate({ starred: !article.starred })}
               >
                 <Star className={cn('size-4', article.starred && 'fill-primary text-primary')} />
@@ -336,7 +354,29 @@ function FeedView({
       </div>
     );
   }
-  return <Note>No content in this item. Try the Web view.</Note>;
+  return (
+    <div className="space-y-2">
+      <Note>No content in this item. Try the Web view.</Note>
+      {article.url && <WaybackHint url={article.url} />}
+    </div>
+  );
+}
+
+/** Where to look when the page is gone (SPEC-024): the moment it is needed. */
+function WaybackHint({ url }: { url: string }) {
+  return (
+    <p className="text-sm text-muted-foreground">
+      The original may have moved or died.{' '}
+      <a
+        href={waybackUrl(url)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-primary hover:underline"
+      >
+        Try the Wayback Machine.
+      </a>
+    </p>
+  );
 }
 
 function ExtractedView({
@@ -384,6 +424,7 @@ function ExtractedView({
       <p className="text-muted-foreground">
         Could not extract a clean version of this article.
       </p>
+      {article.url && <WaybackHint url={article.url} />}
       <div className="flex gap-2">
         <Button size="sm" onClick={onRetry} disabled={retrying}>
           {retrying ? 'Trying…' : 'Try again'}
