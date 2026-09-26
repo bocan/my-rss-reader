@@ -14,16 +14,18 @@ export function ListColumn({
   selectedId,
   onSelect,
   header,
+  empty,
 }: {
   surface: ArticleSurface;
   feeds: FeedMetaMap;
   selectedId: string | null;
   onSelect: (article: ArticleListItem) => void;
   header?: ReactNode;
+  empty?: ReactNode;
 }) {
   const onToggle = useRowToggle();
   return (
-    <ArticleScroller surface={surface} header={header}>
+    <ArticleScroller surface={surface} header={header} empty={empty}>
       <div className="animate-in fade-in duration-200 motion-reduce:animate-none">
         <ListView
           items={surface.items}

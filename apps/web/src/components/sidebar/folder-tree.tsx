@@ -114,6 +114,9 @@ interface FolderTreeProps {
   sort: FeedSort;
   /** When true, hide feeds (and now-empty folders) that have no unread items. */
   hideRead?: boolean;
+  /** The "New folder" field, when the sidebar "+" menu opens it (#35). */
+  creatingFolder?: boolean;
+  onCreatingFolderChange?: (creating: boolean) => void;
 }
 
 const NO_COUNTS = new Map<string, number>();
@@ -127,6 +130,8 @@ export function FolderTree({
   countByFolder = NO_COUNTS,
   sort,
   hideRead = false,
+  creatingFolder,
+  onCreatingFolderChange,
 }: FolderTreeProps) {
   const { data: foldersData } = useFolders();
   const { data: feedsData } = useSubscriptions();
@@ -148,7 +153,9 @@ export function FolderTree({
   const expanded = useExpandedFolders();
   const [editing, setEditing] = useState<{ kind: 'folder' | 'feed'; id: string } | null>(null);
   const [settingsSub, setSettingsSub] = useState<SubscriptionRow | null>(null);
-  const [creating, setCreating] = useState(false);
+  const [localCreating, setLocalCreating] = useState(false);
+  const creating = creatingFolder ?? localCreating;
+  const setCreating = onCreatingFolderChange ?? setLocalCreating;
   // The folder that gets a new subfolder (#28), shown as an input inside it.
   const [creatingIn, setCreatingIn] = useState<string | null>(null);
   const startSubfolder = (parentId: string) => {
@@ -208,6 +215,9 @@ export function FolderTree({
   const hasChildren = (id: string) => folders.some((f) => f.parentId === id);
   // "Move to" lists every root folder, also ones hidden by unread only.
   const allRoots = folders.filter((f) => f.parentId === null).sort(byFolderName);
+  // Unread only hid every feed: say why the tree is empty (#35).
+  const allCaughtUp =
+    hideRead && subs.length > 0 && rootFolders.length === 0 && feedsIn(null).length === 0;
 
   const toggle = toggleFolderExpanded;
 
@@ -338,6 +348,12 @@ export function FolderTree({
             />
           ))}
         </SortableContext>
+
+        {allCaughtUp && (
+          <p className="px-2 py-1.5 text-sm text-muted-foreground">
+            All caught up. Feeds with nothing unread are hidden.
+          </p>
+        )}
 
         {/* Unfoldered feeds, and the drop target for moving back to root */}
         <RootZone>

@@ -16,6 +16,21 @@ test('new articles wait behind a bar, which loads them on a click (#30)', () => 
   expect(screen.queryByRole('button', { name: /new article/ })).not.toBeInTheDocument();
 });
 
+test('an empty list shows the caller its empty state, only once loaded (#35)', () => {
+  const { rerender } = render(
+    <ArticleScroller surface={surfaceStub({ isLoading: true })} empty={<p>All caught up</p>}>
+      {null}
+    </ArticleScroller>,
+  );
+  expect(screen.queryByText('All caught up')).not.toBeInTheDocument();
+  rerender(
+    <ArticleScroller surface={surfaceStub()} empty={<p>All caught up</p>}>
+      {null}
+    </ArticleScroller>,
+  );
+  expect(screen.getByText('All caught up')).toBeInTheDocument();
+});
+
 test('a load error offers Try again, which refetches (#15)', () => {
   const s = surfaceStub({ isError: true, error: new Error('boom') });
   render(<ArticleScroller surface={s}>{null}</ArticleScroller>);

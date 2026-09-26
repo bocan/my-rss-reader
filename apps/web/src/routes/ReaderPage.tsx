@@ -13,17 +13,27 @@ import {
   Share2,
   Shield,
   Star,
+  Upload,
   Users,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { AppShell } from '@/components/layout/AppShell';
 import { MobileNav } from '@/components/layout/MobileNav';
 import { mobileNavTab } from '@/components/layout/mobile-nav-tab';
 import { CommunityPane } from '@/components/community/CommunityPane';
 import { FeedProblemsDialog } from '@/components/feed/FeedProblemsDialog';
+import { ImportOpmlDialog } from '@/components/feed/OpmlImport';
 import { ArticleStepper } from '@/components/reader/ArticleStepper';
 import { BrowseSurface } from '@/components/reader/BrowseSurface';
+import { EmptyArticles, Kbd } from '@/components/reader/EmptyArticles';
 import { ListColumn } from '@/components/reader/ListColumn';
 import { SearchField, SearchScope } from '@/components/reader/Search';
 import { SortToggle } from '@/components/reader/SortToggle';
@@ -31,6 +41,7 @@ import { UnreadToggle } from '@/components/reader/UnreadToggle';
 import { ViewSwitcher } from '@/components/reader/ViewSwitcher';
 import { ReadingPane } from '@/components/reading-pane/ReadingPane';
 import { ShortcutsOverlay } from '@/components/shortcuts/ShortcutsOverlay';
+import { AddMenu } from '@/components/sidebar/add-menu';
 import { FeedSortMenu } from '@/components/sidebar/feed-sort-menu';
 import { FolderTree } from '@/components/sidebar/folder-tree';
 import { SubscribeDialog } from '@/components/subscribe-dialog';
@@ -59,6 +70,7 @@ import { useUnreadCounts } from '@/lib/articles';
 import { OLDER_THAN, olderThan, useMarkAllRead } from '@/lib/mark-all-read';
 import { useSession } from '@/lib/auth';
 import { useCommunityShares } from '@/lib/community';
+import { emptyReason, nextUnreadFeed } from '@/lib/empty-state';
 import { isFeedSort, orderedVisibleFeedIds, type FeedSort } from '@/lib/feed-order';
 import {
   problemFeeds,
@@ -303,6 +315,8 @@ export function ReaderPage() {
   };
 
   const [addOpen, setAddOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [overlayOpen, setOverlayOpen] = useState(false);
   const queryClient = useQueryClient();
   const searchRef = useRef<HTMLInputElement>(null);
@@ -401,6 +415,31 @@ export function ReaderPage() {
       }),
     [foldersData, subs, feedSort, countByFeed, expandedFolders],
   );
+  // Each empty list says why, and what to do next (#35).
+  const nextUnread = nextUnreadFeed(feedOrder, filters.feedId, countByFeed);
+  const emptyState = (
+    <EmptyArticles
+      reason={emptyReason({
+        // Not while the list of feeds is still loading.
+        hasSubscriptions: !feedsData || subs.length > 0,
+        query: debouncedQ,
+        scope: scopeLabel,
+        allFeeds: isAllItems,
+        unreadOnly,
+        starred: Boolean(filters.starred),
+        shared: Boolean(filters.shared),
+        feed: currentSub,
+      })}
+      actions={{
+        onAddFeed: () => setAddOpen(true),
+        onImportOpml: () => setImportOpen(true),
+        onSearchAll: searchAllFeeds,
+        onShowRead: () => changeUnreadOnly(false),
+        onNextFeed: nextUnread ? () => onSelectFeed(nextUnread) : undefined,
+      }}
+    />
+  );
+
   const stepFeed = (delta: number) => {
     if (feedOrder.length === 0) return;
     const at = filters.feedId ? feedOrder.indexOf(filters.feedId) : -1;
@@ -543,20 +582,26 @@ export function ReaderPage() {
         </span>
         <div className="flex items-center gap-0.5">
           <FeedSortMenu sort={feedSort} onChange={setFeedSort} />
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-6"
-            aria-label="Add subscription"
-            onClick={() => setAddOpen(true)}
-          >
-            <Plus />
-          </Button>
+          <AddMenu
+            onAddFeed={() => setAddOpen(true)}
+            onNewFolder={() => setNewFolderOpen(true)}
+            onImportOpml={() => setImportOpen(true)}
+          />
         </div>
       </div>
       {isLoading && <p className="px-2 py-1.5 text-sm text-muted-foreground">Loading…</p>}
       {!isLoading && subs.length === 0 && (
-        <p className="px-2 py-1.5 text-sm text-muted-foreground">No subscriptions yet.</p>
+        <div className="space-y-2 px-2 py-1.5 text-sm text-muted-foreground">
+          <p>No subscriptions yet.</p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>
+              <Plus className="size-4" /> Add a feed
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
+              <Upload className="size-4" /> Import OPML
+            </Button>
+          </div>
+        </div>
       )}
       <FolderTree
         activeFeedId={communityOpen ? undefined : filters.feedId}
@@ -567,6 +612,8 @@ export function ReaderPage() {
         countByFolder={countByFolder}
         sort={feedSort}
         hideRead={unreadOnly}
+        creatingFolder={newFolderOpen}
+        onCreatingFolderChange={setNewFolderOpen}
       />
 
       <div className="mt-auto space-y-0.5 pt-2">
@@ -781,6 +828,7 @@ export function ReaderPage() {
         onOpenChange={setAddOpen}
         onSubscribed={(feedId) => pickScope(() => setFilters({ feedId, sort: 'newest' }))}
       />
+      <ImportOpmlDialog open={importOpen} onOpenChange={setImportOpen} />
       <ShortcutsOverlay open={overlayOpen} onOpenChange={setOverlayOpen} />
 
       <div
@@ -822,6 +870,7 @@ export function ReaderPage() {
               onBack={clearArticle}
               stepper={stepper}
               header={searchStrip}
+              empty={emptyState}
             />
           ) : (
             <div className="grid h-full grid-cols-1 lg:grid-cols-[360px_minmax(0,1fr)]">
@@ -832,6 +881,7 @@ export function ReaderPage() {
                   selectedId={selectedId}
                   onSelect={(a) => selectArticle(a.id)}
                   header={searchStrip}
+                  empty={emptyState}
                 />
               </section>
               <article
@@ -856,7 +906,15 @@ export function ReaderPage() {
                     </div>
                   </div>
                 ) : (
-                  <EmptyPane title="Select an article" hint="Nothing selected yet." />
+                  <EmptyPane
+                    title="Select an article"
+                    hint={
+                      <>
+                        Pick one from the list, or press <Kbd>j</Kbd> and <Kbd>k</Kbd> to move
+                        and <Kbd>Enter</Kbd> to open. <Kbd>?</Kbd> shows every shortcut.
+                      </>
+                    }
+                  />
                 )}
               </article>
             </div>
@@ -890,7 +948,7 @@ function CountBadge({ n }: { n: number }) {
   );
 }
 
-function EmptyPane({ title, hint }: { title: string; hint: string }) {
+function EmptyPane({ title, hint }: { title: string; hint: ReactNode }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-1 p-8 text-center">
       <p className="font-medium">{title}</p>

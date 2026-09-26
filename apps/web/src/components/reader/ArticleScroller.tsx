@@ -15,12 +15,15 @@ export function ArticleScroller({
   surface,
   className,
   header,
+  empty,
   children,
 }: {
   surface: ArticleSurface;
   className?: string;
   /** Above the results, e.g. what a search covers (#33). */
   header?: ReactNode;
+  /** Shown when there are no articles; each empty case has its own (#35). */
+  empty?: ReactNode;
   children: ReactNode;
 }) {
   const { items, isLoading, isError, error, hasNextPage, isFetchingNextPage } = surface;
@@ -62,12 +65,14 @@ export function ArticleScroller({
         </div>
       )}
 
-      {!isLoading && !isError && items.length === 0 && (
-        <div className="flex h-full flex-col items-center justify-center gap-1 p-8 text-center">
-          <p className="font-medium">No articles</p>
-          <p className="text-sm text-muted-foreground">Nothing to read here yet.</p>
-        </div>
-      )}
+      {!isLoading &&
+        !isError &&
+        items.length === 0 &&
+        (empty ?? (
+          <div className="flex h-full flex-col items-center justify-center gap-1 p-8 text-center">
+            <p className="font-medium">No articles</p>
+          </div>
+        ))}
 
       {children}
 

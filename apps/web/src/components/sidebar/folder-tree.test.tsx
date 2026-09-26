@@ -316,3 +316,42 @@ describe('touch drag', () => {
     fireEvent.touchEnd(row(), touch(140));
   });
 });
+
+// #35: empty sidebar states, and "New folder" from the "+" menu.
+
+function renderWith(props: Partial<React.ComponentProps<typeof FolderTree>>, unread = 0) {
+  const qc = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
+  qc.setQueryData(['folders'], { items: [] });
+  qc.setQueryData(['feeds'], { items: [sub] });
+  render(
+    <QueryClientProvider client={qc}>
+      <FolderTree
+        onSelectFeed={vi.fn()}
+        onSelectFolder={vi.fn()}
+        countByFeed={new Map([['f1', unread]])}
+        sort="name"
+        {...props}
+      />
+    </QueryClientProvider>,
+  );
+}
+
+test('unread only with nothing unread says "All caught up"', () => {
+  renderWith({ hideRead: true });
+  expect(screen.getByText(/All caught up/)).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Dave Rupert' })).toBeNull();
+});
+
+test('no "All caught up" while a feed is still shown', () => {
+  renderWith({ hideRead: true }, 2);
+  expect(screen.queryByText(/All caught up/)).toBeNull();
+});
+
+test('the parent can open the "New folder" field, and hears when it closes', () => {
+  const onCreatingFolderChange = vi.fn();
+  renderWith({ creatingFolder: true, onCreatingFolderChange });
+  const input = screen.getByPlaceholderText('Folder name');
+  expect(input).toHaveFocus();
+  fireEvent.keyDown(input, { key: 'Escape' });
+  expect(onCreatingFolderChange).toHaveBeenCalledWith(false);
+});
