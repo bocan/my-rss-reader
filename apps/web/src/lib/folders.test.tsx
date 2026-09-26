@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { Toaster } from '@/components/ui/sonner';
 import {
+  useFetchAllFeeds,
   useRefreshFeed,
   useUpdateFolder,
   useUpdateSubscription,
@@ -69,6 +70,32 @@ test('a retry puts the new state in the list, and a toast says it still fails', 
   act(() => result.current.mutate('a'));
   expect(await screen.findByText('a still fails: The feed is not at this address any more.')).toBeInTheDocument();
   expect(qc.getQueryData<{ items: SubscriptionRow[] }>(['feeds'])!.items[0]!.lastError).toBe('HTTP 404');
+  toast.dismiss();
+});
+
+// #42: the r key and the refresh button share this, so both say the result.
+test('fetch all feeds says how many it fetched, and a second press while it runs does nothing', async () => {
+  let finish: (r: Response) => void = () => {};
+  const fetchMock = vi.fn(
+    (_url: string) =>
+      new Promise<Response>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  vi.stubGlobal('fetch', fetchMock);
+  render(<Toaster />);
+  const { result } = renderHook(() => useFetchAllFeeds(), { wrapper });
+
+  act(() => result.current.fetchAll());
+  await vi.waitFor(() => expect(result.current.isPending).toBe(true));
+  act(() => result.current.fetchAll());
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(String(fetchMock.mock.calls[0]![0])).toContain('/feeds/refresh');
+
+  await act(async () =>
+    finish({ ok: true, status: 200, json: async () => ({ refreshed: 3 }) } as Response),
+  );
+  expect(await screen.findByText('Fetched 3 feeds.')).toBeInTheDocument();
   toast.dismiss();
 });
 

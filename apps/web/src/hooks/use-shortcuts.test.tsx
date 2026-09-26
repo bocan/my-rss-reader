@@ -15,7 +15,7 @@ function makeActions(): ShortcutActions {
     toggleStar: vi.fn(),
     toggleShared: vi.fn(),
     markAllRead: vi.fn(),
-    refresh: vi.fn(),
+    fetchFeeds: vi.fn(),
     focusSearch: vi.fn(),
     nextFeed: vi.fn(),
     prevFeed: vi.fn(),
@@ -84,7 +84,15 @@ describe('useShortcuts dispatch', () => {
     act(() => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', metaKey: true, bubbles: true }));
     });
-    expect(actions.refresh).not.toHaveBeenCalled();
+    expect(actions.fetchFeeds).not.toHaveBeenCalled();
+  });
+
+  test('r fetches all feeds, the same action as the refresh button (#42)', () => {
+    render(<Harness ctx="list" actions={actions} />);
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', bubbles: true }));
+    });
+    expect(actions.fetchFeeds).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -1,4 +1,3 @@
-import { useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   ChevronDown,
@@ -65,7 +64,6 @@ import { useListView, useSortOrder, type SortScope, type ViewScope } from '@/hoo
 import { useShortcuts } from '@/hooks/use-shortcuts';
 import { useSidebar } from '@/hooks/use-sidebar';
 import { announce } from '@/lib/announce';
-import { notify } from '@/lib/notify';
 import { useUnreadCounts } from '@/lib/articles';
 import { OLDER_THAN, olderThan, useMarkAllRead } from '@/lib/mark-all-read';
 import { useSession } from '@/lib/auth';
@@ -77,7 +75,7 @@ import { isFeedSort, orderedVisibleFeedIds, type FeedSort } from '@/lib/feed-ord
 import {
   problemFeeds,
   useFolders,
-  useRefreshFeeds,
+  useFetchAllFeeds,
   useSubscriptions,
   useUpdateFolder,
   useUpdateSubscription,
@@ -196,7 +194,7 @@ export function ReaderPage() {
   // List layout (the Inoreader model, see useListView): a feed or folder shows
   // its saved layout, else the user default. The switcher saves where you are
   // only; on All items it sets the default. Feed settings edits the same field.
-  const refreshFeeds = useRefreshFeeds();
+  const { fetchAll: fetchFeeds, isPending: fetchingFeeds } = useFetchAllFeeds();
   const updateSub = useUpdateSubscription();
   const updateFolder = useUpdateFolder();
   const currentSub = filters.feedId ? subs.find((s) => s.feedId === filters.feedId) : undefined;
@@ -320,7 +318,6 @@ export function ReaderPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [overlayOpen, setOverlayOpen] = useState(false);
-  const queryClient = useQueryClient();
   const searchRef = useRef<HTMLInputElement>(null);
 
   // Moving focus opens in place only in list/compact at lg (the reader is a
@@ -481,10 +478,7 @@ export function ReaderPage() {
     toggleStar: toggles.toggleStar,
     toggleShared: toggles.toggleShared,
     markAllRead: () => canMarkAll && hasUnread && markAllRead(),
-    refresh: () => {
-      queryClient.invalidateQueries({ queryKey: ['articles'] });
-      queryClient.invalidateQueries({ queryKey: ['counts'] });
-    },
+    fetchFeeds,
     focusSearch: () => searchRef.current?.focus(),
     nextFeed: () => stepFeed(1),
     prevFeed: () => stepFeed(-1),
@@ -702,20 +696,12 @@ export function ReaderPage() {
           variant="ghost"
           size="icon"
           aria-label="Fetch all feeds now"
-          title="Fetch all feeds now"
-          disabled={refreshFeeds.isPending}
-          onClick={() => {
-            announce('Fetching all feeds');
-            refreshFeeds.mutate(undefined, {
-              onSuccess: ({ refreshed }) =>
-                notify.success(`Fetched ${refreshed} ${refreshed === 1 ? 'feed' : 'feeds'}.`),
-            });
-          }}
+          title="Fetch all feeds now (r)"
+          disabled={fetchingFeeds}
+          onClick={fetchFeeds}
         >
           <RefreshCw
-            className={cn(
-              refreshFeeds.isPending && 'animate-spin motion-reduce:animate-none',
-            )}
+            className={cn(fetchingFeeds && 'animate-spin motion-reduce:animate-none')}
           />
         </Button>
         <SearchField

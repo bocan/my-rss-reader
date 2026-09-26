@@ -16,7 +16,8 @@ export interface ShortcutActions {
   toggleStar(): void;
   toggleShared(): void;
   markAllRead(): void;
-  refresh(): void;
+  /** The same as the refresh button: ask the server to fetch every feed (#42). */
+  fetchFeeds(): void;
   focusSearch(): void;
   nextFeed(): void;
   prevFeed(): void;
@@ -135,8 +136,8 @@ export const SHORTCUTS: Shortcut[] = [
     keys: ['r'],
     contexts: ['global'],
     group: 'App',
-    label: 'Refresh',
-    run: (a) => a.refresh(),
+    label: 'Fetch all feeds now',
+    run: (a) => a.fetchFeeds(),
   },
   {
     keys: ['/'],

@@ -8,6 +8,7 @@ import {
   type WebSubState,
 } from '@rss/shared';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { announce } from './announce';
 import { api } from './api';
 import { placeAt } from './feed-order';
 import { liveQueryOptions } from './live-refresh';
@@ -283,6 +284,24 @@ export function useRefreshFeeds() {
       qc.invalidateQueries({ queryKey: ['counts'] });
     },
   });
+}
+
+/**
+ * "Fetch all feeds now", for the refresh button and the r key alike (#42):
+ * say it started, say how many feeds it fetched, and ignore a second press
+ * while one is running.
+ */
+export function useFetchAllFeeds() {
+  const refresh = useRefreshFeeds();
+  const fetchAll = () => {
+    if (refresh.isPending) return;
+    announce('Fetching all feeds');
+    refresh.mutate(undefined, {
+      onSuccess: ({ refreshed }) =>
+        notify.success(`Fetched ${refreshed} ${refreshed === 1 ? 'feed' : 'feeds'}.`),
+    });
+  };
+  return { fetchAll, isPending: refresh.isPending };
 }
 
 /**
