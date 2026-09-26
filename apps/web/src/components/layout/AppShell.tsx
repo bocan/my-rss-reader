@@ -1,11 +1,20 @@
-import { CloudOff, Rss } from 'lucide-react';
+import { CloudOff, MoreVertical, Rss } from 'lucide-react';
 import { useEffect, type ReactNode } from 'react';
+import { useNavigate } from 'react-router';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { ThemePickerButton } from '@/components/theme/ThemePicker';
 import { useLogout, useSession } from '@/lib/auth';
 import { useOnlineStatus } from '@/lib/pwa';
 import { useSettings } from '@/lib/settings';
 import { applyDensity } from '@/lib/theme';
+import { cn } from '@/lib/utils';
 
 /** Move focus (and the viewport) to the main content region. */
 function focusMainContent(): void {
@@ -18,18 +27,25 @@ function focusMainContent(): void {
  * The permanent app frame. `leading` sits before the product mark (the sidebar
  * toggle); `bar` is the flexible middle region (scope chrome + view switcher).
  * The theme/account controls stay pinned to the right.
+ *
+ * `phoneMenu` (menu items) gives phones a calm header (#22): below `sm` the
+ * theme and Sign out move into one "More actions" menu, after those items.
  */
 export function AppShell({
   children,
   leading,
   bar,
+  phoneMenu,
 }: {
   children: ReactNode;
   leading?: ReactNode;
   bar?: ReactNode;
+  phoneMenu?: ReactNode;
 }) {
   const { data: user } = useSession();
   const logout = useLogout();
+  const navigate = useNavigate();
+  const wide = phoneMenu ? 'hidden sm:flex' : 'flex';
   const online = useOnlineStatus();
   const { settings } = useSettings();
 
@@ -77,16 +93,37 @@ export function AppShell({
               <span className="hidden sm:inline">Offline &middot; changes will sync</span>
             </span>
           )}
-          <ThemePickerButton />
-          {user && (
-            <>
-              <span className="hidden text-sm text-muted-foreground lg:inline">
-                {user.displayName}
-              </span>
-              <Button variant="outline" size="sm" onClick={() => logout.mutate()}>
-                Sign out
-              </Button>
-            </>
+          <div className={cn(wide, 'items-center gap-2')}>
+            <ThemePickerButton />
+            {user && (
+              <>
+                <span className="hidden text-sm text-muted-foreground lg:inline">
+                  {user.displayName}
+                </span>
+                <Button variant="outline" size="sm" onClick={() => logout.mutate()}>
+                  Sign out
+                </Button>
+              </>
+            )}
+          </div>
+          {phoneMenu && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" aria-label="More actions" className="sm:hidden">
+                  <MoreVertical />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[12rem]">
+                {phoneMenu}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => navigate('/settings')}>
+                  Theme and settings
+                </DropdownMenuItem>
+                {user && (
+                  <DropdownMenuItem onSelect={() => logout.mutate()}>Sign out</DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
       </header>

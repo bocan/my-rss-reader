@@ -2,8 +2,7 @@ import { Inbox, Search, Settings as SettingsIcon, Star } from 'lucide-react';
 import type { ComponentType } from 'react';
 import { useNavigate } from 'react-router';
 import { cn } from '@/lib/utils';
-
-type Tab = 'all' | 'starred' | 'search' | 'settings';
+import type { MobileNavTab as Tab } from './mobile-nav-tab';
 
 /**
  * Bottom navigation for phones (< md). Fixed above the home indicator via a

@@ -21,6 +21,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import { Link, useSearchParams } from 'react-router';
 import { AppShell } from '@/components/layout/AppShell';
 import { MobileNav } from '@/components/layout/MobileNav';
+import { mobileNavTab } from '@/components/layout/mobile-nav-tab';
 import { CommunityPane } from '@/components/community/CommunityPane';
 import { BrowseSurface } from '@/components/reader/BrowseSurface';
 import { ListColumn } from '@/components/reader/ListColumn';
@@ -30,6 +31,14 @@ import { ShortcutsOverlay } from '@/components/shortcuts/ShortcutsOverlay';
 import { FolderTree } from '@/components/sidebar/folder-tree';
 import { SubscribeDialog } from '@/components/subscribe-dialog';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenuCheckboxItem,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
 import { useArticleSurface } from '@/hooks/use-article-surface';
 import { useArticleToggles } from '@/hooks/use-article-toggles';
 import type { ArticleFilters, ArticleListItem } from '@/hooks/use-articles';
@@ -56,6 +65,7 @@ import { useSettings } from '@/lib/settings';
 import { useUnreadOnly } from '@/lib/unread-only';
 import type { ShortcutContextName } from '@/lib/shortcuts/registry';
 import { cn } from '@/lib/utils';
+import type { ViewMode } from '@rss/shared';
 
 /** Reactively tracks a media query. */
 function useMediaQuery(query: string): boolean {
@@ -174,6 +184,10 @@ export function ReaderPage() {
   const isBrowse = view === 'cards' || view === 'magazine';
 
   const [searchInput, setSearchInput] = useState('');
+  // Phones (below sm) show the search box only after the Search tab is used,
+  // and while it holds a query.
+  const [phoneSearchOpen, setPhoneSearchOpen] = useState(false);
+  const phoneSearchShown = phoneSearchOpen || searchInput !== '';
   const [debouncedQ, setDebouncedQ] = useState('');
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedQ(searchInput.trim()), 300);
@@ -526,7 +540,13 @@ export function ReaderPage() {
           <ChevronLeft />
         </Button>
       )}
-      <span className="min-w-0 truncate text-sm font-medium">
+      <span
+        className={cn(
+          'min-w-0 truncate text-sm font-medium',
+          // An open phone search box takes the label's place.
+          phoneSearchShown && 'hidden sm:inline',
+        )}
+      >
         {isSearching ? (
           <>
             Results for <span className="text-muted-foreground">{`"${debouncedQ}"`}</span>
@@ -540,7 +560,7 @@ export function ReaderPage() {
           </>
         )}
       </span>
-      <div className="ml-auto flex items-center gap-2">
+      <div className={cn('ml-auto flex items-center gap-2', phoneSearchShown && 'flex-1 sm:flex-none')}>
         <Button
           variant="ghost"
           size="icon"
@@ -566,9 +586,23 @@ export function ReaderPage() {
           type="search"
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
+          onBlur={() => {
+            if (!searchInput) setPhoneSearchOpen(false);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              setSearchInput('');
+              setPhoneSearchOpen(false);
+              e.currentTarget.blur();
+            }
+          }}
           placeholder="Search"
           aria-label="Search articles"
-          className="h-8 w-32 rounded-md border border-input bg-background px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-44 lg:w-56"
+          className={cn(
+            'h-8 min-w-0 rounded-md border border-input bg-background px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:block sm:w-44 sm:flex-none lg:w-56',
+            // Phones reach search from the bottom nav's Search tab.
+            phoneSearchShown ? 'block w-full flex-1' : 'hidden',
+          )}
         />
         {canMarkAll && !isSearching && unreadForView > 0 && (
           <Button variant="ghost" size="sm" className="hidden sm:inline-flex" onClick={markAllRead}>
@@ -578,6 +612,7 @@ export function ReaderPage() {
         <Button
           variant={unreadOnly ? 'default' : 'ghost'}
           size="icon"
+          className="hidden sm:inline-flex"
           aria-pressed={unreadOnly}
           aria-label={unreadOnly ? 'Showing unread only' : 'Show unread only'}
           title={
@@ -592,17 +627,47 @@ export function ReaderPage() {
         >
           {unreadOnly ? <CircleDot /> : <Circle />}
         </Button>
-        <ViewSwitcher view={view} onChange={setView} />
+        <div className="hidden sm:flex">
+          <ViewSwitcher view={view} onChange={setView} />
+        </div>
       </div>
+    </>
+  );
+
+  // Below sm the header keeps only back, the scope, and refresh; the rest of
+  // the bar lives in AppShell's "More actions" menu (#22).
+  const phoneMenu = (
+    <>
+      {canMarkAll && !isSearching && unreadForView > 0 && (
+        <DropdownMenuItem onSelect={markAllRead}>Mark all read</DropdownMenuItem>
+      )}
+      <DropdownMenuCheckboxItem
+        checked={unreadOnly}
+        onCheckedChange={(on) => {
+          setUnreadOnly(on);
+          announce(on ? 'Showing unread only' : 'Showing all articles');
+        }}
+      >
+        Unread only
+      </DropdownMenuCheckboxItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuLabel>View</DropdownMenuLabel>
+      <DropdownMenuRadioGroup value={view} onValueChange={(v) => setView(v as ViewMode)}>
+        <DropdownMenuRadioItem value="list">List</DropdownMenuRadioItem>
+        <DropdownMenuRadioItem value="cards">Cards</DropdownMenuRadioItem>
+        <DropdownMenuRadioItem value="magazine">Magazine</DropdownMenuRadioItem>
+      </DropdownMenuRadioGroup>
     </>
   );
 
   return (
     <AppShell
       leading={
+        // The sidebar exists from md up; phones use the feed picker instead.
         <Button
           variant="ghost"
           size="icon"
+          className="hidden md:inline-flex"
           aria-label={collapsed ? 'Show sidebar' : 'Hide sidebar'}
           aria-expanded={!collapsed}
           onClick={toggleSidebar}
@@ -611,6 +676,7 @@ export function ReaderPage() {
         </Button>
       }
       bar={topBar}
+      phoneMenu={phoneMenu}
     >
       <SubscribeDialog
         open={addOpen}
@@ -698,20 +764,14 @@ export function ReaderPage() {
 
       {showBottomNav && (
         <MobileNav
-          active={
-            isSearching
-              ? 'search'
-              : filters.starred
-                ? 'starred'
-                : !filters.feedId && !filters.folderId
-                  ? 'all'
-                  : null
-          }
+          active={mobileNavTab({ isSearching, communityOpen, filters })}
           onAll={() => pickScope(() => setFilters({ sort: 'newest' }))}
           onStarred={() => pickScope(() => setFilters({ starred: true, sort: 'newest' }))}
           onSearch={() => {
             if (mobileStep === 'feeds') goToList();
-            searchRef.current?.focus();
+            // Below sm the search box shows only on demand; focus it once shown.
+            setPhoneSearchOpen(true);
+            requestAnimationFrame(() => searchRef.current?.focus());
           }}
         />
       )}
