@@ -108,6 +108,40 @@ export type ShareVisibility = (typeof SHARE_VISIBILITIES)[number];
 export const REGISTRATION_MODES = ['open', 'invite', 'closed'] as const;
 export type RegistrationMode = (typeof REGISTRATION_MODES)[number];
 
+/** The article field a filter rule reads (SPEC-025). `content` is the body
+ *  text, or the summary for a summary-only feed. */
+export const RULE_FIELDS = ['title', 'author', 'content'] as const;
+export type RuleField = (typeof RULE_FIELDS)[number];
+/** What a filter rule does to a matching article (SPEC-025). */
+export const RULE_ACTIONS = ['markRead', 'star'] as const;
+export type RuleAction = (typeof RULE_ACTIONS)[number];
+
+/** A named, scoped search pinned to the sidebar (SPEC-025). */
+export interface SavedSearchDto {
+  id: string;
+  name: string;
+  q: string;
+  feedId: string | null;
+  folderId: string | null;
+  starred: boolean;
+  /** null = read and unread. */
+  unread: boolean | null;
+  position: number;
+  createdAt: string;
+}
+
+/** A standing ingestion rule (SPEC-025). */
+export interface FilterRuleDto {
+  id: string;
+  /** null = every subscribed feed. */
+  feedId: string | null;
+  field: RuleField;
+  phrase: string;
+  action: RuleAction;
+  enabled: boolean;
+  createdAt: string;
+}
+
 /** Public user shape (never includes password hash). */
 export interface PublicUser {
   id: string;

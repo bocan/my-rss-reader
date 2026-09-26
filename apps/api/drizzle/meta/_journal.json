@@ -162,6 +162,13 @@
       "when": 1790447294764,
       "tag": "0022_graceful_shiva",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1790449079103,
+      "tag": "0023_broken_junta",
+      "breakpoints": true
     }
   ]
 }

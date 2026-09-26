@@ -8,6 +8,7 @@ import { db } from '../db/index.js';
 import { articles, feeds } from '../db/schema.js';
 import { extractText, htmlToText, looksLikeHtml, SANITIZER_VERSION, sanitizeArticleHtml } from './sanitize.js';
 import { findRenamedEntries } from './renamed-entries.js';
+import { applyFilterRules } from './rules.js';
 import { discoverWebSubLinks, unsubscribeFromHub } from './websub.js';
 
 export type FeedRow = typeof feeds.$inferSelect;
@@ -471,19 +472,18 @@ export async function discoverFeedCandidates(url: string): Promise<FeedCandidate
 
 /**
  * The single article-insert path, shared by polling and WebSub pushes
- * (SPEC-021). Known articles are left alone, with one exception: an
- * enclosure is backfilled onto rows ingested before enclosure support
- * existed, as long as the item is still in the feed. The setWhere keeps this
- * a no-op write on every ordinary poll.
+ * (SPEC-021). Known articles are left alone, except to fill a gap from a
+ * later fetch (an enclosure or a body) while the item is still in the feed.
+ * The setWhere keeps this a no-op write on every ordinary poll. New articles
+ * then go through each subscriber's filter rules (SPEC-025).
  */
 export async function storeNewArticles(
-  // Also the seam for SPEC-025's per-user filter rules hook.
   feedId: string,
   rows: NewArticleInsert[],
 ): Promise<void> {
   if (rows.length === 0) return;
   await adoptRenamedEntries(feedId, rows);
-  await db
+  const written = await db
     .insert(articles)
     .values(rows)
     .onConflictDoUpdate({
@@ -499,7 +499,23 @@ export async function storeNewArticles(
       },
       setWhere: sql`(${articles.enclosureUrl} is null and excluded.enclosure_url is not null)
         or (${articles.contentHtml} is null and excluded.content_html is not null)`,
+    })
+    .returning({
+      id: articles.id,
+      title: articles.title,
+      author: articles.author,
+      contentText: articles.contentText,
+      summary: articles.summary,
+      // Postgres sets xmax only on a row the upsert UPDATED (a gap filled
+      // above), so xmax = 0 means this call inserted it.
+      inserted: sql<boolean>`(xmax = 0)`,
     });
+  // Filter rules (SPEC-025) act on new articles only. Polling and WebSub
+  // pushes both come through here, so both get them.
+  await applyFilterRules(
+    feedId,
+    written.filter((r) => r.inserted),
+  );
 }
 
 /**

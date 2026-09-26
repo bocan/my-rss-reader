@@ -1,6 +1,6 @@
 # SPEC-025: Saved searches (virtual feeds) + filter rules
 
-- **Status:** Todo
+- **Status:** Done
 - **Phase:** 4
 - **Depends on:** SPEC-006 (Done), SPEC-015 (Done); coordinates with SPEC-021 if landed (shared ingestion hook)
 - **Estimated size:** L
@@ -303,32 +303,73 @@ popover -> settings card.
 
 ## Acceptance criteria
 
-- [ ] Both tables exist via committed migration; no regenerate drift.
-- [ ] Saved search CRUD works with ownership checks, the 50 cap, and
+- [x] Both tables exist via committed migration; no regenerate drift.
+- [x] Saved search CRUD works with ownership checks, the 50 cap, and
       scope validation (foreign folder/feed -> 400).
-- [ ] Clicking a saved search reproduces the exact list the equivalent
+- [x] Clicking a saved search reproduces the exact list the equivalent
       manual search yields (same request shape), populates the search
       box, and highlights the node; editing the query deselects the node.
-- [ ] The save button appears only while a query is active and captures
+- [x] The save button appears only while a query is active and captures
       the live scope (feed/folder/starred/unread) faithfully.
-- [ ] A rule created for feed X marks matching **new** articles at the
+- [x] A rule created for feed X marks matching **new** articles at the
       next poll: matching-title article arrives read (or starred),
       non-matching arrives untouched, for the rule's owner only; other
       subscribers of the same feed see pristine state.
-- [ ] `content` rules match against body text and summary-only feeds;
+- [x] `content` rules match against body text and summary-only feeds;
       `author` rules match `dc:creator`-style authors; matching is
       case-insensitive and non-regex (`.` matches only a literal dot).
-- [ ] A disabled rule matches nothing; re-enabling affects only future
+- [x] A disabled rule matches nothing; re-enabling affects only future
       ingestion until "Run on existing articles" is pressed.
-- [ ] `POST /api/rules/:id/apply` touches at most 5000 newest in-scope
+- [x] `POST /api/rules/:id/apply` touches at most 5000 newest in-scope
       articles, returns an accurate `matched`, never un-reads or
       un-stars, and is idempotent.
-- [ ] Rules never throw into the poll loop (a crafted phrase like
+- [x] Rules never throw into the poll loop (a crafted phrase like
       `100%_\` ingests fine), and `%`/`_` in phrases match literally in
       the apply path.
-- [ ] With SPEC-021 landed, a WebSub-pushed article passes through the
-      same rules (single `storeNewArticles` entry point verified by
-      test or by construction).
+- [x] With SPEC-021 landed, a WebSub-pushed article passes through the
+      same rules (single `storeNewArticles` entry point: by construction).
+
+## As built
+
+Differences from the plan above, all found while building it.
+
+- **The ingestion hook sees inserted rows only.** `storeNewArticles`
+  already existed when this was built, and it no longer does nothing on a
+  conflict: it fills a missing enclosure or body into a stored row (#47),
+  after it adopts renamed posts (#51). Its `returning` includes
+  `(xmax = 0)`, and only rows the upsert INSERTED go to
+  `applyFilterRules`. A stored row whose gap was filled is not new.
+- **A new subscription runs the user's rules** (`POST /feeds` and OPML
+  import) over the feed's stored articles, with the same bounded query as
+  "Run on existing articles". Those articles were stored before the user
+  subscribed (or long ago, for a feed others follow), so without this a
+  sponsored post that arrives with a new subscription would skip a
+  "sponsored -> mark read" rule.
+- **"Run on existing articles" runs a disabled rule too**: the user asked
+  for it by pressing the button.
+- **Moving a saved search renumbers the list** (`PATCH position`), not an
+  append-only order. A user has at most 50, so the rewrite is cheap.
+- **No Save button in Shared or Must read.** A saved search cannot hold
+  those scopes, so it could not capture them faithfully. When the list is
+  already a saved search, the button shows "Saved as <name>" instead.
+- **Only the open saved search is highlighted**, not All items or its
+  folder as well.
+- **"unread only" labels follow the list.** A saved search can keep
+  "unread only" while the global switch is off. The search strip, the
+  header and the empty state now say "unread only" from the list's own
+  filter too; the switch itself stays global.
+- **`RowMenu` and `InlineInput` moved** from `folder-tree.tsx` to
+  `sidebar/row-controls.tsx`, so saved-search rows share them. `stopDrag`
+  went to its own module.
+- **Wording.** A rule reads "When the title contains "sponsored", in all
+  feeds, mark it read."; the `content` field is called "text". Deleting a
+  rule or a saved search asks first.
+
+Not done from the Testing section: the manual steps against a live
+instance (restart the browser and click a saved node; watch a real poll
+apply a rule). Automated tests cover the same paths, and the saved-search
+click was checked in Chrome against a mock API (request shape, search box,
+highlight, deselect on edit, Save popover).
 
 ## Testing
 

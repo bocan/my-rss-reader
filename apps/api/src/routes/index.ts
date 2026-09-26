@@ -7,6 +7,8 @@ import { feedRoutes } from './feeds.js';
 import { healthRoutes } from './health.js';
 import { opmlRoutes } from './opml.js';
 import { profileRoutes } from './profile.js';
+import { ruleRoutes } from './rules.js';
+import { searchRoutes } from './searches.js';
 import { settingsRoutes } from './settings.js';
 import { websubRoutes } from './websub.js';
 
@@ -22,4 +24,6 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   await app.register(settingsRoutes);
   await app.register(profileRoutes);
   await app.register(websubRoutes);
+  await app.register(searchRoutes);
+  await app.register(ruleRoutes);
 }

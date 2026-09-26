@@ -175,6 +175,24 @@ test('GET /feeds/discover on a Mastodon profile offers <profile>.rss', async () 
   expect(requestMock.count).toBe(1); // the probe only, never the profile page
 });
 
+// SPEC-025: the articles that come with a subscription pass the user's rules.
+test('subscribing to a known feed runs the user\'s rules over its stored articles', async () => {
+  const { db } = await import('../db/index.js');
+  const { articleStates, filterRules } = await import('../db/schema.js');
+  const { seedArticle, seedFeed } = await import('../../test/helpers.js');
+  const feed = await seedFeed({ feedUrl: 'https://known.example/rss', title: 'Known' });
+  const ad = await seedArticle(feed.id, { title: 'Sponsored: a thing' });
+  await seedArticle(feed.id, { title: 'A real post' });
+  const me = (await app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie } })).json();
+  await db.insert(filterRules).values({ userId: me.id, field: 'title', phrase: 'sponsored', action: 'markRead' });
+
+  const res = await app.inject({ method: 'POST', url: '/api/feeds', headers: { cookie }, payload: { url: feed.feedUrl } });
+  expect(res.statusCode).toBe(201);
+  expect(requestMock.count).toBe(0); // the fast path: nothing fetched
+  const states = await db.select().from(articleStates);
+  expect(states).toEqual([expect.objectContaining({ articleId: ad.id, read: true, starred: false })]);
+});
+
 test('unsubscribe removes only the caller subscription', async () => {
   const feedUrl = 'https://site.example/rss.xml';
   responses.set(feedUrl, { headers: { 'content-type': 'application/rss+xml' }, body: RSS('My Feed') });

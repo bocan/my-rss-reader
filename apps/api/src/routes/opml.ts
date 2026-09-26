@@ -5,6 +5,7 @@ import { db } from '../db/index.js';
 import { feeds, folders, subscriptions } from '../db/schema.js';
 import { env } from '../env.js';
 import { fetchAndStoreFeed, normalizeFeedUrl } from '../lib/feed-fetch.js';
+import { applyRulesToNewSubscription } from '../lib/rules.js';
 import { buildOpml, OpmlParseError, parseOpml, type OpmlOutline } from '../lib/opml.js';
 import { buildUserFeedTree } from '../lib/opml-tree.js';
 import { renormalizeFolderScope, renormalizeSubscriptionScope } from '../lib/ordering.js';
@@ -199,8 +200,12 @@ export async function opmlRoutes(app: FastifyInstance): Promise<void> {
             })
             .onConflictDoNothing({ target: [subscriptions.userId, subscriptions.feedId] })
             .returning({ id: subscriptions.id });
-          if (inserted.length > 0) result.feedsAdded++;
-          else result.skipped++;
+          if (inserted.length > 0) {
+            result.feedsAdded++;
+            // The feed's articles were stored before this user subscribed,
+            // so their filter rules have not seen them yet (SPEC-025).
+            await applyRulesToNewSubscription(userId, feedId);
+          } else result.skipped++;
         } catch (err) {
           result.failed.push({
             title: item.title,
