@@ -319,6 +319,48 @@ export const profiles = pgTable('profiles', {
   updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 }, (t) => [uniqueIndex('profiles_slug_key').on(t.slug)]);
 
+// --- Saved searches and filter rules (SPEC-025) ---------------------------
+
+// A named, scoped search pinned to the sidebar. Running it is the ordinary
+// GET /articles with these fields, so it has no results of its own.
+export const savedSearches = pgTable('saved_searches', {
+  id: uuid().primaryKey().defaultRandom(),
+  userId: uuid()
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  name: text().notNull(),
+  q: text().notNull(),
+  // Optional scope captured at save time. feedId cascades (a vanished feed
+  // must not silently widen the search); folderId nulls out (folder
+  // deletion already promotes its contents, and the search then covers all
+  // feeds, matching what the user sees elsewhere).
+  feedId: uuid().references(() => feeds.id, { onDelete: 'cascade' }),
+  folderId: uuid().references(() => folders.id, { onDelete: 'set null' }),
+  starred: boolean().notNull().default(false),
+  // null = read and unread, matching the list's tri-state filter.
+  unread: boolean(),
+  position: integer().notNull().default(0),
+  createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index('saved_searches_user_id_idx').on(t.userId)]);
+
+// A standing ingestion rule: when <field> contains <phrase> (a
+// case-insensitive literal, never a pattern) in <feed | every subscribed
+// feed>, do <action> for this user. field and action are free-form text
+// validated by @rss/shared's RULE_FIELDS / RULE_ACTIONS.
+export const filterRules = pgTable('filter_rules', {
+  id: uuid().primaryKey().defaultRandom(),
+  userId: uuid()
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  // null = every feed the user is subscribed to at match time.
+  feedId: uuid().references(() => feeds.id, { onDelete: 'cascade' }),
+  field: text().notNull(),
+  phrase: text().notNull(),
+  action: text().notNull(),
+  enabled: boolean().notNull().default(true),
+  createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index('filter_rules_user_feed_idx').on(t.userId, t.feedId)]);
+
 // --- Relations -----------------------------------------------------------
 
 export const usersRelations = relations(users, ({ many }) => ({

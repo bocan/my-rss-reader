@@ -4,3 +4,4 @@ export * from './feed.js';
 export * from './article.js';
 export * from './settings.js';
 export * from './profile.js';
+export * from './search-rules.js';
