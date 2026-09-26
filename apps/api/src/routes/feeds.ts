@@ -415,14 +415,32 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/folders', auth, async (request, reply) => {
     const input = createFolderSchema.parse(request.body);
-    const [folder] = await db
-      .insert(folders)
-      .values({
-        userId: request.user!.id,
-        name: input.name,
-        parentId: input.parentId ?? null,
-      })
-      .returning();
+    const userId = request.user!.id;
+    const parentId = input.parentId ?? null;
+    // The same one-level rule as PATCH (#28): the parent must be the user's own
+    // root folder.
+    if (parentId !== null) {
+      const [parent] = await db
+        .select({ parentId: folders.parentId })
+        .from(folders)
+        .where(and(eq(folders.id, parentId), eq(folders.userId, userId)))
+        .limit(1);
+      const message = !parent
+        ? 'Unknown parent folder'
+        : parent.parentId !== null
+          ? 'Folders can only nest one level deep'
+          : null;
+      if (message) {
+        return reply.code(400).send({ error: 'invalid_parent', message, statusCode: 400 });
+      }
+    }
+    const folder = await db.transaction(async (tx) => {
+      const [row] = await tx.insert(folders).values({ userId, name: input.name, parentId }).returning();
+      // Last in its scope, not tied at 0 with the first folder (manual order, #27).
+      await placeFolder(tx, userId, row!.id, parentId);
+      const [placed] = await tx.select().from(folders).where(eq(folders.id, row!.id)).limit(1);
+      return placed!;
+    });
     return reply.code(201).send(folder);
   });
 

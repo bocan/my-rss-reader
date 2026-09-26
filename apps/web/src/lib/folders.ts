@@ -84,8 +84,12 @@ export function useCreateFolder() {
   const qc = useQueryClient();
   return useMutation({
     meta: { errorMessage: 'Could not create the folder.' },
-    mutationFn: (name: string) =>
-      api<FolderRow>('/folders', { method: 'POST', body: { name } }),
+    /** A name alone makes a root folder; `parentId` makes a subfolder (#28). */
+    mutationFn: (input: string | { name: string; parentId: string }) =>
+      api<FolderRow>('/folders', {
+        method: 'POST',
+        body: typeof input === 'string' ? { name: input } : input,
+      }),
     onSettled: () => reconcileTree(qc),
   });
 }

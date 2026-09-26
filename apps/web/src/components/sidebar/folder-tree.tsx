@@ -33,10 +33,16 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { folderDrop, HAS_CHILDREN_MESSAGE } from '@/lib/folder-drop';
 import { useMarkAllRead } from '@/lib/mark-all-read';
+import { notify } from '@/lib/notify';
 import {
+  byFolderName,
   canReorder,
   dropIndex,
   makeFeedComparator,
@@ -65,6 +71,24 @@ type DragData =
 /** Outside manual order, rows do not make room while you drag: a drop there
  *  only moves a feed to another folder, and never reorders (#27). */
 const noShift: SortingStrategy = () => null;
+
+/** Where the pointer was at the drop, or null for a keyboard drag. */
+function pointerY(event: DragEndEvent): number | null {
+  const start = event.activatorEvent;
+  const y =
+    'touches' in start && (start as TouchEvent).touches.length > 0
+      ? (start as TouchEvent).touches[0]!.clientY
+      : 'clientY' in start
+        ? (start as MouseEvent).clientY
+        : null;
+  return y === null ? null : y + event.delta.y;
+}
+
+/** A folder's own row, not its open contents, which its sortable node includes. */
+function rowBox(folderId: string) {
+  const row = document.querySelector(`[data-folder-row="${folderId}"]`);
+  return row ? row.getBoundingClientRect() : null;
+}
 
 /**
  * When a press becomes a drag (#21). A mouse drags after 4 px of travel. A
@@ -122,6 +146,16 @@ export function FolderTree({
   const [editing, setEditing] = useState<{ kind: 'folder' | 'feed'; id: string } | null>(null);
   const [settingsSub, setSettingsSub] = useState<SubscriptionRow | null>(null);
   const [creating, setCreating] = useState(false);
+  // The folder that gets a new subfolder (#28), shown as an input inside it.
+  const [creatingIn, setCreatingIn] = useState<string | null>(null);
+  const startSubfolder = (parentId: string) => {
+    if (!expanded.has(parentId)) toggleFolderExpanded(parentId);
+    setCreatingIn(parentId);
+  };
+  const createSubfolder = (name: string) => {
+    if (creatingIn && name.trim()) createFolder.mutate({ name: name.trim(), parentId: creatingIn });
+    setCreatingIn(null);
+  };
   // The row-menu button that opened the feed-settings dialog, so focus returns
   // to it on close. Captured while the menu is still open (the menu item that was
   // clicked is gone by the time the dialog closes).
@@ -165,6 +199,8 @@ export function FolderTree({
     .filter((f) => f.parentId === null && folderHasVisible(f.id))
     .sort(byFolder);
   const hasChildren = (id: string) => folders.some((f) => f.parentId === id);
+  // "Move to" lists every root folder, also ones hidden by unread only.
+  const allRoots = folders.filter((f) => f.parentId === null).sort(byFolderName);
 
   const toggle = toggleFolderExpanded;
 
@@ -173,10 +209,6 @@ export function FolderTree({
     useSensor(TouchSensor, { activationConstraint: DRAG_ACTIVATION.touch }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
-
-  /** Mirror of the API depth-1 rule, so a drop never triggers a 400. */
-  const canNest = (draggedId: string, targetFolder: FolderRow) =>
-    draggedId !== targetFolder.id && targetFolder.parentId === null && !hasChildren(draggedId);
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -211,17 +243,25 @@ export function FolderTree({
 
     if (a.type === 'folder') {
       if (o.type === 'folder') {
+        const dragged = folders.find((f) => f.id === a.folderId);
         const target = folders.find((f) => f.id === o.folderId);
-        if (!target || target.id === a.folderId) return;
-        if (o.parentId === a.parentId) {
-          if (!reorder) return;
+        if (!dragged || !target) return;
+        const drop = folderDrop({
+          dragged,
+          target,
+          draggedHasChildren: hasChildren(dragged.id),
+          reorder,
+          y: pointerY(event),
+          header: rowBox(target.id),
+        });
+        if (drop.kind === 'blocked') notify.info(drop.message);
+        if (drop.kind === 'nest') updateFolder.mutate({ id: dragged.id, parentId: target.id });
+        if (drop.kind === 'reorder') {
           const scope = folders
-            .filter((f) => f.parentId === a.parentId)
+            .filter((f) => f.parentId === dragged.parentId)
             .sort(byFolder)
             .map((f) => f.id);
-          updateFolder.mutate({ id: a.folderId, position: dropIndex(scope, a.folderId, o.folderId) });
-        } else if (canNest(a.folderId, target)) {
-          updateFolder.mutate({ id: a.folderId, parentId: target.id });
+          updateFolder.mutate({ id: dragged.id, position: dropIndex(scope, dragged.id, target.id) });
         }
       } else if (o.type === 'dropzone' && o.folderId === null && a.parentId !== null) {
         updateFolder.mutate({ id: a.folderId, parentId: null });
@@ -269,12 +309,21 @@ export function FolderTree({
               editing={editing}
               setEditing={setEditing}
               submitEdit={submitEdit}
-              onDelete={() => {
-                if (confirm(`Delete folder "${folder.name}"? Its feeds move out, not away.`)) {
-                  deleteFolder.mutate(folder.id);
+              // These take the folder: a child FolderNode gets the same props,
+              // so a closure over `folder` would act on the parent (#28).
+              onDelete={(f) => {
+                if (confirm(`Delete folder "${f.name}"? Its feeds move out, not away.`)) {
+                  deleteFolder.mutate(f.id);
                 }
               }}
-              onMarkRead={() => markAll({ folderId: folder.id }, folder.name)}
+              onMarkRead={(f) => markAll({ folderId: f.id }, f.name)}
+              moveTargets={allRoots}
+              hasChildren={hasChildren}
+              onMove={(id, parentId) => updateFolder.mutate({ id, parentId })}
+              creatingIn={creatingIn}
+              onNewSubfolder={startSubfolder}
+              onCreateSubfolder={createSubfolder}
+              onCancelSubfolder={() => setCreatingIn(null)}
               onRenameFeed={(id) => setEditing({ kind: 'feed', id })}
               onEditFeed={openFeedSettings}
               onUnsubscribe={(id) => unsubscribe.mutate(id)}
@@ -376,8 +425,17 @@ interface FolderNodeProps {
   editing: { kind: 'folder' | 'feed'; id: string } | null;
   setEditing: (e: { kind: 'folder' | 'feed'; id: string } | null) => void;
   submitEdit: (value: string) => void;
-  onDelete: () => void;
-  onMarkRead: () => void;
+  onDelete: (folder: FolderRow) => void;
+  onMarkRead: (folder: FolderRow) => void;
+  /** Root folders, for "Move to". */
+  moveTargets: FolderRow[];
+  hasChildren: (folderId: string) => boolean;
+  onMove: (folderId: string, parentId: string | null) => void;
+  /** The folder showing a "new subfolder" input, if any. */
+  creatingIn: string | null;
+  onNewSubfolder: (parentId: string) => void;
+  onCreateSubfolder: (name: string) => void;
+  onCancelSubfolder: () => void;
   onRenameFeed: (subscriptionId: string) => void;
   onEditFeed: (sub: SubscriptionRow) => void;
   onUnsubscribe: (subscriptionId: string) => void;
@@ -405,6 +463,7 @@ function FolderNode(props: FolderNodeProps) {
       className={cn(isDragging && 'opacity-50')}
     >
       <div
+        data-folder-row={folder.id}
         className={cn(
           'group flex items-center gap-1 rounded-md px-2 py-1.5',
           props.isActive ? 'bg-accent font-medium' : 'hover:bg-accent',
@@ -454,19 +513,46 @@ function FolderNode(props: FolderNodeProps) {
         )}
 
         <RowMenu label={`Folder actions for ${folder.name}`}>
-          <DropdownMenuItem onSelect={() => props.setEditing({ kind: 'folder', id: folder.id })}>
-            Rename
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={props.onMarkRead}>Mark all read</DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem className="text-destructive" onSelect={props.onDelete}>
-            Delete folder
-          </DropdownMenuItem>
+          {(afterClose) => (
+            <>
+              <DropdownMenuItem
+                onSelect={() => afterClose(() => props.setEditing({ kind: 'folder', id: folder.id }))}
+              >
+                Rename
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => props.onMarkRead(folder)}>Mark all read</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {/* One level only, as the API allows (#28). */}
+              <DropdownMenuItem
+                disabled={folder.parentId !== null}
+                onSelect={() => afterClose(() => props.onNewSubfolder(folder.id))}
+              >
+                New subfolder
+              </DropdownMenuItem>
+              <MoveToMenu
+                folder={folder}
+                targets={props.moveTargets}
+                hasChildren={props.hasChildren(folder.id)}
+                onMove={(parentId) => props.onMove(folder.id, parentId)}
+              />
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="text-destructive" onSelect={() => props.onDelete(folder)}>
+                Delete folder
+              </DropdownMenuItem>
+            </>
+          )}
         </RowMenu>
       </div>
 
       {expanded && (
         <FolderContents folderId={folder.id}>
+          {props.creatingIn === folder.id && (
+            <InlineInput
+              placeholder="Subfolder name"
+              onSubmit={props.onCreateSubfolder}
+              onCancel={props.onCancelSubfolder}
+            />
+          )}
           <SortableContext
             items={props.childFolders.map((f) => `folder:${f.id}`)}
             strategy={strategy}
@@ -679,13 +765,17 @@ function FeedNode({
       )}
 
       <RowMenu label={`Feed actions for ${label}`}>
-        <DropdownMenuItem onSelect={onEditSettings}>Edit…</DropdownMenuItem>
-        <DropdownMenuItem onSelect={onRename}>Rename</DropdownMenuItem>
-        <DropdownMenuItem onSelect={onMarkRead}>Mark all read</DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem className="text-destructive" onSelect={onUnsubscribe}>
-          Unsubscribe
-        </DropdownMenuItem>
+        {(afterClose) => (
+          <>
+            <DropdownMenuItem onSelect={onEditSettings}>Edit…</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => afterClose(onRename)}>Rename</DropdownMenuItem>
+            <DropdownMenuItem onSelect={onMarkRead}>Mark all read</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem className="text-destructive" onSelect={onUnsubscribe}>
+              Unsubscribe
+            </DropdownMenuItem>
+          </>
+        )}
       </RowMenu>
     </div>
   );
@@ -695,8 +785,22 @@ function FeedNode({
  * Actions menu. Visible on hover, on keyboard focus, and always on touch
  * screens, which have no hover (#21). Never hover-only.
  */
-function RowMenu({ label, children }: { label: string; children: React.ReactNode }) {
-  const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+function RowMenu({
+  label,
+  children,
+}: {
+  label: string;
+  /** `afterClose(fn)` runs `fn` once the menu has closed. */
+  children: (afterClose: (fn: () => void) => void) => React.ReactNode;
+}) {
+  // Rename and New subfolder open a text field that takes focus. While the
+  // menu closes, it puts focus back on its button, which would blur the field,
+  // and a blur cancels it. So those actions wait until the menu has closed,
+  // and then focus stays where the field puts it.
+  const pending = useRef<(() => void) | null>(null);
+  const afterClose = (fn: () => void) => {
+    pending.current = fn;
+  };
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -715,13 +819,61 @@ function RowMenu({ label, children }: { label: string; children: React.ReactNode
           menu presses out of the mouse and touch drag sensors. */}
       <DropdownMenuContent
         align="end"
-        onPointerDown={stop}
-        onMouseDown={stop}
-        onTouchStart={stop}
+        {...stopDrag}
+        onCloseAutoFocus={(e) => {
+          const fn = pending.current;
+          if (!fn) return;
+          pending.current = null;
+          e.preventDefault();
+          fn();
+        }}
       >
-        {children}
+        {children(afterClose)}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+/** Keeps menu presses out of the row's mouse and touch drag sensors. */
+const stopDrag = { onPointerDown: stop, onMouseDown: stop, onTouchStart: stop };
+
+/**
+ * "Move to": the keyboard and touch way to nest a folder, or take it out
+ * (#28). A folder with subfolders cannot go inside another folder, and the
+ * menu says so instead of offering targets that would fail.
+ */
+function MoveToMenu({
+  folder,
+  targets,
+  hasChildren,
+  onMove,
+}: {
+  folder: FolderRow;
+  targets: FolderRow[];
+  hasChildren: boolean;
+  onMove: (parentId: string | null) => void;
+}) {
+  const into = targets.filter((t) => t.id !== folder.id && t.id !== folder.parentId);
+  if (folder.parentId === null && into.length === 0) return null;
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger>Move to</DropdownMenuSubTrigger>
+      <DropdownMenuSubContent {...stopDrag}>
+        {folder.parentId !== null && (
+          <DropdownMenuItem onSelect={() => onMove(null)}>Top level</DropdownMenuItem>
+        )}
+        {hasChildren ? (
+          <DropdownMenuItem disabled>{HAS_CHILDREN_MESSAGE}</DropdownMenuItem>
+        ) : (
+          into.map((t) => (
+            <DropdownMenuItem key={t.id} onSelect={() => onMove(t.id)}>
+              {t.name}
+            </DropdownMenuItem>
+          ))
+        )}
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
   );
 }
 

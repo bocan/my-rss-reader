@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import type { AmbiguousFeedError, FeedCandidate } from '@rss/shared';
+import { FolderOptions } from '@/components/feed/folder-options';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { notify } from '@/lib/notify';
@@ -125,11 +126,7 @@ export function SubscribeDialog({ open, onOpenChange, onSubscribed }: SubscribeD
               title="Folder for the new subscription"
             >
               <option value="">No folder</option>
-              {folders.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.name}
-                </option>
-              ))}
+              <FolderOptions folders={folders} />
               <option value={NEW_FOLDER}>New folder…</option>
             </select>
           </label>

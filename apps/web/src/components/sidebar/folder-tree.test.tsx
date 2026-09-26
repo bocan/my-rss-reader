@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { FeedSort } from '@/lib/feed-order';
 import type { SubscriptionRow } from '@/lib/folders';
@@ -86,6 +86,16 @@ test('"Mark all read" fires even when the pointer moves a few px during the clic
   expect(markRead).toHaveBeenCalledWith({ feedId: 'f1' }, 'Dave Rupert');
 });
 
+test('"Rename" from a feed menu shows a focused input that stays open', async () => {
+  renderTree();
+  const trigger = screen.getByRole('button', { name: 'Feed actions for Dave Rupert' });
+  act(() => trigger.focus());
+  fireEvent.keyDown(trigger, { key: 'Enter' });
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Rename' }));
+  await act(() => new Promise((r) => setTimeout(r, 20)));
+  expect(screen.getByDisplayValue('Dave Rupert')).toHaveFocus();
+});
+
 // #25: folder badges.
 
 test('folders show their unread count, collapsed or not, and hide a zero', () => {
@@ -113,6 +123,108 @@ test('folders show their unread count, collapsed or not, and hide a zero', () =>
   expect(screen.getByRole('button', { name: 'Tech' }).parentElement).toHaveTextContent('Tech3');
   expect(screen.getByLabelText('3 unread')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Quiet' }).parentElement).not.toHaveTextContent(/\d/);
+});
+
+// #28: subfolders.
+
+describe('subfolders', () => {
+  const folder = (id: string, name: string, parentId: string | null = null) => ({
+    id, userId: 'u1', name, parentId, position: 0, viewMode: null, createdAt: '',
+  });
+  let fetchMock: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({}) }) as Response);
+    vi.stubGlobal('fetch', fetchMock);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  function renderFolders() {
+    const qc = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
+    qc.setQueryData(['folders'], {
+      items: [folder('d1', 'Tech'), folder('d2', 'CSS', 'd1'), folder('d3', 'News')],
+    });
+    qc.setQueryData(['feeds'], { items: [] });
+    render(
+      <QueryClientProvider client={qc}>
+        <FolderTree onSelectFeed={vi.fn()} onSelectFolder={vi.fn()} countByFeed={new Map()} sort="name" />
+      </QueryClientProvider>,
+    );
+    // The expanded set is a module store that outlives each test: start collapsed.
+    for (const b of screen.queryAllByRole('button', { name: 'Collapse folder' })) fireEvent.click(b);
+  }
+  // Focus first, as a keyboard user would. With nothing focused, jsdom fires a
+  // window blur when the menu takes focus, and Radix closes a menu on that.
+  const openMenu = (name: string) => {
+    const trigger = screen.getByRole('button', { name: `Folder actions for ${name}` });
+    act(() => trigger.focus());
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+  };
+  const sent = (method: string) => {
+    const call = fetchMock.mock.calls.find(([, init]) => init?.method === method);
+    return call && { url: String(call[0]), body: call[1].body && JSON.parse(call[1].body) };
+  };
+  // The expanded set is a module store, so it carries over between tests.
+  const expand = (name: string) => {
+    const toggle = within(screen.getByRole('button', { name }).parentElement!).queryByRole(
+      'button',
+      { name: 'Expand folder' },
+    );
+    if (toggle) fireEvent.click(toggle);
+  };
+
+  test('"Rename" from the menu shows an input that stays open', async () => {
+    renderFolders();
+    openMenu('News');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Rename' }));
+    await act(() => new Promise((r) => setTimeout(r, 20)));
+    expect(screen.getByDisplayValue('News')).toHaveFocus();
+  });
+
+  test('"New subfolder" asks for a name inside the folder and creates it there', async () => {
+    renderFolders();
+    openMenu('Tech');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'New subfolder' }));
+
+    const input = await screen.findByPlaceholderText('Subfolder name');
+    fireEvent.change(input, { target: { value: 'Rust' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(sent('POST')).toBeDefined());
+    expect(sent('POST')).toEqual({ url: '/api/folders', body: { name: 'Rust', parentId: 'd1' } });
+  });
+
+  test('a subfolder cannot have its own subfolder', () => {
+    renderFolders();
+    expand('Tech');
+    openMenu('CSS');
+    expect(screen.getByRole('menuitem', { name: 'New subfolder' })).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  test('"Move to" puts a top-level folder inside another', async () => {
+    renderFolders();
+    openMenu('News');
+    fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Move to' }), { key: 'ArrowRight' });
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Tech' }));
+    await waitFor(() => expect(sent('PATCH')).toEqual({ url: '/api/folders/d3', body: { parentId: 'd1' } }));
+  });
+
+  test('a folder with subfolders is told why it cannot move', async () => {
+    renderFolders();
+    openMenu('Tech');
+    fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Move to' }), { key: 'ArrowRight' });
+    expect(
+      await screen.findByRole('menuitem', { name: 'A folder with subfolders cannot go inside another folder.' }),
+    ).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  test("a subfolder's own menu acts on the subfolder, not its parent", async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    renderFolders();
+    expand('Tech');
+    openMenu('CSS');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete folder' }));
+    await waitFor(() => expect(sent('DELETE')?.url).toBe('/api/folders/d2'));
+    expect(confirm).toHaveBeenCalledWith('Delete folder "CSS"? Its feeds move out, not away.');
+  });
 });
 
 // #21: phones.

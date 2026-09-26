@@ -50,6 +50,39 @@ async function subsInFolder(userId: string, folderId: string | null) {
   return rows.filter((r) => r.folderId === folderId);
 }
 
+const createFolder = (cookie: string, body: Record<string, unknown>) =>
+  app.inject({ method: 'POST', url: '/api/folders', headers: { cookie }, payload: body });
+
+test('creates a subfolder under a root folder, last in its scope (#28)', async () => {
+  const user = await seedUser();
+  const parent = await seedFolder(user.id, { name: 'Tech' });
+  const cookie = await loginAs(user);
+
+  const first = await createFolder(cookie, { name: 'CSS', parentId: parent.id });
+  expect(first.statusCode).toBe(201);
+  expect(first.json()).toMatchObject({ name: 'CSS', parentId: parent.id, position: 0 });
+  const second = await createFolder(cookie, { name: 'JS', parentId: parent.id });
+  expect(second.json().position).toBe(1);
+
+  // A new root folder goes after the existing one, not tied with it at 0.
+  expect((await createFolder(cookie, { name: 'News' })).json().position).toBe(1);
+});
+
+test('creating a folder rejects a nested or foreign parent', async () => {
+  const user = await seedUser();
+  const other = await seedUser();
+  const root = await seedFolder(user.id, { name: 'Root' });
+  const child = await seedFolder(user.id, { name: 'Child', parentId: root.id });
+  const theirs = await seedFolder(other.id, { name: 'Theirs' });
+  const cookie = await loginAs(user);
+
+  const deep = await createFolder(cookie, { name: 'Deep', parentId: child.id });
+  expect(deep.statusCode).toBe(400);
+  expect(deep.json().message).toBe('Folders can only nest one level deep');
+  expect((await createFolder(cookie, { name: 'X', parentId: theirs.id })).statusCode).toBe(400);
+  expect(await folderScope(user.id, child.id)).toEqual([]);
+});
+
 test('renames a folder', async () => {
   const user = await seedUser();
   const folder = await seedFolder(user.id, { name: 'Old' });

@@ -54,6 +54,22 @@ export function makeFeedComparator(sort: FeedSort, countByFeed: Map<string, numb
 }
 
 /**
+ * Folders for a select, in tree order: each root folder (by name), then its
+ * subfolders (by name) marked with `depth: 1`, so the select can indent
+ * them (#28).
+ */
+export function folderChoices(folders: readonly FolderRow[]): { folder: FolderRow; depth: 0 | 1 }[] {
+  const roots = folders.filter((f) => f.parentId === null).sort(byFolderName);
+  return roots.flatMap((root) => [
+    { folder: root, depth: 0 as const },
+    ...folders
+      .filter((f) => f.parentId === root.id)
+      .sort(byFolderName)
+      .map((folder) => ({ folder, depth: 1 as const })),
+  ]);
+}
+
+/**
  * The index to send when a row is dropped on another row in manual mode. The
  * server removes the moved row from the target scope, then inserts it at this
  * index (lib/ordering.ts). `scope` is the target scope in display order, all

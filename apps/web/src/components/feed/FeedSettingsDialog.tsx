@@ -8,6 +8,7 @@ import {
 } from '@rss/shared';
 import { Check, Copy } from 'lucide-react';
 import { useState, type FormEvent, type RefObject } from 'react';
+import { FolderOptions } from '@/components/feed/folder-options';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { notify } from '@/lib/notify';
@@ -182,11 +183,7 @@ export function FeedSettingsDialog({
                 onChange={(e) => setFolderId(e.target.value)}
               >
                 <option value="">No folder</option>
-                {folders.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.name}
-                  </option>
-                ))}
+                <FolderOptions folders={folders} />
               </select>
             </label>
             <label className="block space-y-1">

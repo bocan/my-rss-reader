@@ -1,5 +1,5 @@
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
-import { Check, Circle } from 'lucide-react';
+import { Check, ChevronRight, Circle } from 'lucide-react';
 import type { ComponentProps } from 'react';
 import { cn } from '@/lib/utils';
 
@@ -78,6 +78,45 @@ export function DropdownMenuRadioItem({
       </span>
       {children}
     </DropdownMenuPrimitive.RadioItem>
+  );
+}
+
+export const DropdownMenuSub = DropdownMenuPrimitive.Sub;
+
+export function DropdownMenuSubTrigger({
+  className,
+  children,
+  ...props
+}: ComponentProps<typeof DropdownMenuPrimitive.SubTrigger>) {
+  return (
+    <DropdownMenuPrimitive.SubTrigger
+      className={cn(
+        'flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none',
+        'focus:bg-accent data-[state=open]:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+        className,
+      )}
+      {...props}
+    >
+      {children}
+      <ChevronRight className="ml-auto size-3.5" />
+    </DropdownMenuPrimitive.SubTrigger>
+  );
+}
+
+export function DropdownMenuSubContent({
+  className,
+  ...props
+}: ComponentProps<typeof DropdownMenuPrimitive.SubContent>) {
+  return (
+    <DropdownMenuPrimitive.Portal>
+      <DropdownMenuPrimitive.SubContent
+        className={cn(
+          'z-50 min-w-[10rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md',
+          className,
+        )}
+        {...props}
+      />
+    </DropdownMenuPrimitive.Portal>
   );
 }
 
