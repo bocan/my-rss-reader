@@ -38,16 +38,18 @@ export interface Shortcut {
 
 export const SHORTCUTS: Shortcut[] = [
   // Navigation
+  // With an article open, j/k open the next/previous one in every layout,
+  // including the full-screen reader (#23).
   {
     keys: ['j'],
-    contexts: ['list'],
+    contexts: ['list', 'reader'],
     group: 'Navigation',
     label: 'Next article',
     run: (a) => a.selectNext(),
   },
   {
     keys: ['k'],
-    contexts: ['list'],
+    contexts: ['list', 'reader'],
     group: 'Navigation',
     label: 'Previous article',
     run: (a) => a.selectPrev(),

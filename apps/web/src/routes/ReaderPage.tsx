@@ -23,6 +23,7 @@ import { AppShell } from '@/components/layout/AppShell';
 import { MobileNav } from '@/components/layout/MobileNav';
 import { mobileNavTab } from '@/components/layout/mobile-nav-tab';
 import { CommunityPane } from '@/components/community/CommunityPane';
+import { ArticleStepper } from '@/components/reader/ArticleStepper';
 import { BrowseSurface } from '@/components/reader/BrowseSurface';
 import { ListColumn } from '@/components/reader/ListColumn';
 import { ViewSwitcher } from '@/components/reader/ViewSwitcher';
@@ -207,10 +208,12 @@ export function ReaderPage() {
 
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedId = searchParams.get('article');
-  const selectArticle = (id: string) => {
+  // Stepping between articles (#23) replaces the history entry, so Back
+  // still returns to the list instead of walking back through every article.
+  const selectArticle = (id: string, { replace = false } = {}) => {
     const next = new URLSearchParams(searchParams);
     next.set('article', id);
-    setSearchParams(next);
+    setSearchParams(next, { replace });
   };
   const clearArticle = () => {
     if (!searchParams.has('article')) return; // idempotent: no spurious history entry
@@ -261,7 +264,27 @@ export function ReaderPage() {
   };
   const surface = useArticleSurface(effectiveFilters, openInPlace, {
     markReadOnScroll: settings.markReadOnScroll,
+    onOpen: (article) => selectArticle(article.id, { replace: true }),
   });
+
+  // Keep keyboard focus on the open article (e.g. after a deep link), so
+  // Next / Previous step from it.
+  const hasItems = surface.items.length > 0;
+  useEffect(() => {
+    if (selectedId && surface.items.some((a) => a.id === selectedId)) {
+      surface.setFocusedId(selectedId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the open article or the first page changes
+  }, [selectedId, hasItems]);
+  const adjacent = selectedId ? surface.adjacency(selectedId) : null;
+  const stepper = adjacent && (
+    <ArticleStepper
+      hasPrev={adjacent.hasPrev}
+      hasNext={adjacent.hasNext}
+      onPrev={() => surface.openAdjacent(-1)}
+      onNext={() => surface.openAdjacent(1)}
+    />
+  );
 
   // --- Scope chrome + mark all read (top bar) ---------------------------
   const scopeLabel = communityOpen
@@ -340,8 +363,10 @@ export function ReaderPage() {
   const readerTakesContext = Boolean(selectedId) && !isWide && !isBrowse;
   const activeContext: ShortcutContextName = readerTakesContext ? 'reader' : 'list';
   useShortcuts(activeContext, {
-    selectNext: surface.focusNext,
-    selectPrev: surface.focusPrev,
+    // With an article open, j/k open the next/previous one in every layout;
+    // otherwise they move the list focus.
+    selectNext: () => (selectedId ? surface.openAdjacent(1) : surface.focusNext()),
+    selectPrev: () => (selectedId ? surface.openAdjacent(-1) : surface.focusPrev()),
     openFocused: () => {
       const a = surface.getFocused();
       if (a) selectArticle(a.id);
@@ -722,6 +747,7 @@ export function ReaderPage() {
               selectedId={selectedId}
               onSelect={(a) => selectArticle(a.id)}
               onBack={clearArticle}
+              stepper={stepper}
             />
           ) : (
             <div className="grid h-full grid-cols-1 lg:grid-cols-[360px_minmax(0,1fr)]">
@@ -750,7 +776,8 @@ export function ReaderPage() {
                       <ChevronLeft className="size-4" /> Back to articles
                     </button>
                     <div className="min-h-0 flex-1">
-                      <ReadingPane articleId={selectedId} />
+                      {/* Keyed so each article starts at the top when stepping. */}
+                      <ReadingPane key={selectedId} articleId={selectedId} stepper={stepper} />
                     </div>
                   </div>
                 ) : (

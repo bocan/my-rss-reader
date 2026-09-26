@@ -27,7 +27,14 @@ function formatDate(iso: string | null): string {
   return Number.isNaN(d.getTime()) ? '' : dateFmt.format(d);
 }
 
-export function ReadingPane({ articleId }: { articleId: string }) {
+export function ReadingPane({
+  articleId,
+  stepper,
+}: {
+  articleId: string;
+  /** Previous / Next controls, shown with the article actions (#23). */
+  stepper?: ReactNode;
+}) {
   const queryClient = useQueryClient();
   const { settings } = useSettings();
   const { data: feedsData } = useSubscriptions();
@@ -173,6 +180,7 @@ export function ReadingPane({ articleId }: { articleId: string }) {
             >
               <Star className={cn('size-4', article.starred && 'fill-primary text-primary')} />
             </Button>
+            {stepper}
           </div>
         </div>
       </div>

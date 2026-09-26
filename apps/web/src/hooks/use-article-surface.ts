@@ -3,6 +3,9 @@ import { useMarkRead } from '@/lib/articles';
 import { createScrollReadTracker } from '@/lib/scroll-read';
 import { useArticles, type ArticleFilters, type ArticleListItem } from './use-articles';
 
+/** Start loading the next page when a step lands this close to the end. */
+const PREFETCH_WITHIN = 3;
+
 /**
  * Everything an article-browsing surface needs, lifted out of any one layout.
  *
@@ -27,6 +30,13 @@ export interface ArticleSurface {
   setFocusedId: (id: string | null) => void;
   focusNext: () => void;
   focusPrev: () => void;
+  /**
+   * Step from the open (focused) article and open the next (+1) or previous
+   * (-1) one, in any layout (#23). Loads the next page near the end.
+   */
+  openAdjacent: (delta: 1 | -1) => void;
+  /** Whether an article has a previous / next one (next includes unloaded pages). */
+  adjacency: (id: string) => { hasPrev: boolean; hasNext: boolean };
   focusFirst: () => void;
   getFocused: () => ArticleListItem | null;
   registerRow: (id: string) => (el: HTMLElement | null) => void;
@@ -37,7 +47,14 @@ export interface ArticleSurface {
 export function useArticleSurface(
   filters: ArticleFilters,
   onFocusedChange?: (article: ArticleListItem) => void,
-  { markReadOnScroll = false }: { markReadOnScroll?: boolean } = {},
+  {
+    markReadOnScroll = false,
+    onOpen,
+  }: {
+    markReadOnScroll?: boolean;
+    /** Open an article in the reader; used by openAdjacent. */
+    onOpen?: (article: ArticleListItem) => void;
+  } = {},
 ): ArticleSurface {
   const {
     data,
@@ -71,6 +88,8 @@ export function useArticleSurface(
   const filterKey = JSON.stringify(filters);
   const onFocusedChangeRef = useRef(onFocusedChange);
   onFocusedChangeRef.current = onFocusedChange;
+  const onOpenRef = useRef(onOpen);
+  onOpenRef.current = onOpen;
 
   // Mark read on scroll (#17): one observer over every row while enabled.
   const readObserverRef = useRef<IntersectionObserver | null>(null);
@@ -135,7 +154,7 @@ export function useArticleSurface(
   // Grid order equals array order in every view, so one linear step works for
   // the list column and the cards/magazine grids alike.
   const moveFocus = useCallback(
-    (delta: number) => {
+    (delta: number, open = false) => {
       const list = itemsRef.current;
       if (list.length === 0) return;
       const at = focusedIdRef.current
@@ -149,17 +168,19 @@ export function useArticleSurface(
         next = delta > 0 ? lastIndexRef.current : lastIndexRef.current - 1;
       } else next = delta > 0 ? 0 : list.length - 1;
 
-      if (next >= list.length) {
-        // Past the last loaded item: pull the next page so `j` keeps working.
-        if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
-        next = list.length - 1;
+      // Near or past the last loaded item: pull the next page early, so `j`
+      // (and Next) keep going without a dead press at the end of a page.
+      if (next >= list.length - PREFETCH_WITHIN && hasNextPage && !isFetchingNextPage) {
+        void fetchNextPage();
       }
+      if (next >= list.length) next = list.length - 1;
       if (next < 0) next = 0;
 
       const target = list[next];
       if (!target) return;
       setFocusedId(target.id);
-      onFocusedChangeRef.current?.(target);
+      if (open) onOpenRef.current?.(target);
+      else onFocusedChangeRef.current?.(target);
       requestAnimationFrame(() => revealRow(target.id));
     },
     [fetchNextPage, hasNextPage, isFetchingNextPage, revealRow],
@@ -200,6 +221,12 @@ export function useArticleSurface(
     setFocusedId,
     focusNext: () => moveFocus(1),
     focusPrev: () => moveFocus(-1),
+    openAdjacent: (delta) => moveFocus(delta, true),
+    adjacency: (id) => {
+      const i = items.findIndex((a) => a.id === id);
+      if (i === -1) return { hasPrev: false, hasNext: false };
+      return { hasPrev: i > 0, hasNext: i < items.length - 1 || hasNextPage };
+    },
     focusFirst: () => {
       const first = itemsRef.current[0];
       if (!first) return;

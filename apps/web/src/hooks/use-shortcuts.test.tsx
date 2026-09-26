@@ -57,8 +57,14 @@ describe('useShortcuts dispatch', () => {
 
   test('does not fire a list key while the reader is open', () => {
     render(<Harness ctx="reader" actions={actions} />);
+    press('o');
+    expect(actions.openFocused).not.toHaveBeenCalled();
+  });
+
+  test('j steps articles in the reader too (#23)', () => {
+    render(<Harness ctx="reader" actions={actions} />);
     press('j');
-    expect(actions.selectNext).not.toHaveBeenCalled();
+    expect(actions.selectNext).toHaveBeenCalledOnce();
   });
 
   test('never fires while typing in a field', () => {

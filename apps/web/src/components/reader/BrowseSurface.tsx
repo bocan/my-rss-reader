@@ -1,4 +1,5 @@
 import { ChevronLeft } from 'lucide-react';
+import type { ReactNode } from 'react';
 import type { ArticleSurface } from '@/hooks/use-article-surface';
 import type { ArticleListItem } from '@/hooks/use-articles';
 import { ReadingPane } from '@/components/reading-pane/ReadingPane';
@@ -26,6 +27,7 @@ export function BrowseSurface({
   selectedId,
   onSelect,
   onBack,
+  stepper,
 }: {
   surface: ArticleSurface;
   feeds: FeedMetaMap;
@@ -33,6 +35,8 @@ export function BrowseSurface({
   selectedId: string | null;
   onSelect: (article: ArticleListItem) => void;
   onBack: () => void;
+  /** Previous / Next controls for the open article (#23). */
+  stepper?: ReactNode;
 }) {
   const View = view === 'cards' ? CardsView : MagazineView;
   const reading = selectedId !== null;
@@ -65,7 +69,8 @@ export function BrowseSurface({
             </Button>
           </div>
           <div className="min-h-0 flex-1">
-            <ReadingPane articleId={selectedId} />
+            {/* Keyed so each article starts at the top when stepping. */}
+            <ReadingPane key={selectedId} articleId={selectedId} stepper={stepper} />
           </div>
         </div>
       )}
