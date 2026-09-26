@@ -167,10 +167,9 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   // --- Instance settings -------------------------------------------------
 
-  app.get('/admin/settings', admin, async (): Promise<AppSettingsDto> => {
-    const { registrationMode, defaultPollIntervalSec } = await getAppSettings();
-    return { registrationMode, defaultPollIntervalSec };
-  });
+  app.get('/admin/settings', admin, async (): Promise<AppSettingsDto> =>
+    settingsDto(await getAppSettings()),
+  );
 
   app.patch('/admin/settings', admin, async (request): Promise<AppSettingsDto> => {
     const input = updateAppSettingsSchema.parse(request.body);
@@ -184,15 +183,22 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         ...(input.defaultPollIntervalSec !== undefined
           ? { defaultPollIntervalSec: input.defaultPollIntervalSec }
           : {}),
+        ...(input.articleRetentionDays !== undefined
+          ? { articleRetentionDays: input.articleRetentionDays }
+          : {}),
         updatedAt: new Date(),
       })
       .where(eq(appSettings.id, 1));
-    const updated = await getAppSettings();
-    return {
-      registrationMode: updated.registrationMode,
-      defaultPollIntervalSec: updated.defaultPollIntervalSec,
-    };
+    return settingsDto(await getAppSettings());
   });
+}
+
+function settingsDto(s: Awaited<ReturnType<typeof getAppSettings>>): AppSettingsDto {
+  return {
+    registrationMode: s.registrationMode,
+    defaultPollIntervalSec: s.defaultPollIntervalSec,
+    articleRetentionDays: s.articleRetentionDays,
+  };
 }
 
 function mapAdminError(err: unknown, reply: FastifyReply) {

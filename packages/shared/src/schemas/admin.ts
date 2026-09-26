@@ -10,10 +10,18 @@ export const updateAppSettingsSchema = z
     registrationMode: registrationModeSchema.optional(),
     // App-wide default feed poll interval, in seconds (SPEC-018).
     defaultPollIntervalSec: z.number().int().min(60).max(86400).optional(),
+    // Article retention in days (SPEC-024). null keeps articles forever. The
+    // 30-day floor, with the prune's newest-per-feed guard, means pruning can
+    // never make a feed's current items come back as new.
+    articleRetentionDays: z.number().int().min(30).max(3650).nullable().optional(),
   })
-  .refine((v) => v.registrationMode !== undefined || v.defaultPollIntervalSec !== undefined, {
-    message: 'Provide at least one setting to update',
-  });
+  .refine(
+    (v) =>
+      v.registrationMode !== undefined ||
+      v.defaultPollIntervalSec !== undefined ||
+      v.articleRetentionDays !== undefined,
+    { message: 'Provide at least one setting to update' },
+  );
 export type UpdateAppSettingsInput = z.infer<typeof updateAppSettingsSchema>;
 
 /** POST /admin/invites body. */

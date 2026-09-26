@@ -1,6 +1,6 @@
 # SPEC-024: Link-rot armor (starred archives, retention policy, Wayback fallback)
 
-- **Status:** Todo
+- **Status:** Done
 - **Phase:** 4
 - **Depends on:** SPEC-004 (Done), SPEC-005 (Done); interacts with SPEC-019 (shared items) if landed
 - **Estimated size:** M
@@ -211,29 +211,69 @@ Order: `ensureReadableSnapshot` refactor + capture hook -> Wayback links
 
 ## Acceptance criteria
 
-- [ ] Starring an article whose `readableFetchedAt` is null triggers
+- [x] Starring an article whose `readableFetchedAt` is null triggers
       exactly one background extraction and persists the snapshot; the
       PATCH response does not wait for it; starring again does not
       re-fetch.
-- [ ] `GET /api/articles/:id/readable?refresh=true` still forces
+- [x] `GET /api/articles/:id/readable?refresh=true` still forces
       re-extraction (helper refactor did not regress the route).
-- [ ] With retention null, the prune job deletes nothing and logs nothing
+- [x] With retention null, the prune job deletes nothing and logs nothing
       nightly.
-- [ ] With retention set, articles older than the window are deleted
+- [x] With retention set, articles older than the window are deleted
       except (a) starred by anyone, (b) shared by anyone (when SPEC-019 is
       present), and (c) each feed's newest 100; the prune runs at most
       once per 24h per worker process.
-- [ ] A pruned article's state rows disappear with it (cascade), and
+- [x] A pruned article's state rows disappear with it (cascade), and
       re-polling the feed does not resurrect pruned articles (guard
       verified with a sparse-feed fixture whose XML still lists old
       items).
-- [ ] `articleRetentionDays` round-trips through the admin API with the
+- [x] `articleRetentionDays` round-trips through the admin API with the
       30-3650 bounds and null semantics, and the admin UI edits it.
-- [ ] The Wayback link appears in the header for any article with a URL,
+- [x] The Wayback link appears in the header for any article with a URL,
       and in the Simplified-failure and Readable-empty states; absent when
       `url` is null.
-- [ ] Starred items from a feed whose site is down still render their
+- [x] Starred items from a feed whose site is down still render their
       Simplified view from the stored snapshot (that is the whole point).
+
+## As built
+
+Differences from the plan above, all found while building it. (The views
+are now named Feed, Extracted and Web: "Simplified" above is Extracted, and
+"Readable" is Feed.)
+
+- **The helper is its own module**, `lib/readable-snapshot.ts`, not an
+  export of `readability.ts`. The unit test needs `extractReadableHtml`
+  mocked, and an ES module cannot mock a function it calls inside itself.
+  The helper is tested against the test database with only extraction
+  mocked (`readable-snapshot.int.test.ts`).
+- **A failed retry keeps the stored copy.** Before, `?refresh=true` on a
+  page that had died wrote `readableHtml = null` and erased the copy taken
+  while it was alive, which is the archive this spec protects.
+- **One extraction per article at a time.** A star and a first open of the
+  Extracted view often come together; an in-process map makes them share
+  one fetch.
+- **A third prune guard: fetched within the window.** The newest-100 guard
+  protects items still in the feed XML only when the XML lists 100 items or
+  fewer. Without this guard, a new subscription to a feed listing 150 old
+  posts would lose the oldest 50 that night and get them back, unread, on
+  the next poll. With it, they stay for the whole window. The gap that is
+  left: a feed whose XML lists more than 100 items older than the window
+  can re-deliver those once per window. Closing it needs a "last seen in
+  the feed" column; not done.
+- **The admin page asks before a shorter window**, since the next daily
+  clean-up deletes the older articles for good. It has a "Keep forever"
+  button, and a blank field also means forever.
+- **The star's hover text** is "Star (keeps a readable copy) (s)", with the
+  key, as the other pane buttons show theirs.
+- **EXPLAIN**, on a real database with 10,754 articles in 85 feeds: two
+  sequential scans, one sort for the window function and three hash joins,
+  about 6,300 cost units. The whole-table window sort does not use
+  `articles_sort_key_idx`, and at self-hosted scale, once a day, it does
+  not need to.
+
+Not done from the Testing section: the manual steps (star, go offline, open
+Extracted; set retention to 30 on a dev database and watch the log line).
+Automated tests cover the same paths.
 
 ## Testing
 

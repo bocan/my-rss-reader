@@ -222,3 +222,33 @@ test('PATCH /admin/settings rejects an invalid mode with 400', async () => {
   const res = await call('PATCH', '/api/admin/settings', cookie, { registrationMode: 'public' });
   expect(res.statusCode).toBe(400);
 });
+
+// SPEC-024: article retention, null = keep forever.
+test('article retention round-trips, with null for forever', async () => {
+  const cookie = await loginAs(await seedAdmin());
+  expect((await call('GET', '/api/admin/settings', cookie)).json().articleRetentionDays).toBeNull();
+
+  const set = await call('PATCH', '/api/admin/settings', cookie, { articleRetentionDays: 90 });
+  expect(set.statusCode).toBe(200);
+  expect(set.json()).toMatchObject({ articleRetentionDays: 90, registrationMode: 'open' });
+
+  // Another setting alone leaves retention as it was.
+  await call('PATCH', '/api/admin/settings', cookie, { defaultPollIntervalSec: 600 });
+  expect((await call('GET', '/api/admin/settings', cookie)).json().articleRetentionDays).toBe(90);
+
+  const cleared = await call('PATCH', '/api/admin/settings', cookie, { articleRetentionDays: null });
+  expect(cleared.json().articleRetentionDays).toBeNull();
+});
+
+test.each([29, 3651, 45.5, '90'])('article retention of %j is refused with 400', async (days) => {
+  const cookie = await loginAs(await seedAdmin());
+  const res = await call('PATCH', '/api/admin/settings', cookie, { articleRetentionDays: days });
+  expect(res.statusCode).toBe(400);
+});
+
+test('only an admin may set article retention', async () => {
+  await seedAdmin(); // the first user is the admin
+  const cookie = await loginAs(await seedUser());
+  const res = await call('PATCH', '/api/admin/settings', cookie, { articleRetentionDays: 30 });
+  expect(res.statusCode).toBe(403);
+});

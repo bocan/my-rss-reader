@@ -123,6 +123,72 @@ test('readable with a null url stamps the attempt (200) without extracting', asy
   expect(extractMock).not.toHaveBeenCalled();
 });
 
+// SPEC-024: a star or a share takes the readable copy at once.
+const snapshotOf = async (id: string) => {
+  const { db } = await import('../db/index.js');
+  const { articles } = await import('../db/schema.js');
+  const { eq } = await import('drizzle-orm');
+  return (await db.select().from(articles).where(eq(articles.id, id)))[0]!;
+};
+const patchState = (id: string, cookie: string, payload: Record<string, unknown>) =>
+  app.inject({ method: 'PATCH', url: `/api/articles/${id}/state`, headers: { cookie }, payload });
+
+test('a star captures the snapshot once, in the background; a repeat star does not refetch', async () => {
+  const { article, cookie } = await subscribedArticle();
+  let release: (html: string) => void = () => {};
+  extractMock.mockImplementation(() => new Promise((r) => (release = r)));
+
+  // The reply comes while the extraction is still running.
+  const res = await patchState(article.id, cookie, { starred: true });
+  expect(res.statusCode).toBe(204);
+  await vi.waitFor(() => expect(extractMock).toHaveBeenCalledTimes(1));
+  expect((await snapshotOf(article.id)).readableFetchedAt).toBeNull();
+
+  release('<p>kept safe</p>');
+  await vi.waitFor(async () => expect((await snapshotOf(article.id)).readableHtml).toBe('<p>kept safe</p>'));
+
+  await patchState(article.id, cookie, { starred: false });
+  await patchState(article.id, cookie, { starred: true });
+  await new Promise((r) => setTimeout(r, 50));
+  expect(extractMock).toHaveBeenCalledTimes(1);
+});
+
+test('a share captures too; a read or an unstar does not', async () => {
+  const { article, cookie } = await subscribedArticle();
+  extractMock.mockResolvedValue('<p>shared copy</p>');
+
+  await patchState(article.id, cookie, { read: true });
+  await patchState(article.id, cookie, { starred: false });
+  await new Promise((r) => setTimeout(r, 50));
+  expect(extractMock).not.toHaveBeenCalled();
+
+  await patchState(article.id, cookie, { shared: true });
+  await vi.waitFor(async () => expect((await snapshotOf(article.id)).readableHtml).toBe('<p>shared copy</p>'));
+});
+
+test('a failed capture on star stamps the attempt, as the view does', async () => {
+  const { article, cookie } = await subscribedArticle();
+  extractMock.mockResolvedValue(null);
+  await patchState(article.id, cookie, { starred: true });
+  await vi.waitFor(async () => expect((await snapshotOf(article.id)).readableFetchedAt).not.toBeNull());
+  expect((await snapshotOf(article.id)).readableHtml).toBeNull();
+});
+
+test('readable ?refresh=true on a dead page keeps the stored copy', async () => {
+  const { article, cookie } = await subscribedArticle({
+    readableHtml: '<p>taken while alive</p>',
+    readableFetchedAt: new Date('2026-01-01T00:00:00Z'),
+  });
+  extractMock.mockResolvedValue(null);
+  const res = await app.inject({
+    method: 'GET',
+    url: `/api/articles/${article.id}/readable?refresh=true`,
+    headers: { cookie },
+  });
+  expect(res.json().readableHtml).toBe('<p>taken while alive</p>');
+  expect(extractMock).toHaveBeenCalledTimes(1);
+});
+
 test('readable enforces subscription scope (404, no extract)', async () => {
   const { cookie } = await subscribedArticle();
   const otherFeed = await seedFeed();

@@ -120,6 +120,57 @@ test('the article does not take focus from a field the user is typing in', () =>
   field.remove();
 });
 
+// SPEC-024: the Wayback Machine is one click away, and a star keeps a copy.
+const WAYBACK = 'https://web.archive.org/web/https://code.claude.com/docs/en/changelog#2-1-281';
+
+test('the header links to the Wayback Machine in a new tab', () => {
+  renderPane({ defaultArticleView: 'readable' });
+  const link = screen.getByRole('link', { name: 'Wayback' });
+  expect(link).toHaveAttribute('href', WAYBACK);
+  expect(link).toHaveAttribute('title', 'Find on the Wayback Machine');
+  expect(link).toHaveAttribute('target', '_blank');
+});
+
+test('no Wayback link for an item with no URL', () => {
+  renderPane({ defaultArticleView: 'readable' }, null, { url: null });
+  expect(screen.queryByRole('link', { name: 'Wayback' })).toBeNull();
+});
+
+test('a failed extraction points at the Wayback Machine', () => {
+  renderPane({ defaultArticleView: 'simplified' }, null, {
+    readableHtml: null,
+    readableFetchedAt: '2026-09-01T00:00:00Z',
+  });
+  expect(screen.getByText('Could not extract a clean version of this article.')).toBeInTheDocument();
+  expect(screen.getByText(/The original may have moved or died/)).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Try the Wayback Machine.' })).toHaveAttribute('href', WAYBACK);
+});
+
+test('an empty Feed view points at the Wayback Machine', () => {
+  renderPane({ defaultArticleView: 'readable' }, null, { contentHtml: null, summary: null });
+  expect(screen.getByText('No content in this item. Try the Web view.')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Try the Wayback Machine.' })).toBeInTheDocument();
+});
+
+test('a stored copy shows in Extracted even offline, with no fetch', () => {
+  vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+  renderPane({ defaultArticleView: 'simplified' }, null, {
+    starred: true,
+    readableHtml: '<p>Kept while the site was alive.</p>',
+    readableFetchedAt: '2026-01-01T00:00:00Z',
+  });
+  expect(screen.getByText('Kept while the site was alive.')).toBeInTheDocument();
+  vi.restoreAllMocks();
+});
+
+test('the star says it keeps a readable copy', () => {
+  renderPane();
+  expect(screen.getByRole('button', { name: 'Star' })).toHaveAttribute(
+    'title',
+    'Star (keeps a readable copy) (s)',
+  );
+});
+
 test('a feed override beats an auto default', () => {
   renderPane({ defaultArticleView: 'auto' }, 'web');
   expect(pressed()).toEqual(['Web']);

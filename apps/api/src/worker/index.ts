@@ -1,6 +1,9 @@
 import { client } from '../db/index.js';
 import { env } from '../env.js';
 import { pollDueFeeds, renewDueWebSubLeases } from './poll.js';
+import { pruneOldArticles, pruneScheduler } from './prune.js';
+
+const maybePrune = pruneScheduler(pruneOldArticles);
 
 /**
  * The feed poller runs as its own process (`start:worker`) so feed refresh is
@@ -23,6 +26,9 @@ async function tick(): Promise<void> {
     if (renewed > 0) {
       console.log(`[worker] renewed ${renewed} WebSub lease(s)`);
     }
+    // Article retention (SPEC-024): at most once a day, in the worker only,
+    // so the API never pays for the delete.
+    await maybePrune();
   } catch (err) {
     console.error('[worker] tick failed', err);
   } finally {
