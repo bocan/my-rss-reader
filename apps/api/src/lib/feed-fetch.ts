@@ -358,7 +358,10 @@ async function parsesAsFeed(body: string): Promise<ParsedFeed | null> {
  * fetching and parsing it before it is offered.
  *
  * - Bluesky: `https://bsky.app/profile/<handle or did>` -> `.../rss`.
- * - Mastodon-style (any host; also Pleroma, Akkoma, GoToSocial):
+ * - Medium: `https://medium.com/@user` -> `https://medium.com/feed/@user`.
+ *   Medium answers 403 to non-browser requests for the profile page, so the
+ *   generic `<link rel="alternate">` path cannot find it there.
+ * - Mastodon-style (any other host; also Pleroma, Akkoma, GoToSocial):
  *   `https://instance/@user` -> `https://instance/@user.rss`. A remote
  *   account shown on another instance (`/@user@other.host`) does not match:
  *   that instance serves no feed for it.
@@ -376,7 +379,11 @@ export function socialFeedProbes(url: string): string[] {
     const m = u.pathname.match(/^\/profile\/([^/]+)\/?$/);
     return m ? [`https://bsky.app/profile/${m[1]}/rss`] : [];
   }
-  if (/^\/@[^/@]+\/?$/.test(u.pathname)) {
+  const handle = u.pathname.match(/^\/(@[^/@]+)\/?$/);
+  if (u.hostname === 'medium.com' || u.hostname === 'www.medium.com') {
+    return handle ? [`https://medium.com/feed/${handle[1]}`] : [];
+  }
+  if (handle) {
     return [`${u.origin}${u.pathname.replace(/\/$/, '')}.rss`];
   }
   return [];

@@ -124,7 +124,9 @@ describe('socialFeedProbes', () => {
     ['https://hachyderm.io/@someone', 'https://hachyderm.io/@someone.rss'],
     ['https://hachyderm.io/@someone/', 'https://hachyderm.io/@someone.rss'],
     ['https://Social.Example.ORG/@Some_One', 'https://social.example.org/@Some_One.rss'],
-    ['https://medium.com/@writer', 'https://medium.com/@writer.rss'],
+    // Medium serves its own feed path; its profile page is 403 to non-browsers.
+    ['https://medium.com/@writer', 'https://medium.com/feed/@writer'],
+    ['https://www.medium.com/@writer/', 'https://medium.com/feed/@writer'],
   ])('%s -> %s', (input, probe) => {
     expect(socialFeedProbes(input)).toEqual([probe]);
   });
@@ -135,6 +137,7 @@ describe('socialFeedProbes', () => {
     'https://bsky.app/profile/x/feed',
     'https://bsky.app/profile/x/post/abc',
     'https://bsky.app/',
+    'https://medium.com/some-publication',
     'https://blog.example/',
     'https://blog.example/about',
     'ftp://host/@user',
@@ -167,14 +170,24 @@ describe('discoverFeedCandidates with social profiles', () => {
     expect(requested()).toEqual(['https://hachyderm.io/@someone.rss']);
   });
 
-  test('a /@user URL whose .rss 404s (Medium) falls back to generic discovery', async () => {
-    responses.set('https://medium.com/@writer.rss', { statusCode: 404, body: 'Not found' });
+  test('a /@user URL whose .rss 404s falls back to generic discovery', async () => {
+    responses.set('https://writing.example/@writer.rss', { statusCode: 404, body: 'Not found' });
     responses.set(
-      'https://medium.com/@writer',
-      html('<link rel="alternate" type="application/rss+xml" title="RSS" href="https://medium.com/feed/@writer">'),
+      'https://writing.example/@writer',
+      html('<link rel="alternate" type="application/rss+xml" title="RSS" href="https://writing.example/feed/@writer">'),
     );
+    const out = await discoverFeedCandidates('https://writing.example/@writer');
+    expect(out).toEqual([{ feedUrl: 'https://writing.example/feed/@writer', title: 'RSS' }]);
+  });
+
+  test('a Medium profile finds medium.com/feed/@user, without the 403 profile page', async () => {
+    responses.set('https://medium.com/feed/@writer', { body: RSS('Stories by Writer on Medium') });
+    responses.set('https://medium.com/@writer', { statusCode: 403, body: '<html>blocked</html>' });
     const out = await discoverFeedCandidates('https://medium.com/@writer');
-    expect(out).toEqual([{ feedUrl: 'https://medium.com/feed/@writer', title: 'RSS' }]);
+    expect(out).toEqual([
+      { feedUrl: 'https://medium.com/feed/@writer', title: 'Stories by Writer on Medium' },
+    ]);
+    expect(requested()).toEqual(['https://medium.com/feed/@writer']);
   });
 
   test('a probe that answers with HTML, not a feed, also falls back', async () => {
