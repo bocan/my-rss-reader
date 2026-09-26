@@ -82,8 +82,7 @@ pnpm install
 
 # Start Postgres only; run the app on the host for hot reload.
 pnpm docker:dev
-pnpm db:generate              # generate the initial migration from the schema
-pnpm db:migrate               # apply it
+pnpm db:migrate               # apply the migrations committed in apps/api/drizzle
 
 pnpm dev                      # web on :5173, api on :3000 (proxied)
 ```
