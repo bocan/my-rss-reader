@@ -575,6 +575,21 @@ describe('touch drag', () => {
     expect(row()).toHaveClass('opacity-50');
     fireEvent.touchEnd(row(), touch(140));
   });
+
+  // The row stays, dimmed, and a copy follows the pointer outside the tree,
+  // so leaving the folder does not make the dragged row vanish.
+  test('a copy of the dragged row follows the pointer, and goes at the drop', async () => {
+    renderTree();
+    expect(screen.getAllByText('Dave Rupert')).toHaveLength(1);
+    fireEvent.touchStart(row(), touch(100));
+    act(() => vi.advanceTimersByTime(300));
+    fireEvent.touchMove(row(), touch(140));
+    expect(screen.getAllByText('Dave Rupert')).toHaveLength(2);
+    fireEvent.touchEnd(row(), touch(140));
+    // DragOverlay removes its copy once its (empty) drop animation settles.
+    await act(async () => {});
+    expect(screen.getAllByText('Dave Rupert')).toHaveLength(1);
+  });
 });
 
 // #35: empty sidebar states, and "New folder" from the "+" menu.

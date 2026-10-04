@@ -1,5 +1,6 @@
 import {
   DndContext,
+  DragOverlay,
   KeyboardSensor,
   MouseSensor,
   TouchSensor,
@@ -7,6 +8,8 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragMoveEvent,
+  type DragStartEvent,
 } from '@dnd-kit/core';
 import {
   SortableContext,
@@ -26,7 +29,7 @@ import {
   Search,
   X,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { describeFeedError } from '@rss/shared';
 import { FeedProblem } from '@/components/feed/FeedProblem';
 import { FeedSettingsDialog } from '@/components/feed/FeedSettingsDialog';
@@ -41,13 +44,18 @@ import {
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { folderDrop, HAS_CHILDREN_MESSAGE } from '@/lib/folder-drop';
+import {
+  dropHighlight,
+  HAS_CHILDREN_MESSAGE,
+  treeDrop,
+  type DragData,
+  type TreeDrop,
+} from '@/lib/folder-drop';
 import { useMarkAllRead } from '@/lib/mark-all-read';
 import { notify } from '@/lib/notify';
 import {
   byFolderName,
   canReorder,
-  dropIndex,
   feedMatches,
   folderChoices,
   makeFeedComparator,
@@ -66,20 +74,29 @@ import {
   type FolderRow,
   type SubscriptionRow,
 } from '@/lib/folders';
-import { setFoldersExpanded, toggleFolderExpanded, useExpandedFolders } from '@/lib/sidebar-expanded';
+import {
+  setFoldersExpanded,
+  toggleFolderExpanded,
+  useExpandedFolders,
+} from '@/lib/sidebar-expanded';
 import { cn } from '@/lib/utils';
 
-type DragData =
-  | { type: 'feed'; subscriptionId: string; folderId: string | null }
-  | { type: 'folder'; folderId: string; parentId: string | null }
-  | { type: 'dropzone'; folderId: string | null };
+/**
+ * The folder a drag would land in, for the highlight (see dropHighlight): a
+ * folder id, null for the top level, undefined for none.
+ */
+const DropTargetContext = createContext<string | null | undefined>(undefined);
+
+/** The row shown under the pointer while dragging. */
+type DragPreview =
+  { kind: 'feed'; label: string; faviconUrl: string | null } | { kind: 'folder'; label: string };
 
 /** Outside manual order, rows do not make room while you drag: a drop there
  *  only moves a feed to another folder, and never reorders (#27). */
 const noShift: SortingStrategy = () => null;
 
-/** Where the pointer was at the drop, or null for a keyboard drag. */
-function pointerY(event: DragEndEvent): number | null {
+/** Where the pointer is now, or null for a keyboard drag. */
+function pointerY(event: DragMoveEvent | DragEndEvent): number | null {
   const start = event.activatorEvent;
   const y =
     'touches' in start && (start as TouchEvent).touches.length > 0
@@ -232,9 +249,14 @@ export function FolderTree({
     feedsIn(id).length > 0 ||
     folders.some((c) => c.parentId === id && feedsIn(c.id).length > 0);
   const openFolders = query ? new Set(folders.map((f) => f.id)) : expanded;
-  const noMatches = query !== '' && !folders.some((f) => folderHasVisible(f.id)) && feedsIn(null).length === 0;
+  const noMatches =
+    query !== '' && !folders.some((f) => folderHasVisible(f.id)) && feedsIn(null).length === 0;
   // Collapse all / expand all (#46): Alt-click on a chevron, or the folder menu.
-  const setAllExpanded = (open: boolean) => setFoldersExpanded(folders.map((f) => f.id), open);
+  const setAllExpanded = (open: boolean) =>
+    setFoldersExpanded(
+      folders.map((f) => f.id),
+      open,
+    );
   const anyExpanded = folders.some((f) => expanded.has(f.id));
   const allExpanded = folders.every((f) => expanded.has(f.id));
   const childrenOf = (id: string) =>
@@ -257,62 +279,88 @@ export function FolderTree({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (!over) return;
-    const a = active.data.current as DragData | undefined;
-    const o = over.data.current as DragData | undefined;
-    if (!a || !o) return;
-    // Failures surface as toasts from the mutations' meta (lib/queryClient.ts).
+  // While dragging: what is under the pointer, and the folder it would land in.
+  const [preview, setPreview] = useState<DragPreview | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null | undefined>(undefined);
 
-    if (a.type === 'feed') {
-      // A feed row, a folder row, or a folder body: the drop names the folder.
-      const folderId = o.folderId;
-      let position: number | undefined;
-      if (o.type === 'feed') {
-        if (o.subscriptionId === a.subscriptionId) return;
-        // Only manual order places the feed at the row it was dropped on.
-        // Otherwise the sort decides where it shows, so only a move counts.
-        if (reorder) {
-          const scope = subs
-            .filter((s) => s.folderId === folderId)
-            .sort(byFeed)
-            .map((s) => s.subscriptionId);
-          position = dropIndex(scope, a.subscriptionId, o.subscriptionId);
-        } else if (folderId === a.folderId) {
-          return;
-        }
-      }
-      if (folderId === a.folderId && position === undefined) return;
-      updateSub.mutate({ id: a.subscriptionId, folderId, position });
-      return;
-    }
+  /** What dropping now would do. One rule for the highlight and the drop. */
+  function resolveDrop(event: DragMoveEvent | DragEndEvent): {
+    drop: TreeDrop | null;
+    active?: DragData;
+  } {
+    const a = event.active.data.current as DragData | undefined;
+    const o = event.over?.data.current as DragData | undefined;
+    if (!a || !o) return { drop: null };
+    const drop = treeDrop({
+      active: a,
+      over: o,
+      folders,
+      reorder,
+      // The full scope, not only the visible rows: the server orders them all.
+      feedScope: (folderId) =>
+        subs
+          .filter((s) => s.folderId === folderId)
+          .sort(byFeed)
+          .map((s) => s.subscriptionId),
+      folderScope: (parentId) =>
+        folders
+          .filter((f) => f.parentId === parentId)
+          .sort(byFolder)
+          .map((f) => f.id),
+      hasChildren,
+      y: pointerY(event),
+      header: rowBox,
+    });
+    return { drop, active: a };
+  }
 
-    if (a.type === 'folder') {
-      if (o.type === 'folder') {
-        const dragged = folders.find((f) => f.id === a.folderId);
-        const target = folders.find((f) => f.id === o.folderId);
-        if (!dragged || !target) return;
-        const drop = folderDrop({
-          dragged,
-          target,
-          draggedHasChildren: hasChildren(dragged.id),
-          reorder,
-          y: pointerY(event),
-          header: rowBox(target.id),
+  function handleDragStart(event: DragStartEvent) {
+    const a = event.active.data.current as DragData | undefined;
+    if (a?.type === 'feed') {
+      const s = subs.find((x) => x.subscriptionId === a.subscriptionId);
+      if (s)
+        setPreview({
+          kind: 'feed',
+          label: s.customTitle ?? s.title ?? s.feedUrl,
+          faviconUrl: s.faviconUrl,
         });
-        if (drop.kind === 'blocked') notify.info(drop.message);
-        if (drop.kind === 'nest') updateFolder.mutate({ id: dragged.id, parentId: target.id });
-        if (drop.kind === 'reorder') {
-          const scope = folders
-            .filter((f) => f.parentId === dragged.parentId)
-            .sort(byFolder)
-            .map((f) => f.id);
-          updateFolder.mutate({ id: dragged.id, position: dropIndex(scope, dragged.id, target.id) });
-        }
-      } else if (o.type === 'dropzone' && o.folderId === null && a.parentId !== null) {
-        updateFolder.mutate({ id: a.folderId, parentId: null });
-      }
+    } else if (a?.type === 'folder') {
+      const f = folders.find((x) => x.id === a.folderId);
+      if (f) setPreview({ kind: 'folder', label: f.name });
+    }
+  }
+
+  // Every move, not only a change of target: over a folder row, the pointer's
+  // height decides between nest and reorder (folderDrop).
+  function handleDragMove(event: DragMoveEvent) {
+    const { drop, active } = resolveDrop(event);
+    setDropTarget(active ? dropHighlight(drop, active) : undefined);
+  }
+
+  function endDrag() {
+    setPreview(null);
+    setDropTarget(undefined);
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    endDrag();
+    const { drop } = resolveDrop(event);
+    if (!drop) return;
+    // Failures surface as toasts from the mutations' meta (lib/queryClient.ts).
+    if (drop.kind === 'move-feed') {
+      updateSub.mutate({
+        id: drop.subscriptionId,
+        folderId: drop.folderId,
+        position: drop.position,
+      });
+    } else if (drop.kind === 'nest-folder') {
+      updateFolder.mutate({ id: drop.folderId, parentId: drop.parentId });
+    } else if (drop.kind === 'reorder-folder') {
+      updateFolder.mutate({ id: drop.folderId, position: drop.position });
+    } else if (drop.kind === 'unnest-folder') {
+      updateFolder.mutate({ id: drop.folderId, parentId: null });
+    } else {
+      notify.info(drop.message);
     }
   }
 
@@ -326,118 +374,131 @@ export function FolderTree({
   };
 
   return (
-    <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-      <div className="mt-1 space-y-0.5 text-sm">
-        {subs.length >= FILTER_MIN_FEEDS && <FeedFilter value={filter} onChange={setFilter} />}
-        {noMatches && (
-          <p className="px-2 py-1.5 text-sm text-muted-foreground">No feeds match “{filter.trim()}”.</p>
-        )}
+    <DndContext
+      sensors={sensors}
+      onDragStart={handleDragStart}
+      onDragMove={handleDragMove}
+      onDragEnd={handleDragEnd}
+      onDragCancel={endDrag}
+    >
+      <DropTargetContext.Provider value={dropTarget}>
+        <div className="mt-1 space-y-0.5 text-sm">
+          {subs.length >= FILTER_MIN_FEEDS && <FeedFilter value={filter} onChange={setFilter} />}
+          {noMatches && (
+            <p className="px-2 py-1.5 text-sm text-muted-foreground">
+              No feeds match “{filter.trim()}”.
+            </p>
+          )}
 
-        {/* Root folders (each collapsible, holding its feeds and child folders) */}
-        <SortableContext
-          items={rootFolders.map((f) => `folder:${f.id}`)}
-          strategy={strategy}
-        >
-          {rootFolders.map((folder) => (
-            <FolderNode
-              key={folder.id}
-              folder={folder}
-              reorder={reorder}
-              depth={0}
-              expanded={openFolders.has(folder.id)}
-              onToggle={() => toggle(folder.id)}
-              onSetAllExpanded={setAllExpanded}
-              anyExpanded={anyExpanded}
-              allExpanded={allExpanded}
-              isActive={activeFolderId === folder.id}
-              onSelect={() => onSelectFolder(folder.id)}
-              childFolders={childrenOf(folder.id)}
-              feeds={feedsIn(folder.id)}
-              feedsInChild={feedsIn}
-              expandedSet={openFolders}
-              onToggleChild={toggle}
-              activeFeedId={activeFeedId}
-              onSelectFeed={onSelectFeed}
-              countByFeed={countByFeed}
-              countByFolder={countByFolder}
-              editing={editing}
-              setEditing={setEditing}
-              submitEdit={submitEdit}
-              // These take the folder: a child FolderNode gets the same props,
-              // so a closure over `folder` would act on the parent (#28).
-              onDelete={(f) => {
-                if (confirm(`Delete folder "${f.name}"? Its feeds move out, not away.`)) {
-                  deleteFolder.mutate(f.id);
-                }
-              }}
-              onMarkRead={(f) => markAll({ folderId: f.id }, f.name)}
-              onEdit={openFolderSettings}
-              moveTargets={allRoots}
-              hasChildren={hasChildren}
-              onMove={(id, parentId) => updateFolder.mutate({ id, parentId })}
-              creatingIn={creatingIn}
-              onNewSubfolder={startSubfolder}
-              onCreateSubfolder={createSubfolder}
-              onCancelSubfolder={() => setCreatingIn(null)}
-              onRenameFeed={(id) => setEditing({ kind: 'feed', id })}
-              onEditFeed={openFeedSettings}
-              onUnsubscribe={(id) => unsubscribe.mutate(id)}
-              onMarkFeedRead={(feedId) => markAll({ feedId }, feedName(feedId))}
-            />
-          ))}
-        </SortableContext>
-
-        {allCaughtUp && (
-          <p className="px-2 py-1.5 text-sm text-muted-foreground">
-            All caught up. Feeds with nothing unread are hidden.
-          </p>
-        )}
-
-        {/* Unfoldered feeds, and the drop target for moving back to root */}
-        <RootZone>
-          <SortableContext
-            items={feedsIn(null).map((s) => `feed:${s.subscriptionId}`)}
-            strategy={strategy}
-          >
-            {feedsIn(null).map((sub) => (
-              <FeedNode
-                key={sub.subscriptionId}
-                sub={sub}
+          {/* Root folders (each collapsible, holding its feeds and child folders) */}
+          <SortableContext items={rootFolders.map((f) => `folder:${f.id}`)} strategy={strategy}>
+            {rootFolders.map((folder) => (
+              <FolderNode
+                key={folder.id}
+                folder={folder}
                 reorder={reorder}
                 depth={0}
-                isActive={activeFeedId === sub.feedId}
-                onSelect={() => onSelectFeed(sub.feedId)}
-                unread={countByFeed.get(sub.feedId) ?? 0}
-                isEditing={editing?.kind === 'feed' && editing.id === sub.subscriptionId}
-                onSubmitEdit={submitEdit}
-                onCancelEdit={() => setEditing(null)}
-                onRename={() => setEditing({ kind: 'feed', id: sub.subscriptionId })}
-                onEditSettings={() => openFeedSettings(sub)}
-                onUnsubscribe={() => unsubscribe.mutate(sub.subscriptionId)}
-                onMarkRead={() => markAll({ feedId: sub.feedId }, feedName(sub.feedId))}
+                expanded={openFolders.has(folder.id)}
+                onToggle={() => toggle(folder.id)}
+                onSetAllExpanded={setAllExpanded}
+                anyExpanded={anyExpanded}
+                allExpanded={allExpanded}
+                isActive={activeFolderId === folder.id}
+                onSelect={() => onSelectFolder(folder.id)}
+                childFolders={childrenOf(folder.id)}
+                feeds={feedsIn(folder.id)}
+                feedsInChild={feedsIn}
+                expandedSet={openFolders}
+                onToggleChild={toggle}
+                activeFeedId={activeFeedId}
+                onSelectFeed={onSelectFeed}
+                countByFeed={countByFeed}
+                countByFolder={countByFolder}
+                editing={editing}
+                setEditing={setEditing}
+                submitEdit={submitEdit}
+                // These take the folder: a child FolderNode gets the same props,
+                // so a closure over `folder` would act on the parent (#28).
+                onDelete={(f) => {
+                  if (confirm(`Delete folder "${f.name}"? Its feeds move out, not away.`)) {
+                    deleteFolder.mutate(f.id);
+                  }
+                }}
+                onMarkRead={(f) => markAll({ folderId: f.id }, f.name)}
+                onEdit={openFolderSettings}
+                moveTargets={allRoots}
+                hasChildren={hasChildren}
+                onMove={(id, parentId) => updateFolder.mutate({ id, parentId })}
+                creatingIn={creatingIn}
+                onNewSubfolder={startSubfolder}
+                onCreateSubfolder={createSubfolder}
+                onCancelSubfolder={() => setCreatingIn(null)}
+                onRenameFeed={(id) => setEditing({ kind: 'feed', id })}
+                onEditFeed={openFeedSettings}
+                onUnsubscribe={(id) => unsubscribe.mutate(id)}
+                onMarkFeedRead={(feedId) => markAll({ feedId }, feedName(feedId))}
               />
             ))}
           </SortableContext>
-        </RootZone>
 
-        {creating ? (
-          <InlineInput
-            placeholder="Folder name"
-            onSubmit={(name) => {
-              if (name.trim()) createFolder.mutate(name.trim());
-              setCreating(false);
-            }}
-            onCancel={() => setCreating(false)}
-          />
-        ) : (
-          <button
-            onClick={() => setCreating(true)}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-accent"
-          >
-            <Plus className="size-3.5" /> New folder
-          </button>
-        )}
-      </div>
+          {allCaughtUp && (
+            <p className="px-2 py-1.5 text-sm text-muted-foreground">
+              All caught up. Feeds with nothing unread are hidden.
+            </p>
+          )}
+
+          {/* Unfoldered feeds, and the drop target for moving back to root */}
+          <RootZone>
+            <SortableContext
+              items={feedsIn(null).map((s) => `feed:${s.subscriptionId}`)}
+              strategy={strategy}
+            >
+              {feedsIn(null).map((sub) => (
+                <FeedNode
+                  key={sub.subscriptionId}
+                  sub={sub}
+                  reorder={reorder}
+                  depth={0}
+                  isActive={activeFeedId === sub.feedId}
+                  onSelect={() => onSelectFeed(sub.feedId)}
+                  unread={countByFeed.get(sub.feedId) ?? 0}
+                  isEditing={editing?.kind === 'feed' && editing.id === sub.subscriptionId}
+                  onSubmitEdit={submitEdit}
+                  onCancelEdit={() => setEditing(null)}
+                  onRename={() => setEditing({ kind: 'feed', id: sub.subscriptionId })}
+                  onEditSettings={() => openFeedSettings(sub)}
+                  onUnsubscribe={() => unsubscribe.mutate(sub.subscriptionId)}
+                  onMarkRead={() => markAll({ feedId: sub.feedId }, feedName(sub.feedId))}
+                />
+              ))}
+            </SortableContext>
+          </RootZone>
+
+          {creating ? (
+            <InlineInput
+              placeholder="Folder name"
+              onSubmit={(name) => {
+                if (name.trim()) createFolder.mutate(name.trim());
+                setCreating(false);
+              }}
+              onCancel={() => setCreating(false)}
+            />
+          ) : (
+            <button
+              onClick={() => setCreating(true)}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-accent"
+            >
+              <Plus className="size-3.5" /> New folder
+            </button>
+          )}
+        </div>
+      </DropTargetContext.Provider>
+
+      {/* The dragged row follows the pointer in a portal, so no folder or
+          scroll box clips it. The row it came from stays, dimmed, in place. */}
+      <DragOverlay dropAnimation={null}>
+        {preview && <DragPreviewRow preview={preview} />}
+      </DragOverlay>
 
       {settingsSub && (
         <FeedSettingsDialog
@@ -496,17 +557,38 @@ function FeedFilter({ value, onChange }: { value: string; onChange: (v: string) 
   );
 }
 
+/** The highlight on a folder (or the top level) that a drop would move into. */
+const DROP_TARGET = 'bg-primary/10 ring-1 ring-primary';
+
 function RootZone({ children }: { children: React.ReactNode }) {
-  const { setNodeRef, isOver } = useDroppable({
+  const { setNodeRef } = useDroppable({
     id: 'zone:root',
     data: { type: 'dropzone', folderId: null } satisfies DragData,
   });
+  const isTarget = useContext(DropTargetContext) === null;
   return (
     <div
       ref={setNodeRef}
-      className={cn('min-h-8 rounded-md', isOver && 'bg-accent/50 ring-1 ring-ring')}
+      data-drop-target={isTarget || undefined}
+      className={cn('min-h-8 rounded-md', isTarget && DROP_TARGET)}
     >
       {children}
+    </div>
+  );
+}
+
+/** The copy of a row that follows the pointer while dragging. */
+function DragPreviewRow({ preview }: { preview: DragPreview }) {
+  return (
+    <div className="flex w-fit max-w-60 cursor-grabbing items-center gap-2 rounded-md border bg-popover px-2 py-1.5 text-sm text-popover-foreground shadow-lg">
+      {preview.kind === 'folder' ? (
+        <Folder className="size-4 shrink-0 text-muted-foreground" />
+      ) : preview.faviconUrl ? (
+        <img src={preview.faviconUrl} alt="" className="size-4 shrink-0 rounded-sm" />
+      ) : (
+        <Rss className="size-4 shrink-0 text-muted-foreground" />
+      )}
+      <span className="truncate">{preview.label}</span>
     </div>
   );
 }
@@ -566,6 +648,7 @@ function FolderNode(props: FolderNodeProps) {
     } satisfies DragData,
   });
   const strategy = reorder ? verticalListSortingStrategy : noShift;
+  const isTarget = useContext(DropTargetContext) === folder.id;
 
   const isEditing = editing?.kind === 'folder' && editing.id === folder.id;
 
@@ -577,9 +660,11 @@ function FolderNode(props: FolderNodeProps) {
     >
       <div
         data-folder-row={folder.id}
+        data-drop-target={isTarget || undefined}
         className={cn(
           'group flex items-center gap-1 rounded-md px-2 py-1.5',
           props.isActive ? 'bg-accent font-medium' : 'hover:bg-accent',
+          isTarget && DROP_TARGET,
         )}
         style={{ paddingLeft: `${0.5 + depth * 0.75}rem` }}
       >
@@ -634,11 +719,15 @@ function FolderNode(props: FolderNodeProps) {
             <>
               <DropdownMenuItem onSelect={() => props.onEdit(folder)}>Edit…</DropdownMenuItem>
               <DropdownMenuItem
-                onSelect={() => afterClose(() => props.setEditing({ kind: 'folder', id: folder.id }))}
+                onSelect={() =>
+                  afterClose(() => props.setEditing({ kind: 'folder', id: folder.id }))
+                }
               >
                 Rename
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => props.onMarkRead(folder)}>Mark all read</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => props.onMarkRead(folder)}>
+                Mark all read
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               {/* One level only, as the API allows (#28). */}
               <DropdownMenuItem
@@ -654,14 +743,23 @@ function FolderNode(props: FolderNodeProps) {
                 onMove={(parentId) => props.onMove(folder.id, parentId)}
               />
               <DropdownMenuSeparator />
-              <DropdownMenuItem disabled={props.allExpanded} onSelect={() => props.onSetAllExpanded(true)}>
+              <DropdownMenuItem
+                disabled={props.allExpanded}
+                onSelect={() => props.onSetAllExpanded(true)}
+              >
                 Expand all folders
               </DropdownMenuItem>
-              <DropdownMenuItem disabled={!props.anyExpanded} onSelect={() => props.onSetAllExpanded(false)}>
+              <DropdownMenuItem
+                disabled={!props.anyExpanded}
+                onSelect={() => props.onSetAllExpanded(false)}
+              >
                 Collapse all folders
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-destructive" onSelect={() => props.onDelete(folder)}>
+              <DropdownMenuItem
+                className="text-destructive"
+                onSelect={() => props.onDelete(folder)}
+              >
                 Delete folder
               </DropdownMenuItem>
             </>
@@ -727,14 +825,16 @@ function FolderNode(props: FolderNodeProps) {
 
 /** Droppable body of an expanded folder, so empty folders can accept a drop. */
 function FolderContents({ folderId, children }: { folderId: string; children: React.ReactNode }) {
-  const { setNodeRef, isOver } = useDroppable({
+  const { setNodeRef } = useDroppable({
     id: `zone:${folderId}`,
     data: { type: 'dropzone', folderId } satisfies DragData,
   });
+  // The open body lights up with its row, so the whole folder reads as the target.
+  const isTarget = useContext(DropTargetContext) === folderId;
   return (
     <div
       ref={setNodeRef}
-      className={cn('ml-3 min-h-6 space-y-0.5', isOver && 'rounded-md bg-accent/50 ring-1 ring-ring')}
+      className={cn('ml-3 min-h-6 space-y-0.5 rounded-md', isTarget && 'bg-primary/5')}
     >
       {children}
     </div>
@@ -772,15 +872,22 @@ function FeedNode({
   onUnsubscribe,
   onMarkRead,
 }: FeedNodeProps) {
-  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
-    useSortable({
-      id: `feed:${sub.subscriptionId}`,
-      data: {
-        type: 'feed',
-        subscriptionId: sub.subscriptionId,
-        folderId: sub.folderId,
-      } satisfies DragData,
-    });
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: `feed:${sub.subscriptionId}`,
+    data: {
+      type: 'feed',
+      subscriptionId: sub.subscriptionId,
+      folderId: sub.folderId,
+    } satisfies DragData,
+  });
 
   // A favicon that fails to load must fall back to the generic icon, not
   // vanish: the icon keeps titles aligned across rows. Keyed by URL so a
@@ -830,7 +937,9 @@ function FeedNode({
         {...listeners}
         className="shrink-0 cursor-grab rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         aria-label={`Drag ${label}`}
-        title={reorder ? `Drag to reorder or move ${label}` : `Drag to move ${label} to another folder`}
+        title={
+          reorder ? `Drag to reorder or move ${label}` : `Drag to move ${label} to another folder`
+        }
       >
         {sub.faviconUrl && sub.faviconUrl !== failedSrc ? (
           <img
@@ -944,7 +1053,11 @@ function FeedMoveToMenu({ sub }: { sub: SubscriptionRow }) {
 /** Fetch just this feed now (#45), the same call as "Retry now" (#29). */
 function RefreshFeedItem({ subscriptionId }: { subscriptionId: string }) {
   const refresh = useRefreshFeed();
-  return <DropdownMenuItem onSelect={() => refresh.mutate(subscriptionId)}>Refresh this feed</DropdownMenuItem>;
+  return (
+    <DropdownMenuItem onSelect={() => refresh.mutate(subscriptionId)}>
+      Refresh this feed
+    </DropdownMenuItem>
+  );
 }
 
 /**
@@ -1018,4 +1131,3 @@ function MoveToMenu({
     </DropdownMenuSub>
   );
 }
-
